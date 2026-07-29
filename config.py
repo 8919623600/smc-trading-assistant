@@ -1,0 +1,14 @@
+# Market
+SYMBOL = "XAUUSD"
+EXCHANGE = "OANDA"
+
+# Timeframes
+DEFAULT_TIMEFRAME = "15m"
+DEFAULT_BARS = 300
+
+# Swing Detection
+LOOKBACK = 2
+
+# Major Swing
+MAJOR_SWING_STRENGTH = 3
+MAX_STRENGTH_LOOKBACK = 8
