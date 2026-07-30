@@ -16,9 +16,8 @@ Responsibilities
 - Detect Order Blocks
 - Detect Fair Value Gaps
 
-Note:
 Trade decision and risk management
-are handled after all timeframes are analyzed.
+are handled after multi-timeframe analysis.
 
 Author: BMIE Project
 """
@@ -67,20 +66,15 @@ def analyze_market(
     """
 
 
-
     # ======================================================
     # Fetch Data
     # ======================================================
 
     df = get_data(
-
         session=session,
-
         timeframe=timeframe,
-
         bars=bars,
     )
-
 
 
     # ======================================================
@@ -111,7 +105,6 @@ def analyze_market(
         swing_highs
     )
 
-
     major_lows = find_major_swings(
         swing_lows
     )
@@ -123,22 +116,18 @@ def analyze_market(
     # ======================================================
 
     major_highs, major_lows, structure = analyze_structure(
-
         major_highs,
-
         major_lows,
     )
 
 
 
     # ======================================================
-    # Market Structure Engine
+    # Market Structure
     # ======================================================
 
     structure_engine = MarketStructureEngine(
-
         major_highs,
-
         major_lows,
     )
 
@@ -181,7 +170,10 @@ def analyze_market(
     # BOS
     # ======================================================
 
-    bos_engine = BOSEngine(context)
+    bos_engine = BOSEngine(
+        context
+    )
+
 
     bos = bos_engine.analyze()
 
@@ -194,7 +186,10 @@ def analyze_market(
     # CHoCH
     # ======================================================
 
-    choch_engine = CHoCHEngine(context)
+    choch_engine = CHoCHEngine(
+        context
+    )
+
 
     choch = choch_engine.analyze()
 
@@ -226,10 +221,7 @@ def analyze_market(
     # ======================================================
 
     liquidity_engine = LiquidityEngine(
-
-        context.swing_highs,
-
-        context.swing_lows,
+        context
     )
 
 
@@ -242,10 +234,7 @@ def analyze_market(
     # ======================================================
 
     order_block_engine = OrderBlockEngine(
-
-        context.swing_highs,
-
-        context.swing_lows,
+        context
     )
 
 
@@ -258,7 +247,6 @@ def analyze_market(
     # ======================================================
 
     fvg_engine = FVGEngine(
-
         context
     )
 
@@ -310,7 +298,7 @@ def analyze_market(
 
 
 
-    # Attach state internally
+    # Internal state
 
     result.market_state = market_state
 
