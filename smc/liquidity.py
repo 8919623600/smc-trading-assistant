@@ -1,7 +1,7 @@
 """
 smc/liquidity.py
 
-Liquidity Engine V2 for BMIE.
+Liquidity Engine V3 for BMIE.
 
 Responsibilities
 ----------------
@@ -10,7 +10,8 @@ Responsibilities
 - Identify Buy-side Liquidity
 - Identify Sell-side Liquidity
 - Detect Liquidity Sweeps
-- Track swept liquidity
+- Validate sweep quality
+- Track sweep distance
 
 Author: BMIE Project
 """
@@ -43,13 +44,20 @@ class LiquidityZone:
     end_time: datetime
 
 
+    # Sweep status
+
     swept: bool = False
 
+    sweep_valid: bool = False
+
+
+    # Sweep details
 
     sweep_time: Optional[datetime] = None
 
-
     sweep_price: Optional[float] = None
+
+    sweep_distance: Optional[float] = None
 
 
     swing_points: List[SwingPoint] = field(
@@ -64,7 +72,7 @@ class LiquidityZone:
 
 class LiquidityEngine:
     """
-    Detects liquidity pools and sweeps.
+    Detects liquidity pools and validates sweeps.
     """
 
 
@@ -75,6 +83,7 @@ class LiquidityEngine:
         swing_lows: List[SwingPoint],
         df=None,
         tolerance: float = 1.50,
+        max_sweep_distance: float = 30.0,
     ):
 
         self.swing_highs = swing_highs
@@ -85,6 +94,8 @@ class LiquidityEngine:
 
         self.tolerance = tolerance
 
+        self.max_sweep_distance = max_sweep_distance
+
 
 
     # ======================================================
@@ -92,7 +103,6 @@ class LiquidityEngine:
     # ======================================================
 
     def detect_equal_highs(self):
-
 
         zones = []
 
@@ -104,13 +114,13 @@ class LiquidityEngine:
 
 
         for i in range(
-            len(self.swing_highs)-1
+            len(self.swing_highs) - 1
         ):
 
 
             first = self.swing_highs[i]
 
-            second = self.swing_highs[i+1]
+            second = self.swing_highs[i + 1]
 
 
 
@@ -167,7 +177,6 @@ class LiquidityEngine:
 
     def detect_equal_lows(self):
 
-
         zones = []
 
 
@@ -179,22 +188,18 @@ class LiquidityEngine:
 
 
         for i in range(
-
-            len(self.swing_lows)-1
-
+            len(self.swing_lows) - 1
         ):
 
 
             first = self.swing_lows[i]
 
-            second = self.swing_lows[i+1]
+            second = self.swing_lows[i + 1]
 
 
 
             if abs(
-
-                first.price-second.price
-
+                first.price - second.price
             ) <= self.tolerance:
 
 
@@ -204,7 +209,6 @@ class LiquidityEngine:
                     LiquidityZone(
 
                         side="Sell-side",
-
 
                         level=(
 
@@ -242,7 +246,7 @@ class LiquidityEngine:
 
 
     # ======================================================
-    # Sweep Detection
+    # Sweep Detection + Validation
     # ======================================================
 
     def detect_sweeps(
@@ -261,12 +265,7 @@ class LiquidityEngine:
 
 
 
-            candles = self.df
-
-
-
-            for index, candle in candles.iterrows():
-
+            for index, candle in self.df.iterrows():
 
 
                 high = float(
@@ -280,55 +279,75 @@ class LiquidityEngine:
 
 
 
+                # ==========================================
                 # Buy-side liquidity sweep
+                # ==========================================
 
-                if (
-
-                    zone.side == "Buy-side"
-
-                    and
-
-                    high > zone.level
-
-                ):
+                if zone.side == "Buy-side":
 
 
-                    zone.swept = True
-
-
-                    zone.sweep_time = index
-
-
-                    zone.sweep_price = high
-
-
-                    break
+                    if high > zone.level:
 
 
 
+                        distance = (
+                            high - zone.level
+                        )
+
+
+                        zone.swept = True
+
+                        zone.sweep_time = index
+
+                        zone.sweep_price = high
+
+                        zone.sweep_distance = distance
+
+
+
+                        if distance <= self.max_sweep_distance:
+
+                            zone.sweep_valid = True
+
+
+
+                        break
+
+
+
+                # ==========================================
                 # Sell-side liquidity sweep
+                # ==========================================
 
-                if (
-
-                    zone.side == "Sell-side"
-
-                    and
-
-                    low < zone.level
-
-                ):
+                if zone.side == "Sell-side":
 
 
-                    zone.swept = True
+                    if low < zone.level:
 
 
-                    zone.sweep_time = index
+
+                        distance = (
+                            zone.level - low
+                        )
 
 
-                    zone.sweep_price = low
+                        zone.swept = True
+
+                        zone.sweep_time = index
+
+                        zone.sweep_price = low
+
+                        zone.sweep_distance = distance
 
 
-                    break
+
+                        if distance <= self.max_sweep_distance:
+
+                            zone.sweep_valid = True
+
+
+
+                        break
 
 
 
