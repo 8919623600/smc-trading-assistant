@@ -51,16 +51,23 @@ def create_session() -> TradingSession:
     return a TradingSession object.
     """
 
-    print("\n" + "=" * 60)
-    print("BALAJI MARKET INTELLIGENCE ENGINE")
-    print("=" * 60)
+    print("\nTrading Session Setup")
+    print("-" * 60)
 
-    symbol = input("Enter Symbol   : ").strip().upper()
-    exchange = input("Enter Exchange : ").strip().upper()
+    symbol = input("Enter Symbol      : ").strip().upper()
+    exchange = input("Enter Exchange    : ").strip().upper()
 
-    balance = float(input("Account Balance : ₹"))
+    while True:
+        try:
+            balance = float(input("Account Balance : ₹"))
+            if balance <= 0:
+                print("Balance must be greater than zero.")
+                continue
+            break
+        except ValueError:
+            print("Please enter a valid numeric balance.")
 
-    print("\nSession Created Successfully.\n")
+    print("\nSession created successfully.\n")
 
     return TradingSession(
         symbol=symbol,

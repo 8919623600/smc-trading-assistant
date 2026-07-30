@@ -11,6 +11,7 @@ Responsibilities
 - Build market structure
 - Detect Break of Structure (BOS)
 - Detect Change of Character (CHoCH)
+- Detect Liquidity
 
 Author: BMIE Project
 """
@@ -25,6 +26,7 @@ from smc.structure import analyze_structure
 from smc.market_structure import MarketStructureEngine
 from smc.bos import detect_bos
 from smc.choch import detect_choch
+from smc.liquidity import LiquidityEngine
 
 from models import AnalysisResult, MarketStructure
 
@@ -121,6 +123,17 @@ def analyze_market(
     market_structure.last_choch = choch
 
     # ======================================================
+    # Liquidity
+    # ======================================================
+
+    liquidity_engine = LiquidityEngine(
+        major_highs,
+        major_lows,
+    )
+
+    liquidity = liquidity_engine.analyze()
+
+    # ======================================================
     # Build Analysis Result
     # ======================================================
 
@@ -131,8 +144,9 @@ def analyze_market(
         current_time=current_time,
         swing_highs=major_highs,
         swing_lows=major_lows,
-        structure=structure,                # Backward compatibility
-        market_structure=market_structure,  # New Market Structure Engine
+        structure=structure,
+        market_structure=market_structure,
         bos=bos,
         choch=choch,
+        liquidity=liquidity,
     )
