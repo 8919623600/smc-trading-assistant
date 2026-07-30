@@ -21,6 +21,38 @@ class SwingPoint:
 
 
 # ==========================================================
+# Market Events
+# ==========================================================
+
+@dataclass
+class MarketEvent:
+    """
+    Base class for all market events.
+    """
+
+    direction: Optional[str] = None
+    level: Optional[float] = None
+    time: Optional[datetime] = None
+    confirmed: bool = False
+
+
+@dataclass
+class BOSEvent(MarketEvent):
+    """
+    Break of Structure event.
+    """
+    pass
+
+
+@dataclass
+class CHoCHEvent(MarketEvent):
+    """
+    Change of Character event.
+    """
+    pass
+
+
+# ==========================================================
 # Market Structure
 # ==========================================================
 
@@ -37,9 +69,9 @@ class MarketStructure:
 
     state: str = "Unknown"
 
-    last_bos: Optional[dict] = None
+    last_bos: BOSEvent = field(default_factory=BOSEvent)
 
-    last_choch: Optional[dict] = None
+    last_choch: CHoCHEvent = field(default_factory=CHoCHEvent)
 
     major_high: Optional[SwingPoint] = None
 
@@ -64,9 +96,9 @@ class AnalysisResult:
     # New Market Structure object
     market_structure: Optional[MarketStructure] = None
 
-    bos: Optional[dict] = None
+    bos: BOSEvent = field(default_factory=BOSEvent)
 
-    choch: Optional[dict] = None
+    choch: CHoCHEvent = field(default_factory=CHoCHEvent)
 
     liquidity: List[Any] = field(default_factory=list)
 

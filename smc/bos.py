@@ -1,109 +1,85 @@
 """
-smc/bos.py
-
-Break Of Structure (BOS) detection engine.
-
-Author: BMIE Project
+Break of Structure (BOS) Detection
 """
 
-from typing import Dict, List
+from models import BOSEvent
 
-from models import SwingPoint
+
+# ==========================================================
+# Helper Functions
+# ==========================================================
+
+def _empty_event() -> BOSEvent:
+    """
+    Returns an empty BOS event.
+    """
+    return BOSEvent()
 
 
 # ==========================================================
 # Bullish BOS
 # ==========================================================
 
-def detect_bullish_bos(
-    latest_close: float,
-    swing_highs: List[SwingPoint],
-) -> Dict:
-    """
-    Detect bullish Break of Structure.
-    """
+def detect_bullish_bos(df, swing_highs):
+    latest_close = float(df.iloc[-1]["close"])
 
     if not swing_highs:
-        return {}
+        return _empty_event()
 
     last_high = swing_highs[-1]
 
     if latest_close > last_high.price:
-
         last_high.broken = True
 
-        return {
-            "direction": "Bullish",
-            "level": last_high.price,
-            "time": last_high.time,
-        }
+        return BOSEvent(
+            direction="Bullish",
+            level=last_high.price,
+            time=last_high.time,
+            confirmed=True,
+        )
 
-    return {}
+    return _empty_event()
 
 
 # ==========================================================
 # Bearish BOS
 # ==========================================================
 
-def detect_bearish_bos(
-    latest_close: float,
-    swing_lows: List[SwingPoint],
-) -> Dict:
-    """
-    Detect bearish Break of Structure.
-    """
+def detect_bearish_bos(df, swing_lows):
+    latest_close = float(df.iloc[-1]["close"])
 
     if not swing_lows:
-        return {}
+        return _empty_event()
 
     last_low = swing_lows[-1]
 
     if latest_close < last_low.price:
-
         last_low.broken = True
 
-        return {
-            "direction": "Bearish",
-            "level": last_low.price,
-            "time": last_low.time,
-        }
+        return BOSEvent(
+            direction="Bearish",
+            level=last_low.price,
+            time=last_low.time,
+            confirmed=True,
+        )
 
-    return {}
+    return _empty_event()
 
 
 # ==========================================================
-# Main BOS Detection
+# Public API
 # ==========================================================
 
-def detect_bos(
-    df,
-    swing_highs: List[SwingPoint],
-    swing_lows: List[SwingPoint],
-) -> Dict:
+def detect_bos(df, swing_highs, swing_lows):
     """
-    Detect the latest confirmed Break of Structure.
+    Detect Break of Structure.
     """
 
-    latest_close = float(df.iloc[-1]["close"])
+    bullish = detect_bullish_bos(df, swing_highs)
 
-    bullish = detect_bullish_bos(
-        latest_close,
-        swing_highs,
-    )
-
-    if bullish:
+    if bullish.confirmed:
         return bullish
 
-    bearish = detect_bearish_bos(
-        latest_close,
-        swing_lows,
-    )
+    bearish = detect_bearish_bos(df, swing_lows)
 
-    if bearish:
-        return bearish
-
-    return {
-        "direction": None,
-        "level": None,
-        "time": None,
-    }
+    return bearish
