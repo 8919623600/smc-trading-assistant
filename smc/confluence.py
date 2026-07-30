@@ -1,23 +1,16 @@
 """
 smc/confluence.py
 
-BMIE Multi-Timeframe Confluence Engine V4.
+BMIE Multi-Timeframe Confluence Engine.
 
 Responsibilities
 ----------------
 - Combine multi-timeframe SMC confirmations
 - Weight HTF and LTF signals
+- Validate fresh FVG
 - Calculate setup confidence
-- Generate BUY / SELL / WATCH / WAIT
+- Generate BUY / SELL / WATCH decision
 - Provide trade reasoning
-
-Timeframes:
-------------
-1D  -> Bias
-4H  -> Structure
-1H  -> Trend
-15M -> Setup
-5M  -> Entry
 
 Author: BMIE Project
 """
@@ -36,12 +29,41 @@ class ConfluenceEngine:
     """
 
 
+
     def __init__(
         self,
         context: MultiTimeframeContext,
     ):
 
         self.context = context
+
+
+
+    # ======================================================
+    # Fresh FVG Check
+    # ======================================================
+
+    def get_fresh_fvg(self):
+
+        if not self.context.entry:
+
+            return []
+
+
+        if not self.context.entry.fair_value_gaps:
+
+            return []
+
+
+        return [
+
+            fvg
+
+            for fvg in self.context.entry.fair_value_gaps
+
+            if not fvg.filled
+
+        ]
 
 
 
@@ -61,20 +83,19 @@ class ConfluenceEngine:
 
         bearish_score = 0
 
+
         reasons = []
 
 
 
         # ==================================================
-        # 1D Bias
+        # Daily Bias
         # ==================================================
 
         if self.context.bias:
 
 
-            structure = (
-                self.context.bias.market_structure
-            )
+            structure = self.context.bias.market_structure
 
 
             if structure:
@@ -117,9 +138,7 @@ class ConfluenceEngine:
         if self.context.structure:
 
 
-            structure = (
-                self.context.structure.market_structure
-            )
+            structure = self.context.structure.market_structure
 
 
             if structure:
@@ -162,9 +181,7 @@ class ConfluenceEngine:
         if self.context.trend:
 
 
-            structure = (
-                self.context.trend.market_structure
-            )
+            structure = self.context.trend.market_structure
 
 
             if structure:
@@ -192,10 +209,7 @@ class ConfluenceEngine:
                     )
 
 
-                if (
-                    "Continuation"
-                    in structure.state
-                ):
+                if "Continuation" in structure.state:
 
                     score += 10
 
@@ -206,7 +220,7 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # 15M Setup
+        # 15M Setup BOS
         # ==================================================
 
         if self.context.setup:
@@ -216,7 +230,6 @@ class ConfluenceEngine:
 
 
                 score += 15
-
 
 
                 if self.context.setup.bos.direction == "Bullish":
@@ -239,7 +252,7 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # 5M Entry
+        # 5M Entry BOS
         # ==================================================
 
         if self.context.entry:
@@ -249,7 +262,6 @@ class ConfluenceEngine:
 
 
                 score += 10
-
 
 
                 if self.context.entry.bos.direction == "Bullish":
@@ -271,17 +283,6 @@ class ConfluenceEngine:
 
 
 
-            if self.context.entry.choch.confirmed:
-
-
-                score += 5
-
-                reasons.append(
-                    "5M CHoCH confirmation"
-                )
-
-
-
         # ==================================================
         # Order Block
         # ==================================================
@@ -300,19 +301,28 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # FVG
+        # Fresh FVG
         # ==================================================
 
-        if self.context.entry:
+        fresh_fvg = self.get_fresh_fvg()
 
 
-            if self.context.entry.fair_value_gaps:
+        if fresh_fvg:
 
-                score += 5
 
-                reasons.append(
-                    "Fair Value Gap available"
-                )
+            score += 5
+
+            reasons.append(
+                "Fresh Fair Value Gap available"
+            )
+
+
+        elif self.context.entry and self.context.entry.fair_value_gaps:
+
+
+            reasons.append(
+                "Fair Value Gap already filled"
+            )
 
 
 
@@ -328,18 +338,18 @@ class ConfluenceEngine:
                 score += 5
 
                 reasons.append(
-                    "Liquidity available"
+                    "Liquidity confirmation available"
                 )
 
 
 
         # ==================================================
-        # Limit Score
+        # Confidence
         # ==================================================
 
-        score = max(
-            0,
-            min(score,100)
+        score = min(
+            score,
+            100
         )
 
 
@@ -356,16 +366,12 @@ class ConfluenceEngine:
 
         if score < 40:
 
-
             decision.signal = "WAIT"
-
 
 
         elif score < 60:
 
-
             decision.signal = "WATCH"
-
 
 
         elif score < 80:

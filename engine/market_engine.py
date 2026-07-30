@@ -290,9 +290,25 @@ class MarketEngine:
 
 
 
-            # ==================================================
-            # Risk Management
-            # ==================================================
+        # ==================================================
+        # Risk Management
+        # ==================================================
+
+        allowed_signals = [
+
+            "BUY",
+
+            "SELL",
+
+            "STRONG BUY",
+
+            "STRONG SELL",
+
+        ]
+
+
+        if trade_decision.signal in allowed_signals:
+
 
             risk_manager = RiskManager(
 
@@ -305,7 +321,6 @@ class MarketEngine:
             )
 
 
-
             risk_decision = risk_manager.analyze(
 
                 trade_decision,
@@ -315,8 +330,13 @@ class MarketEngine:
             )
 
 
-
             entry.risk_decision = risk_decision
+
+
+        else:
+
+
+            entry.risk_decision = None
 
     # ======================================================
     # Helpers
