@@ -1,7 +1,7 @@
 """
 smc/liquidity.py
 
-Liquidity Engine V4 for BMIE.
+Liquidity Engine V5 for BMIE.
 
 Responsibilities
 ----------------
@@ -13,7 +13,7 @@ Responsibilities
 - Validate sweep quality
 - Track sweep distance
 - Rank liquidity zones
-- Select best institutional liquidity
+- Select nearest institutional liquidity
 
 Author: BMIE Project
 """
@@ -27,6 +27,7 @@ from models import SwingPoint
 
 
 
+
 # ==========================================================
 # Liquidity Zone
 # ==========================================================
@@ -37,6 +38,7 @@ class LiquidityZone:
     Represents institutional liquidity.
     """
 
+
     side: str
 
     level: float
@@ -44,6 +46,7 @@ class LiquidityZone:
     start_time: datetime
 
     end_time: datetime
+
 
 
     # Sweep status
@@ -64,7 +67,7 @@ class LiquidityZone:
 
 
 
-    # Ranking details
+    # Ranking information
 
     distance_from_price: Optional[float] = None
 
@@ -73,8 +76,11 @@ class LiquidityZone:
 
 
     swing_points: List[SwingPoint] = field(
+
         default_factory=list
+
     )
+
 
 
 
@@ -99,6 +105,7 @@ class LiquidityEngine:
         max_sweep_distance: float = 30.0,
     ):
 
+
         self.swing_highs = swing_highs
 
         self.swing_lows = swing_lows
@@ -112,6 +119,7 @@ class LiquidityEngine:
 
 
 
+
     # ======================================================
     # Equal Highs
     # ======================================================
@@ -120,6 +128,7 @@ class LiquidityEngine:
 
 
         zones = []
+
 
 
         if len(self.swing_highs) < 2:
@@ -157,20 +166,15 @@ class LiquidityEngine:
 
                         level=(
 
-                            first.price
-
-                            +
+                            first.price +
 
                             second.price
 
                         ) / 2,
 
-
                         start_time=first.time,
 
-
                         end_time=second.time,
-
 
                         swing_points=[
 
@@ -187,6 +191,7 @@ class LiquidityEngine:
 
 
         return zones
+
 
 
 
@@ -237,20 +242,15 @@ class LiquidityEngine:
 
                         level=(
 
-                            first.price
-
-                            +
+                            first.price +
 
                             second.price
 
                         ) / 2,
 
-
                         start_time=first.time,
 
-
                         end_time=second.time,
-
 
                         swing_points=[
 
@@ -267,6 +267,12 @@ class LiquidityEngine:
 
 
         return zones
+
+
+# ================= PART 1 END =================
+
+# ================= PART 2 START =================
+
 
     # ======================================================
     # Sweep Detection + Validation
@@ -292,12 +298,16 @@ class LiquidityEngine:
 
 
                 high = float(
+
                     candle["high"]
+
                 )
 
 
                 low = float(
+
                     candle["low"]
+
                 )
 
 
@@ -315,9 +325,7 @@ class LiquidityEngine:
 
                         distance = (
 
-                            high
-
-                            -
+                            high -
 
                             zone.level
 
@@ -326,12 +334,9 @@ class LiquidityEngine:
 
                         zone.swept = True
 
-
                         zone.sweep_time = index
 
-
                         zone.sweep_price = high
-
 
                         zone.sweep_distance = distance
 
@@ -362,9 +367,7 @@ class LiquidityEngine:
 
                         distance = (
 
-                            zone.level
-
-                            -
+                            zone.level -
 
                             low
 
@@ -373,12 +376,9 @@ class LiquidityEngine:
 
                         zone.swept = True
 
-
                         zone.sweep_time = index
 
-
                         zone.sweep_price = low
-
 
                         zone.sweep_distance = distance
 
@@ -421,7 +421,7 @@ class LiquidityEngine:
 
 
 
-            # Only swept liquidity
+            # Need valid sweep only
 
             if not zone.swept:
 
@@ -429,16 +429,14 @@ class LiquidityEngine:
 
 
 
-            # Only valid sweep
-
             if not zone.sweep_valid:
 
                 continue
 
 
 
-            # Bullish setup
-            # Need sell-side liquidity
+
+            # Bullish setup requires sell-side liquidity
 
             if direction == "Bullish":
 
@@ -449,8 +447,8 @@ class LiquidityEngine:
 
 
 
-            # Bearish setup
-            # Need buy-side liquidity
+
+            # Bearish setup requires buy-side liquidity
 
             if direction == "Bearish":
 
@@ -461,11 +459,10 @@ class LiquidityEngine:
 
 
 
+
             distance = abs(
 
-                current_price
-
-                -
+                current_price -
 
                 zone.level
 
@@ -477,20 +474,18 @@ class LiquidityEngine:
 
 
 
+
             strength = 0
 
 
 
-            # Valid sweep weight
+            # Valid sweep
 
-            if zone.sweep_valid:
-
-
-                strength += 50
+            strength += 50
 
 
 
-            # Sweep quality
+            # Better sweep quality
 
             if zone.sweep_distance is not None:
 
@@ -514,9 +509,20 @@ class LiquidityEngine:
 
 
 
-            # Recency bonus
 
-            strength += 20
+            # Close liquidity bonus
+
+            if distance < 10:
+
+
+                strength += 20
+
+
+            elif distance < 30:
+
+
+                strength += 10
+
 
 
 
@@ -529,6 +535,7 @@ class LiquidityEngine:
 
 
 
+
         if not candidates:
 
             return None
@@ -536,7 +543,11 @@ class LiquidityEngine:
 
 
 
-        # Strongest + nearest liquidity
+        # IMPORTANT:
+        #
+        # Nearest liquidity first
+        # Strength second
+        #
 
         candidates.sort(
 
@@ -544,9 +555,9 @@ class LiquidityEngine:
 
             (
 
-                -x.strength,
+                x.distance_from_price,
 
-                x.distance_from_price
+                -x.strength
 
             )
 
@@ -561,7 +572,7 @@ class LiquidityEngine:
 
 
     # ======================================================
-    # Get Best Liquidity
+    # Best Liquidity
     # ======================================================
 
     def get_best_liquidity(
@@ -622,3 +633,6 @@ class LiquidityEngine:
 
 
         return liquidity
+
+
+# ================= PART 2 END =================
