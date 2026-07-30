@@ -49,6 +49,13 @@ def analyze_market(
     )
 
     # ======================================================
+    # Market Snapshot
+    # ======================================================
+
+    current_price = float(df.iloc[-1]["close"])
+    current_time = df.index[-1]
+
+    # ======================================================
     # Detect Swings
     # ======================================================
 
@@ -71,7 +78,7 @@ def analyze_market(
     )
 
     # ======================================================
-    # New Market Structure Engine
+    # Market Structure Engine
     # ======================================================
 
     engine = MarketStructureEngine(
@@ -89,7 +96,7 @@ def analyze_market(
     )
 
     # ======================================================
-    # BOS
+    # Break of Structure (BOS)
     # ======================================================
 
     bos = detect_bos(
@@ -101,7 +108,7 @@ def analyze_market(
     market_structure.last_bos = bos
 
     # ======================================================
-    # CHoCH
+    # Change of Character (CHoCH)
     # ======================================================
 
     choch = detect_choch(
@@ -114,16 +121,18 @@ def analyze_market(
     market_structure.last_choch = choch
 
     # ======================================================
-    # Result
+    # Build Analysis Result
     # ======================================================
 
     return AnalysisResult(
         df=df,
         timeframe=timeframe,
+        current_price=current_price,
+        current_time=current_time,
         swing_highs=major_highs,
         swing_lows=major_lows,
-        structure=structure,                     # Backward compatibility
-        market_structure=market_structure,       # New engine
+        structure=structure,                # Backward compatibility
+        market_structure=market_structure,  # New Market Structure Engine
         bos=bos,
         choch=choch,
     )

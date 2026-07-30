@@ -84,10 +84,23 @@ class MarketStructure:
 
 @dataclass
 class AnalysisResult:
+    """
+    Result of analyzing a single timeframe.
+    """
+
+    # Raw market data
     df: Any
+
     timeframe: str
 
+    # Current market snapshot
+    current_price: float = 0.0
+
+    current_time: Optional[datetime] = None
+
+    # Swing data
     swing_highs: List[SwingPoint] = field(default_factory=list)
+
     swing_lows: List[SwingPoint] = field(default_factory=list)
 
     # Legacy field (kept for compatibility)
@@ -96,10 +109,12 @@ class AnalysisResult:
     # New Market Structure object
     market_structure: Optional[MarketStructure] = None
 
+    # Market Events
     bos: BOSEvent = field(default_factory=BOSEvent)
 
     choch: CHoCHEvent = field(default_factory=CHoCHEvent)
 
+    # Future SMC Components
     liquidity: List[Any] = field(default_factory=list)
 
     order_blocks: List[Any] = field(default_factory=list)
