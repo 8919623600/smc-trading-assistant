@@ -27,7 +27,7 @@ from smc.major_swings import find_major_swings
 from smc.structure import analyze_structure
 from smc.market_structure import MarketStructureEngine
 from smc.bos import BOSEngine
-from smc.choch import detect_choch
+from smc.choch import CHoCHEngine
 from smc.liquidity import LiquidityEngine
 
 from models import AnalysisResult, MarketStructure
@@ -123,12 +123,8 @@ def analyze_market(
     # Change of Character (CHoCH)
     # ======================================================
 
-    choch = detect_choch(
-        df,
-        major_highs,
-        major_lows,
-        structure,
-    )
+    choch_engine = CHoCHEngine(context)
+    choch = choch_engine.analyze()
 
     market_structure.last_choch = choch
 
