@@ -1,46 +1,57 @@
+"""
+main.py
+
+Entry point for the Balaji Market Intelligence Engine (BMIE).
+
+Responsibilities:
+- Create trading session
+- Run multi-timeframe analysis
+- Display summary
+
+Author: BMIE Project
+"""
+
+from core.session import create_session
 from analyzer import analyze_market
-from charts.plot_chart import plot_chart
 
 
 def main():
-    """
-    Main entry point of the Smart Money Concept Analyzer.
-    """
 
-    # Run market analysis
-    result = analyze_market()
+    # ============================================
+    # Create Trading Session
+    # ============================================
 
-    # Plot chart
-    plot_chart(
-        result.df,
-        result.swing_highs,
-        result.swing_lows,
-        filename="XAUUSD_15m.png",
-    )
+    session = create_session()
 
-    # Print Summary
-    print("=" * 80)
-    print("SMART MONEY CONCEPT ANALYZER")
-    print("=" * 80)
+    print("\nRunning Multi-Timeframe Analysis...")
+    print("-" * 60)
 
-    print(f"Timeframe      : {result.timeframe}")
-    print(f"Current Price  : {result.df.iloc[-1]['close']:.2f}")
+    analyses = {}
 
-    print("\nMARKET STRUCTURE")
-    print("-" * 80)
-    print(result.structure)
+    # Analyze every configured timeframe
+    for name, timeframe in session.timeframes.items():
 
-    print("\nBREAK OF STRUCTURE")
-    print("-" * 80)
+        print(f"Analyzing {name.upper()} ({timeframe})...")
 
-    if result.bos and result.bos["direction"]:
-        print(f"Direction : {result.bos['direction']}")
-        print(f"Level     : {result.bos['level']:.2f}")
-        print(f"Time      : {result.bos['time']}")
-    else:
-        print("No confirmed BOS detected.")
+        analyses[name] = analyze_market(
+            session=session,
+            timeframe=timeframe,
+            bars=session.bars,
+        )
 
-    print("=" * 80)
+    print("\nAnalysis Completed Successfully.")
+    print("=" * 60)
+
+    # Temporary Summary
+    for name, result in analyses.items():
+
+        print(f"\n{name.upper()}")
+
+        print(f"Timeframe : {result.timeframe}")
+        print(f"Structure : {result.structure}")
+        print(f"BOS       : {result.bos}")
+
+    print("\nBMIE analysis completed.")
 
 
 if __name__ == "__main__":
