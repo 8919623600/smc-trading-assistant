@@ -1,0 +1,523 @@
+You are continuing development of my project:
+
+BALAJI MARKET INTELLIGENCE ENGINE (BMIE)
+
+This is an SMC (Smart Money Concept) based trading intelligence engine written in Python.
+
+IMPORTANT:
+I will upload the latest project ZIP.
+First inspect the code structure before making changes.
+
+Do not redesign the architecture unless required.
+Continue from the existing implementation.
+
+====================================================
+PROJECT OBJECTIVE
+====================================================
+
+Build a professional SMC trading analysis engine that:
+
+- Fetches market data
+- Performs multi-timeframe analysis
+- Detects institutional concepts
+- Generates high-quality trade setups
+- Provides entry confirmation
+- Calculates risk management
+
+The engine should behave like an institutional trading assistant, not a simple indicator.
+
+====================================================
+CURRENT ARCHITECTURE
+====================================================
+
+Main flow:
+
+Market Data
+      |
+      ↓
+Multi Timeframe Analysis
+
+Timeframes:
+
+1D  → Bias
+4H  → Structure
+1H  → Trend
+15M → Setup
+5M  → Entry
+
+      |
+      ↓
+
+SMC Analysis
+
+      |
+      ├── Market Structure
+      ├── BOS Detection
+      ├── CHoCH Detection
+      ├── Order Block Detection
+      ├── Fair Value Gap Detection
+      ├── Liquidity Detection
+      ├── Liquidity Sweep Validation
+      └── Confluence Engine
+
+      |
+      ↓
+
+Trade Decision
+
+      |
+      ↓
+
+Setup Quality
+
+      |
+      ↓
+
+Entry Model
+
+      |
+      ↓
+
+Risk Manager
+
+
+====================================================
+COMPLETED MODULES
+====================================================
+
+✅ Multi timeframe analysis
+
+Implemented:
+
+- 1D
+- 4H
+- 1H
+- 15M
+- 5M
+
+
+✅ Market Structure
+
+Completed:
+
+- BOS detection
+- CHoCH detection
+- Trend identification
+
+
+✅ Order Block Engine
+
+Completed:
+
+- Bullish OB
+- Bearish OB
+- OB strength
+- OB distance
+
+
+Current limitation:
+
+OB selection needs improvement.
+
+Current problem:
+
+Engine sometimes selects old OB.
+
+Example:
+
+Current:
+
+OB:
+3996 - 4010
+
+Price:
+4100+
+
+Distance:
+Far
+
+
+Need improvement:
+
+Select:
+
+- nearest valid OB
+- same directional OB
+- recent OB
+- structure aligned OB
+
+
+====================================================
+FVG ENGINE
+====================================================
+
+Completed:
+
+✅ FVG detection
+✅ Bullish FVG
+✅ Bearish FVG
+✅ Filled detection
+
+
+Recently fixed:
+
+Wrong reason:
+
+"Fresh Bullish FVG confirmation"
+
+when FVG was bearish.
+
+
+Current:
+
+FVG direction validation is working.
+
+Need to check duplicate reason:
+
+"Fresh FVG confirmation"
+
+should be removed if still present.
+
+
+====================================================
+LIQUIDITY ENGINE
+====================================================
+
+Completed:
+
+✅ EQH detection
+
+✅ EQL detection
+
+✅ Buy-side liquidity
+
+✅ Sell-side liquidity
+
+✅ Liquidity sweep detection
+
+✅ Sweep validation
+
+✅ Sweep distance tracking
+
+✅ Liquidity ranking
+
+
+Important improvement completed:
+
+Before:
+
+Engine selected:
+
+Sell-side:
+4029
+
+Distance:
+83 points
+
+
+After improvement:
+
+Engine selects:
+
+Sell-side:
+4098.64
+
+Distance:
+4.63
+
+
+Current liquidity selection is working.
+
+
+====================================================
+CONFLUENCE ENGINE
+====================================================
+
+Completed:
+
+✅ Multi timeframe scoring
+
+✅ HTF confirmation
+
+✅ Liquidity confirmation
+
+✅ BOS reasoning
+
+✅ CHoCH reasoning
+
+✅ FVG direction reasoning
+
+
+Current status:
+
+Working.
+
+Example output:
+
+ENTRY:
+Transition | CHoCH
+
+
+Correct reason:
+
+"5M bearish CHoCH detected"
+
+
+Liquidity:
+
+Sell-side liquidity swept
+
+
+====================================================
+CURRENT BMIE OUTPUT EXAMPLE
+====================================================
+
+Example:
+
+Symbol:
+XAUUSD
+
+
+Structure:
+
+BIAS:
+Transition | BOS
+
+STRUCTURE:
+Transition | BOS
+
+TREND:
+Bullish Continuation | BOS
+
+SETUP:
+Transition | BOS
+
+ENTRY:
+Transition | CHoCH
+
+
+Liquidity:
+
+Side:
+Sell-side
+
+Level:
+4098.64
+
+Distance:
+4.63
+
+
+Trade Decision:
+
+WAIT FOR PULLBACK
+
+
+====================================================
+CURRENT PROBLEM TO SOLVE NEXT
+====================================================
+
+START FROM HERE:
+
+1.
+Tune:
+
+smc/setup_quality.py
+
+
+Current problem:
+
+SETUP QUALITY:
+
+Score:
+20/100
+
+Grade:
+D
+
+
+This does not represent the setup correctly.
+
+
+Expected behaviour:
+
+Example:
+
+SETUP QUALITY
+
+Score:
+60-70/100
+
+Grade:
+B/C
+
+
+State:
+
+WAIT FOR PULLBACK
+
+
+Should consider:
+
+Positive:
+
++ 1H trend continuation
++ Liquidity sweep
++ Valid FVG
++ BOS confirmation
++ CHoCH confirmation
+
+
+Negative:
+
+- Daily transition
+- 4H transition
+- OB far
+- FVG filled
+
+
+Do not make the score unrealistic.
+
+
+====================================================
+NEXT DEVELOPMENT ROADMAP
+====================================================
+
+
+STEP 1:
+
+Fix setup_quality.py
+
+
+STEP 2:
+
+Improve order_block selection
+
+
+STEP 3:
+
+Create:
+
+smc/entry_model.py
+
+
+Entry confirmation should check:
+
+- Higher timeframe bias
+- Liquidity sweep
+- Order Block reaction
+- FVG reaction
+- 5M CHoCH
+- 5M BOS
+- Rejection candle
+
+
+Expected output:
+
+Before:
+
+WAIT FOR PULLBACK
+
+
+After:
+
+ENTRY CONFIRMED
+
+
+STEP 4:
+
+Improve risk_manager.py
+
+
+Include:
+
+- Position sizing
+- Risk percentage
+- Stop loss placement
+- Take profit
+- Risk reward calculation
+
+
+====================================================
+CODING RULES (IMPORTANT)
+====================================================
+
+
+Follow these rules:
+
+1.
+FULL FILE ONLY.
+
+Do not give patches or small snippets.
+
+
+2.
+If file is large:
+
+Send:
+
+PART 1/N
+
+PART 2/N
+
+PART 3/N
+
+
+Use markers:
+
+# ================= PART 1 END =================
+
+
+Paste instructions:
+
+Paste next part directly after END marker.
+
+Do not manually change indentation.
+
+
+3.
+Always maintain:
+
+Python indentation:
+4 spaces
+
+
+4.
+After code changes tell me to run:
+
+python -m py_compile filename.py
+
+then:
+
+python main.py
+
+
+5.
+Do not change working logic unnecessarily.
+
+Modify only required modules.
+
+
+====================================================
+CURRENT STOP POINT
+====================================================
+
+We stopped after:
+
+✅ Liquidity Engine improvements
+
+✅ Confluence Engine fixes
+
+
+NEXT FILE:
+
+smc/setup_quality.py
+
+
+Continue from here.
+
+
+
+
+Continue BMIE development from the checkpoint.
+First inspect the ZIP and confirm current code state.
