@@ -1,12 +1,3 @@
-"""
-models.py
-
-Core data models used throughout the Balaji Market Intelligence
-Engine (BMIE).
-
-Author: BMIE Project
-"""
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, List, Optional
@@ -18,10 +9,6 @@ from typing import Any, List, Optional
 
 @dataclass
 class SwingPoint:
-    """
-    Represents a market swing high or swing low.
-    """
-
     time: datetime
     price: float
     swing_type: str
@@ -34,40 +21,63 @@ class SwingPoint:
 
 
 # ==========================================================
+# Market Structure
+# ==========================================================
+
+@dataclass
+class MarketStructure:
+    """
+    Represents the current market structure.
+
+    This class will gradually become the single source
+    of truth for BMIE's SMC engine.
+    """
+
+    trend: str = "Sideways"
+
+    state: str = "Unknown"
+
+    last_bos: Optional[dict] = None
+
+    last_choch: Optional[dict] = None
+
+    major_high: Optional[SwingPoint] = None
+
+    major_low: Optional[SwingPoint] = None
+
+
+# ==========================================================
 # Analysis Result
 # ==========================================================
 
 @dataclass
 class AnalysisResult:
-    """
-    Stores the complete analysis result for a single timeframe.
-    """
-
-    # Raw OHLC Data
     df: Any
-
-    # Timeframe
     timeframe: str
 
-    # Swing Information
     swing_highs: List[SwingPoint] = field(default_factory=list)
     swing_lows: List[SwingPoint] = field(default_factory=list)
 
-    # Market Structure
+    # Legacy field (kept for compatibility)
     structure: str = ""
 
-    # Break Of Structure
+    # New Market Structure object
+    market_structure: Optional[MarketStructure] = None
+
     bos: Optional[dict] = None
 
-    # Future Features (kept for forward compatibility)
     choch: Optional[dict] = None
+
     liquidity: List[Any] = field(default_factory=list)
+
     order_blocks: List[Any] = field(default_factory=list)
+
     fair_value_gaps: List[Any] = field(default_factory=list)
+
     supply_zones: List[Any] = field(default_factory=list)
+
     demand_zones: List[Any] = field(default_factory=list)
 
-    # Confidence Score
     confidence: float = 0.0
 
 
@@ -77,24 +87,17 @@ class AnalysisResult:
 
 @dataclass
 class MarketAnalysis:
-    """
-    Holds the complete multi-timeframe analysis.
-
-    This class is not yet used by the application but will
-    become the standard return object in future versions.
-    """
-
     bias: Optional[AnalysisResult] = None
+
     structure: Optional[AnalysisResult] = None
+
     trend: Optional[AnalysisResult] = None
+
     setup: Optional[AnalysisResult] = None
+
     entry: Optional[AnalysisResult] = None
 
     def as_dict(self):
-        """
-        Return analyses as a dictionary.
-        """
-
         return {
             "bias": self.bias,
             "structure": self.structure,
