@@ -66,8 +66,9 @@ def analyze_market(
     """
 
 
+
     # ======================================================
-    # Fetch Data
+    # Fetch Market Data
     # ======================================================
 
     df = get_data(
@@ -75,6 +76,7 @@ def analyze_market(
         timeframe=timeframe,
         bars=bars,
     )
+
 
 
     # ======================================================
@@ -90,7 +92,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Swing Detection
+    # Detect Swings
     # ======================================================
 
     swing_highs, swing_lows = find_swings(df)
@@ -123,7 +125,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Market Structure
+    # Market Structure Engine
     # ======================================================
 
     structure_engine = MarketStructureEngine(
@@ -174,7 +176,6 @@ def analyze_market(
         context
     )
 
-
     bos = bos_engine.analyze()
 
 
@@ -189,7 +190,6 @@ def analyze_market(
     choch_engine = CHoCHEngine(
         context
     )
-
 
     choch = choch_engine.analyze()
 
@@ -221,7 +221,10 @@ def analyze_market(
     # ======================================================
 
     liquidity_engine = LiquidityEngine(
-        context
+
+        context.swing_highs,
+
+        context.swing_lows,
     )
 
 
@@ -256,7 +259,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Build Result
+    # Build Analysis Result
     # ======================================================
 
     result = AnalysisResult(
@@ -298,7 +301,7 @@ def analyze_market(
 
 
 
-    # Internal state
+    # Attach internal market state
 
     result.market_state = market_state
 
