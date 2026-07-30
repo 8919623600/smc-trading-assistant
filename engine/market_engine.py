@@ -8,6 +8,7 @@ Responsibilities
 - Run multi-timeframe market analysis
 - Store analysis results
 - Print concise trading report
+- Display SMC setup information
 
 Author: BMIE Project
 """
@@ -16,6 +17,7 @@ Author: BMIE Project
 from analyzer import analyze_market
 from config import TIMEFRAMES
 from models import MarketAnalysis
+
 
 
 class MarketEngine:
@@ -75,8 +77,11 @@ class MarketEngine:
     @staticmethod
     def format_event(event):
 
-        if event.direction is None:
+        if event is None:
+            return "None"
 
+
+        if event.direction is None:
             return "None"
 
 
@@ -85,18 +90,17 @@ class MarketEngine:
 
 
     # ======================================================
-    # Order Block Formatter
+    # Latest Order Block
     # ======================================================
 
     @staticmethod
-    def get_best_order_block(result):
+    def get_order_block(result):
 
         if not result.order_blocks:
 
             return None
 
 
-        # Latest order block
         return sorted(
             result.order_blocks,
             key=lambda x: x.created_at,
@@ -106,10 +110,31 @@ class MarketEngine:
 
 
     # ======================================================
-    # Short Report
+    # Latest FVG
+    # ======================================================
+
+    @staticmethod
+    def get_fvg(result):
+
+        if not result.fair_value_gaps:
+
+            return None
+
+
+        return sorted(
+            result.fair_value_gaps,
+            key=lambda x: x.created_at,
+            reverse=True
+        )[0]
+
+
+
+    # ======================================================
+    # Print Report
     # ======================================================
 
     def print_report(self):
+
 
         print("\n")
         print("=" * 60)
@@ -117,12 +142,12 @@ class MarketEngine:
         print("=" * 60)
 
 
+
         print(
             f"Symbol : {self.session.symbol}"
         )
 
 
-        # Current price from entry timeframe
 
         entry = self.analysis.entry
 
@@ -134,7 +159,9 @@ class MarketEngine:
             )
 
 
+
         print()
+
         print("-" * 60)
         print("MULTI TIMEFRAME STRUCTURE")
         print("-" * 60)
@@ -143,14 +170,17 @@ class MarketEngine:
 
         for name, result in self.analysis.as_dict().items():
 
+
             if result is None:
 
                 continue
 
 
+
             phase = "Unknown"
 
             event = "None"
+
 
 
             if hasattr(
@@ -167,46 +197,51 @@ class MarketEngine:
                 )
 
 
+
             print(
-                f"{name.upper():6} : "
+                f"{name.upper():10}: "
                 f"{phase} | {event}"
             )
 
 
 
         print()
+
         print("-" * 60)
         print("ACTIVE SETUP")
         print("-" * 60)
 
 
 
-        trend = "Unknown"
+        if entry and hasattr(
+            entry,
+            "market_state"
+        ):
 
-        if entry and entry.market_structure:
 
-            trend = (
-                entry.market_structure.trend
+            print(
+                f"Phase      : "
+                f"{entry.market_state.phase}"
             )
+
+
+            print(
+                f"Reason     : "
+                f"{entry.market_state.reason}"
+            )
+
 
 
         print(
-            f"Trend      : {trend}"
+            f"BOS        : "
+            f"{self.format_event(entry.bos)}"
         )
 
 
-        if entry:
-
-            print(
-                f"CHoCH      : "
-                f"{self.format_event(entry.choch)}"
-            )
-
-
-            print(
-                f"BOS        : "
-                f"{self.format_event(entry.bos)}"
-            )
+        print(
+            f"CHoCH      : "
+            f"{self.format_event(entry.choch)}"
+        )
 
 
 
@@ -216,27 +251,32 @@ class MarketEngine:
 
         if entry:
 
-            ob = self.get_best_order_block(
+
+            ob = self.get_order_block(
                 entry
             )
 
 
-            if ob:
+            print()
 
-                print()
+
+            if ob:
 
                 print(
                     "Order Block"
                 )
 
+
                 print(
                     f"Type       : {ob.direction}"
                 )
+
 
                 print(
                     f"Zone       : "
                     f"{ob.low:.2f} - {ob.high:.2f}"
                 )
+
 
                 print(
                     f"Time       : {ob.created_at}"
@@ -246,53 +286,131 @@ class MarketEngine:
             else:
 
                 print(
-                    "Order Block: None"
+                    "Order Block : None"
                 )
 
 
 
-        print()
-        print("-" * 60)
-        print("TRADE BIAS")
-        print("-" * 60)
+        # ==================================================
+        # FVG
+        # ==================================================
+
+        if entry:
 
 
+            fvg = self.get_fvg(
+                entry
+            )
 
-        if entry and entry.market_state:
 
-            if (
-                entry.market_state.phase
-                == "Bullish Continuation"
-            ):
+            print()
+
+
+            if fvg:
 
                 print(
-                    "Direction  : BUY"
+                    "FVG"
                 )
 
 
-            elif (
-                entry.market_state.phase
-                == "Bearish Continuation"
-            ):
+                print(
+                    f"Type       : {fvg.direction}"
+                )
+
 
                 print(
-                    "Direction  : SELL"
+                    f"Zone       : "
+                    f"{fvg.low:.2f} - {fvg.high:.2f}"
+                )
+
+
+                print(
+                    f"Filled     : {fvg.filled}"
                 )
 
 
             else:
 
                 print(
-                    "Direction  : WAIT"
+                    "FVG        : None"
                 )
 
 
+
+        # ==================================================
+        # Trade Bias
+        # ==================================================
+
+        print()
+
+        print("-" * 60)
+        print("TRADE BIAS")
+        print("-" * 60)
+
+
+
+        direction = "WAIT"
+
+        reason = "Insufficient confirmation"
+
+
+
+        if entry and hasattr(
+            entry,
+            "market_state"
+        ):
+
+
+            phase = entry.market_state.phase
+
+
+
+            if phase == "Bullish Continuation":
+
+                direction = "BUY"
+
+                reason = (
+                    "Bullish structure continuation"
+                )
+
+
+            elif phase == "Bearish Continuation":
+
+                direction = "SELL"
+
+                reason = (
+                    "Bearish structure continuation"
+                )
+
+
+
+            else:
+
+                direction = "WAIT"
+
+                reason = (
+                    "Market transition"
+                )
+
+
+
         print(
-            "Confidence : Pending"
+            f"Direction : {direction}"
+        )
+
+
+        print(
+            f"Reason    : {reason}"
+        )
+
+
+        print(
+            "Confidence: Pending"
         )
 
 
         print("=" * 60)
+
 
         print(
             "BMIE analysis completed."
