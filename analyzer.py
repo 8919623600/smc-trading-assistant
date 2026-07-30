@@ -14,9 +14,11 @@ Responsibilities
 - Resolve market state
 - Detect Liquidity
 - Detect Order Blocks
+- Detect Fair Value Gaps
 
 Author: BMIE Project
 """
+
 
 from config import DEFAULT_BARS
 
@@ -25,17 +27,31 @@ from core.analysis_context import AnalysisContext
 
 from fetch_data import get_data
 
+
 from smc.swings import find_swings
 from smc.major_swings import find_major_swings
 from smc.structure import analyze_structure
+
 from smc.market_structure import MarketStructureEngine
+
 from smc.bos import BOSEngine
+
 from smc.choch import CHoCHEngine
+
 from smc.state_manager import MarketStateManager
+
 from smc.liquidity import LiquidityEngine
+
 from smc.order_blocks import OrderBlockEngine
 
-from models import AnalysisResult, MarketStructure
+from smc.fvg import FVGEngine
+
+
+from models import (
+    AnalysisResult,
+    MarketStructure,
+)
+
 
 
 def analyze_market(
@@ -59,12 +75,17 @@ def analyze_market(
     )
 
 
+
     # ======================================================
     # Market Snapshot
     # ======================================================
 
-    current_price = float(df.iloc[-1]["close"])
+    current_price = float(
+        df.iloc[-1]["close"]
+    )
+
     current_time = df.index[-1]
+
 
 
     # ======================================================
@@ -74,12 +95,19 @@ def analyze_market(
     swing_highs, swing_lows = find_swings(df)
 
 
+
     # ======================================================
     # Major Swings
     # ======================================================
 
-    major_highs = find_major_swings(swing_highs)
-    major_lows = find_major_swings(swing_lows)
+    major_highs = find_major_swings(
+        swing_highs
+    )
+
+    major_lows = find_major_swings(
+        swing_lows
+    )
+
 
 
     # ======================================================
@@ -92,6 +120,7 @@ def analyze_market(
     )
 
 
+
     # ======================================================
     # Market Structure Engine
     # ======================================================
@@ -101,40 +130,56 @@ def analyze_market(
         major_lows,
     )
 
+
     state = structure_engine.analyze()
 
 
+
     market_structure = MarketStructure(
+
         trend=state.trend,
+
         state=state.state,
+
         major_high=state.last_high,
+
         major_low=state.last_low,
     )
 
 
+
     # ======================================================
-    # Shared Analysis Context
+    # Analysis Context
     # ======================================================
 
     context = AnalysisContext(
+
         df=df,
+
         swing_highs=major_highs,
+
         swing_lows=major_lows,
+
         market_structure=market_structure,
     )
+
 
 
     # ======================================================
     # BOS
     # ======================================================
 
-    bos_engine = BOSEngine(context)
+    bos_engine = BOSEngine(
+        context
+    )
+
 
     bos = bos_engine.analyze()
 
+
     market_structure.last_bos = bos
 
-    # Update shared context
+
     context.bos = bos
 
 
@@ -143,26 +188,34 @@ def analyze_market(
     # CHoCH
     # ======================================================
 
-    choch_engine = CHoCHEngine(context)
+    choch_engine = CHoCHEngine(
+        context
+    )
+
 
     choch = choch_engine.analyze()
 
+
     market_structure.last_choch = choch
 
-    # Update shared context
+
     context.choch = choch
 
 
 
     # ======================================================
-    # Market State Interpretation
+    # Market State
     # ======================================================
 
     state_manager = MarketStateManager(
+
         market_structure,
+
         bos,
+
         choch,
     )
+
 
     market_state = state_manager.analyze()
 
@@ -173,9 +226,12 @@ def analyze_market(
     # ======================================================
 
     liquidity_engine = LiquidityEngine(
+
         context.swing_highs,
+
         context.swing_lows,
     )
+
 
     liquidity = liquidity_engine.analyze()
 
@@ -189,7 +245,21 @@ def analyze_market(
         context
     )
 
+
     order_blocks = order_block_engine.analyze()
+
+
+
+    # ======================================================
+    # Fair Value Gap
+    # ======================================================
+
+    fvg_engine = FVGEngine(
+        context
+    )
+
+
+    fair_value_gaps = fvg_engine.analyze()
 
 
 
@@ -207,28 +277,39 @@ def analyze_market(
 
         current_time=current_time,
 
+
         swing_highs=major_highs,
 
         swing_lows=major_lows,
 
+
         structure=structure,
 
+
         market_structure=market_structure,
+
 
         bos=bos,
 
         choch=choch,
 
+
         liquidity=liquidity,
 
+
         order_blocks=order_blocks,
+
+
+        fair_value_gaps=fair_value_gaps,
+
     )
 
 
-    # Dynamic attachment
-    # (No models.py change yet)
+
+    # Dynamic state attachment
 
     result.market_state = market_state
+
 
 
     return result
