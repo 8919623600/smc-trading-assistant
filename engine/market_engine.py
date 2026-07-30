@@ -10,6 +10,7 @@ Responsibilities
 - Print formatted market report
 """
 
+
 from analyzer import analyze_market
 from config import TIMEFRAMES
 from models import MarketAnalysis
@@ -23,6 +24,7 @@ class MarketEngine:
     def __init__(self, session):
         self.session = session
         self.analysis = MarketAnalysis()
+
 
     # ======================================================
     # Run Analysis
@@ -42,9 +44,14 @@ class MarketEngine:
                 timeframe,
             )
 
-            setattr(self.analysis, name, result)
+            setattr(
+                self.analysis,
+                name,
+                result
+            )
 
         print("\nAnalysis Completed Successfully.")
+
 
     # ======================================================
     # Event Formatter
@@ -62,6 +69,23 @@ class MarketEngine:
             f"Time: {event.time}"
         )
 
+
+    # ======================================================
+    # Market State Formatter
+    # ======================================================
+
+    @staticmethod
+    def format_market_state(result):
+
+        if not hasattr(result, "market_state"):
+
+            return None
+
+        state = result.market_state
+
+        return state
+
+
     # ======================================================
     # Print Report
     # ======================================================
@@ -75,29 +99,83 @@ class MarketEngine:
             if result is None:
                 continue
 
+
             print(f"\n{section.upper()}")
             print("=" * 60)
 
-            print(f"Timeframe      : {result.timeframe}")
-            print(f"Current Price  : {result.current_price:.2f}")
-            print(f"Current Time   : {result.current_time}")
+
+            print(
+                f"Timeframe      : {result.timeframe}"
+            )
+
+            print(
+                f"Current Price  : {result.current_price:.2f}"
+            )
+
+            print(
+                f"Current Time   : {result.current_time}"
+            )
+
 
             print()
 
-            print(f"Structure      : {result.structure}")
+            print(
+                f"Structure      : {result.structure}"
+            )
+
 
             if result.market_structure:
 
-                print(f"Trend          : {result.market_structure.trend}")
-                print(f"State          : {result.market_structure.state}")
+                print(
+                    f"Trend          : {result.market_structure.trend}"
+                )
+
+                print(
+                    f"State          : {result.market_structure.state}"
+                )
+
+
+            # ==================================================
+            # Market State Manager Output
+            # ==================================================
+
+            market_state = self.format_market_state(
+                result
+            )
+
+            if market_state:
+
+                print()
+
+                print(
+                    f"Market Phase   : {market_state.phase}"
+                )
+
+                print(
+                    f"Active Event   : {market_state.active_event}"
+                )
+
+                print(
+                    f"Reason         : {market_state.reason}"
+                )
+
 
             print()
 
-            print(f"BOS            : {self.format_event(result.bos)}")
-            print(f"CHoCH          : {self.format_event(result.choch)}")
+            print(
+                f"BOS            : {self.format_event(result.bos)}"
+            )
+
+            print(
+                f"CHoCH          : {self.format_event(result.choch)}"
+            )
+
 
             print()
 
-            print(f"Confidence     : {result.confidence:.2f}%")
+            print(
+                f"Confidence     : {result.confidence:.2f}%"
+            )
+
 
         print("\nBMIE analysis completed.")
