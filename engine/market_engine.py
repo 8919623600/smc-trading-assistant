@@ -8,7 +8,7 @@ Responsibilities
 - Run multi-timeframe market analysis
 - Store analysis results
 - Print concise trading report
-- Display SMC setup information
+- Display SMC trade decision
 
 Author: BMIE Project
 """
@@ -24,7 +24,6 @@ class MarketEngine:
     """
     Runs BMIE analysis pipeline.
     """
-
 
     def __init__(self, session):
 
@@ -137,19 +136,18 @@ class MarketEngine:
 
 
         print("\n")
+
         print("=" * 60)
         print("BMIE MARKET INTELLIGENCE REPORT")
         print("=" * 60)
 
 
+        entry = self.analysis.entry
+
 
         print(
-            f"Symbol : {self.session.symbol}"
+            f"Symbol : {self.session.symbol.upper()}"
         )
-
-
-
-        entry = self.analysis.entry
 
 
         if entry:
@@ -172,9 +170,7 @@ class MarketEngine:
 
 
             if result is None:
-
                 continue
-
 
 
             phase = "Unknown"
@@ -182,19 +178,14 @@ class MarketEngine:
             event = "None"
 
 
-
             if hasattr(
                 result,
                 "market_state"
             ):
 
-                phase = (
-                    result.market_state.phase
-                )
+                phase = result.market_state.phase
 
-                event = (
-                    result.market_state.active_event
-                )
+                event = result.market_state.active_event
 
 
 
@@ -202,6 +193,12 @@ class MarketEngine:
                 f"{name.upper():10}: "
                 f"{phase} | {event}"
             )
+
+
+
+        if entry is None:
+
+            return
 
 
 
@@ -213,7 +210,7 @@ class MarketEngine:
 
 
 
-        if entry and hasattr(
+        if hasattr(
             entry,
             "market_state"
         ):
@@ -229,7 +226,6 @@ class MarketEngine:
                 f"Reason     : "
                 f"{entry.market_state.reason}"
             )
-
 
 
         print(
@@ -249,45 +245,34 @@ class MarketEngine:
         # Order Block
         # ==================================================
 
-        if entry:
+        ob = self.get_order_block(entry)
 
 
-            ob = self.get_order_block(
-                entry
+        print()
+
+
+        if ob:
+
+            print("Order Block")
+
+            print(
+                f"Type       : {ob.direction}"
             )
 
+            print(
+                f"Zone       : "
+                f"{ob.low:.2f} - {ob.high:.2f}"
+            )
 
-            print()
+            print(
+                f"Time       : {ob.created_at}"
+            )
 
+        else:
 
-            if ob:
-
-                print(
-                    "Order Block"
-                )
-
-
-                print(
-                    f"Type       : {ob.direction}"
-                )
-
-
-                print(
-                    f"Zone       : "
-                    f"{ob.low:.2f} - {ob.high:.2f}"
-                )
-
-
-                print(
-                    f"Time       : {ob.created_at}"
-                )
-
-
-            else:
-
-                print(
-                    "Order Block : None"
-                )
+            print(
+                "Order Block : None"
+            )
 
 
 
@@ -295,122 +280,98 @@ class MarketEngine:
         # FVG
         # ==================================================
 
-        if entry:
+        fvg = self.get_fvg(entry)
 
 
-            fvg = self.get_fvg(
-                entry
+        print()
+
+
+        if fvg:
+
+            print("FVG")
+
+            print(
+                f"Type       : {fvg.direction}"
+            )
+
+            print(
+                f"Zone       : "
+                f"{fvg.low:.2f} - {fvg.high:.2f}"
+            )
+
+            print(
+                f"Filled     : {fvg.filled}"
+            )
+
+        else:
+
+            print(
+                "FVG        : None"
+            )
+
+
+
+        # ==================================================
+        # Trade Decision
+        # ==================================================
+
+        print()
+
+        print("-" * 60)
+        print("TRADE DECISION")
+        print("-" * 60)
+
+
+
+        decision = entry.trade_decision
+
+
+        if decision:
+
+
+            print(
+                f"Signal     : {decision.signal}"
+            )
+
+
+            print(
+                f"Confidence : "
+                f"{decision.confidence:.2f}%"
             )
 
 
             print()
 
 
-            if fvg:
-
-                print(
-                    "FVG"
-                )
+            print("Reasons:")
 
 
-                print(
-                    f"Type       : {fvg.direction}"
-                )
+            if decision.reasons:
 
 
-                print(
-                    f"Zone       : "
-                    f"{fvg.low:.2f} - {fvg.high:.2f}"
-                )
+                for reason in decision.reasons:
 
-
-                print(
-                    f"Filled     : {fvg.filled}"
-                )
+                    print(
+                        f"- {reason}"
+                    )
 
 
             else:
 
                 print(
-                    "FVG        : None"
+                    "- No confirmation"
                 )
 
 
+        else:
 
-        # ==================================================
-        # Trade Bias
-        # ==================================================
+            print(
+                "No decision generated"
+            )
 
-        print()
-
-        print("-" * 60)
-        print("TRADE BIAS")
-        print("-" * 60)
-
-
-
-        direction = "WAIT"
-
-        reason = "Insufficient confirmation"
-
-
-
-        if entry and hasattr(
-            entry,
-            "market_state"
-        ):
-
-
-            phase = entry.market_state.phase
-
-
-
-            if phase == "Bullish Continuation":
-
-                direction = "BUY"
-
-                reason = (
-                    "Bullish structure continuation"
-                )
-
-
-            elif phase == "Bearish Continuation":
-
-                direction = "SELL"
-
-                reason = (
-                    "Bearish structure continuation"
-                )
-
-
-
-            else:
-
-                direction = "WAIT"
-
-                reason = (
-                    "Market transition"
-                )
-
-
-
-        print(
-            f"Direction : {direction}"
-        )
-
-
-        print(
-            f"Reason    : {reason}"
-        )
-
-
-        print(
-            "Confidence: Pending"
-        )
 
 
         print("=" * 60)
-
 
         print(
             "BMIE analysis completed."
