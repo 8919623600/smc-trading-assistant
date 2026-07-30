@@ -1,5 +1,5 @@
 """
-risk_manager.py
+risk/risk_manager.py
 
 BMIE Risk Management Engine.
 
@@ -9,61 +9,40 @@ Responsibilities
 - Calculate stop loss
 - Calculate target
 - Calculate risk reward
-- Position sizing based on account risk
+- Calculate position size
+- Apply account risk rules
 
 Author: BMIE Project
 """
 
 
-from dataclasses import dataclass
 from typing import Optional, Any
 
 
-
-# ==========================================================
-# Risk Model
-# ==========================================================
-
-@dataclass
-class RiskDecision:
-    """
-    Stores trade risk parameters.
-    """
-
-    entry_low: Optional[float] = None
-
-    entry_high: Optional[float] = None
-
-    stop_loss: Optional[float] = None
-
-    target: Optional[float] = None
-
-    risk_reward: float = 0.0
-
-    risk_amount: float = 0.0
-
-    position_size: float = 0.0
+from models import RiskDecision
 
 
-
-# ==========================================================
-# Risk Manager
-# ==========================================================
 
 class RiskManager:
     """
-    Calculates trade risk parameters from SMC zones.
+    Calculates trade risk parameters
+    from SMC trade setup.
     """
+
+
 
     def __init__(
         self,
         account_balance: float,
         risk_percent: float = 1.0,
+        minimum_rr: float = 2.0,
     ):
 
         self.account_balance = account_balance
 
         self.risk_percent = risk_percent
+
+        self.minimum_rr = minimum_rr
 
 
 
@@ -74,11 +53,38 @@ class RiskManager:
     def calculate_risk_amount(self):
 
         return (
+
             self.account_balance
+
             *
             self.risk_percent
+
             /
             100
+
+        )
+
+
+
+    # ======================================================
+    # Position Size
+    # ======================================================
+
+    def calculate_position_size(
+        self,
+        risk_amount,
+        risk_points,
+    ):
+
+        if risk_points <= 0:
+
+            return 0.0
+
+
+        return (
+            risk_amount
+            /
+            risk_points
         )
 
 
@@ -97,16 +103,41 @@ class RiskManager:
         result = RiskDecision()
 
 
+
+        # ==================================================
+        # No Trade
+        # ==================================================
+
+        if not trade_decision:
+
+            return result
+
+
+
+        if trade_decision.signal == "WAIT":
+
+            return result
+
+
+
         if not order_blocks:
 
             return result
 
 
 
+        # ==================================================
+        # Latest Order Block
+        # ==================================================
+
         latest_ob = sorted(
+
             order_blocks,
+
             key=lambda x: x.created_at,
+
             reverse=True
+
         )[0]
 
 
@@ -127,51 +158,80 @@ class RiskManager:
 
         if latest_ob.direction == "Bullish":
 
+
             result.stop_loss = (
+
                 latest_ob.low - 5
+
             )
+
 
 
         elif latest_ob.direction == "Bearish":
 
+
             result.stop_loss = (
+
                 latest_ob.high + 5
+
             )
 
 
 
+        else:
+
+            return result
+
+
+
         # ==================================================
-        # Target
+        # Target 1:3 RR
         # ==================================================
 
         if latest_ob.direction == "Bullish":
 
+
             risk = (
+
                 result.entry_low
+
                 -
                 result.stop_loss
+
             )
 
+
             result.target = (
+
                 result.entry_high
+
                 +
                 (risk * 3)
+
             )
 
 
 
         elif latest_ob.direction == "Bearish":
 
+
             risk = (
+
                 result.stop_loss
+
                 -
                 result.entry_high
+
             )
 
+
             result.target = (
+
                 result.entry_low
+
                 -
                 (risk * 3)
+
             )
 
 
@@ -184,23 +244,32 @@ class RiskManager:
 
 
             risk = abs(
+
                 result.entry_low
+
                 -
                 result.stop_loss
+
             )
 
 
             reward = abs(
+
                 result.target
+
                 -
                 result.entry_low
+
             )
 
 
             if risk > 0:
 
+
                 result.risk_reward = (
+
                     reward / risk
+
                 )
 
 
@@ -210,7 +279,37 @@ class RiskManager:
         # ==================================================
 
         result.risk_amount = (
+
             self.calculate_risk_amount()
+
+        )
+
+
+
+        # ==================================================
+        # Position Size
+        # ==================================================
+
+        risk_points = abs(
+
+            result.entry_low
+
+            -
+            result.stop_loss
+
+        )
+
+
+        result.position_size = (
+
+            self.calculate_position_size(
+
+                result.risk_amount,
+
+                risk_points
+
+            )
+
         )
 
 

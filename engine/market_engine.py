@@ -8,8 +8,8 @@ Responsibilities
 - Run multi-timeframe analysis
 - Build MTF context
 - Generate trade decision
+- Generate risk plan
 - Print concise market report
-- Display risk plan
 
 Author: BMIE Project
 """
@@ -17,7 +17,11 @@ Author: BMIE Project
 
 from analyzer import analyze_market
 
-from config import TIMEFRAMES
+from config import (
+    TIMEFRAMES,
+    RISK_PER_TRADE,
+    MINIMUM_RISK_REWARD,
+)
 
 from models import (
     MarketAnalysis,
@@ -25,6 +29,8 @@ from models import (
 )
 
 from smc.confluence import ConfluenceEngine
+
+from smc.risk_manager import RiskManager
 
 
 
@@ -40,13 +46,14 @@ class MarketEngine:
 
 
     # ======================================================
-    # Run Analysis
+    # Run
     # ======================================================
 
     def run(self):
 
         print("\nRunning Multi-Timeframe Analysis...")
         print("-" * 60)
+
 
 
         for name, timeframe in TIMEFRAMES.items():
@@ -58,15 +65,22 @@ class MarketEngine:
 
 
             result = analyze_market(
+
                 self.session,
+
                 timeframe,
+
             )
 
 
             setattr(
+
                 self.analysis,
+
                 name,
+
                 result
+
             )
 
 
@@ -76,8 +90,9 @@ class MarketEngine:
         )
 
 
+
         # ==================================================
-        # Multi Timeframe Confluence
+        # Multi Timeframe Context
         # ==================================================
 
         context = MultiTimeframeContext(
@@ -91,30 +106,73 @@ class MarketEngine:
             setup=self.analysis.setup,
 
             entry=self.analysis.entry,
+
         )
 
 
+
+        # ==================================================
+        # Confluence
+        # ==================================================
 
         confluence_engine = ConfluenceEngine(
+
             context
+
         )
 
 
-        decision = confluence_engine.analyze()
+        trade_decision = confluence_engine.analyze()
 
 
 
-        # Attach decision to entry timeframe
+        entry = self.analysis.entry
 
-        if self.analysis.entry:
 
-            self.analysis.entry.trade_decision = decision
+
+        if entry:
+
+
+            entry.trade_decision = trade_decision
+
+
+
+            # ==============================================
+            # Risk Management
+            # ==============================================
+
+            risk_manager = RiskManager(
+
+                account_balance=self.session.balance,
+
+                risk_percent=RISK_PER_TRADE,
+
+                minimum_rr=MINIMUM_RISK_REWARD,
+
+            )
+
+
+
+            risk_decision = risk_manager.analyze(
+
+                trade_decision,
+
+                entry.order_blocks,
+
+            )
+
+
+
+            entry.risk_decision = risk_decision
+
+
 
 
 
     # ======================================================
     # Helpers
     # ======================================================
+
 
     @staticmethod
     def format_event(event):
@@ -207,7 +265,9 @@ class MarketEngine:
 
 
         print(
+
             f"Symbol : {self.session.symbol}"
+
         )
 
 
@@ -215,12 +275,15 @@ class MarketEngine:
         if entry:
 
             print(
+
                 f"Price  : {entry.current_price:.2f}"
+
             )
 
 
 
         print()
+
 
 
         print("-" * 60)
@@ -272,6 +335,7 @@ class MarketEngine:
 
 
         print()
+
 
 
         print("-" * 60)
@@ -437,7 +501,6 @@ class MarketEngine:
             )
 
 
-
             print()
 
 
@@ -485,45 +548,36 @@ class MarketEngine:
 
 
 
-        if risk:
+        if risk and risk.stop_loss:
 
 
-            if risk.entry_low:
+            print(
+
+                f"Entry Zone : "
+
+                f"{risk.entry_low:.2f} - "
+
+                f"{risk.entry_high:.2f}"
+
+            )
 
 
-                print(
+            print(
 
-                    f"Entry Zone : "
+                f"Stop Loss  : "
 
-                    f"{risk.entry_low:.2f} - "
+                f"{risk.stop_loss:.2f}"
 
-                    f"{risk.entry_high:.2f}"
-
-                )
+            )
 
 
-            if risk.stop_loss:
+            print(
 
+                f"Target     : "
 
-                print(
+                f"{risk.target:.2f}"
 
-                    f"Stop Loss  : "
-
-                    f"{risk.stop_loss:.2f}"
-
-                )
-
-
-            if risk.target:
-
-
-                print(
-
-                    f"Target     : "
-
-                    f"{risk.target:.2f}"
-
-                )
+            )
 
 
             print(
@@ -544,6 +598,16 @@ class MarketEngine:
             )
 
 
+            print(
+
+                f"Position   : "
+
+                f"{risk.position_size:.2f}"
+
+            )
+
+
+
         else:
 
 
@@ -559,5 +623,7 @@ class MarketEngine:
 
 
         print(
+
             "BMIE analysis completed."
+
         )
