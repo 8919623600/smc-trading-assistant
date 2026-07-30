@@ -176,10 +176,17 @@ def analyze_market(
         context
     )
 
+
     bos = bos_engine.analyze()
 
 
     market_structure.last_bos = bos
+
+
+    # IMPORTANT:
+    # Make BOS available for OrderBlockEngine
+
+    context.bos = bos
 
 
 
@@ -191,10 +198,17 @@ def analyze_market(
         context
     )
 
+
     choch = choch_engine.analyze()
 
 
     market_structure.last_choch = choch
+
+
+    # IMPORTANT:
+    # Make CHoCH available for future engines
+
+    context.choch = choch
 
 
 
