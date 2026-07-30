@@ -24,6 +24,10 @@ from models import (
 
 
 
+# ==========================================================
+# Confluence Engine
+# ==========================================================
+
 class ConfluenceEngine:
     """
     Multi timeframe SMC confluence engine.
@@ -36,7 +40,10 @@ class ConfluenceEngine:
         context: MultiTimeframeContext,
     ):
 
+
         self.context = context
+
+
 
 
 
@@ -44,29 +51,46 @@ class ConfluenceEngine:
     # Fresh FVG Check
     # ======================================================
 
-    def get_fresh_fvg(self):
+    def get_fvg_status(self):
+
+
+        fresh = []
+
+        filled = []
+
 
 
         if not self.context.entry:
 
-            return []
+            return fresh, filled
+
 
 
         if not self.context.entry.fair_value_gaps:
 
-            return []
+            return fresh, filled
 
 
 
-        return [
+        for fvg in self.context.entry.fair_value_gaps:
 
-            fvg
 
-            for fvg in self.context.entry.fair_value_gaps
+            if fvg.filled:
 
-            if not fvg.filled
 
-        ]
+                filled.append(fvg)
+
+
+            else:
+
+
+                fresh.append(fvg)
+
+
+
+        return fresh, filled
+
+
 
 
 
@@ -91,7 +115,9 @@ class ConfluenceEngine:
 
 
             fvg_direction = str(
+
                 fvg.direction
+
             ).lower()
 
 
@@ -125,6 +151,8 @@ class ConfluenceEngine:
 
 
         return valid, ignored
+
+
 
 
 
@@ -188,15 +216,23 @@ class ConfluenceEngine:
                 zone.swept,
 
                 getattr(
+
                     zone,
+
                     "sweep_valid",
+
                     None
+
                 ),
 
                 getattr(
+
                     zone,
+
                     "sweep_distance",
+
                     None
+
                 )
 
             )
@@ -248,6 +284,14 @@ class ConfluenceEngine:
 
                         invalid_sweep = True
 
+
+
+# ================= PART 1 END =================
+
+# ================= PART 2 START =================
+
+
+                    # Continue bearish validation
 
 
             # ==============================================
@@ -322,6 +366,10 @@ class ConfluenceEngine:
 
         }
 
+
+
+
+
     # ======================================================
     # Determine Market Direction
     # ======================================================
@@ -349,6 +397,8 @@ class ConfluenceEngine:
 
 
 
+
+
     # ======================================================
     # Analyze
     # ======================================================
@@ -359,11 +409,15 @@ class ConfluenceEngine:
         decision = TradeDecision()
 
 
+
         score = 0
+
 
         bullish_score = 0
 
+
         bearish_score = 0
+
 
 
         reasons = []
@@ -384,6 +438,7 @@ class ConfluenceEngine:
             )
 
 
+
             if structure:
 
 
@@ -392,7 +447,9 @@ class ConfluenceEngine:
 
                     score += 25
 
+
                     bullish_score += 25
+
 
 
                     reasons.append(
@@ -408,7 +465,9 @@ class ConfluenceEngine:
 
                     score += 25
 
+
                     bearish_score += 25
+
 
 
                     reasons.append(
@@ -430,6 +489,8 @@ class ConfluenceEngine:
 
 
 
+
+
         # ==================================================
         # 4H Structure
         # ==================================================
@@ -444,6 +505,7 @@ class ConfluenceEngine:
             )
 
 
+
             if structure:
 
 
@@ -452,7 +514,9 @@ class ConfluenceEngine:
 
                     score += 20
 
+
                     bullish_score += 20
+
 
 
                     reasons.append(
@@ -468,7 +532,9 @@ class ConfluenceEngine:
 
                     score += 20
 
+
                     bearish_score += 20
+
 
 
                     reasons.append(
@@ -490,6 +556,11 @@ class ConfluenceEngine:
 
 
 
+# ================= PART 2 END =================
+
+# ================= PART 3 START =================
+
+
         # ==================================================
         # 1H Trend
         # ==================================================
@@ -504,6 +575,7 @@ class ConfluenceEngine:
             )
 
 
+
             if structure:
 
 
@@ -512,7 +584,9 @@ class ConfluenceEngine:
 
                     score += 15
 
+
                     bullish_score += 15
+
 
 
                     reasons.append(
@@ -528,7 +602,9 @@ class ConfluenceEngine:
 
                     score += 15
 
+
                     bearish_score += 15
+
 
 
                     reasons.append(
@@ -545,11 +621,14 @@ class ConfluenceEngine:
                     score += 10
 
 
+
                     reasons.append(
 
                         "Trend continuation confirmed"
 
                     )
+
+
 
 
 
@@ -573,6 +652,7 @@ class ConfluenceEngine:
                     bullish_score += 15
 
 
+
                     reasons.append(
 
                         "15M bullish BOS confirmed"
@@ -587,6 +667,7 @@ class ConfluenceEngine:
                     bearish_score += 15
 
 
+
                     reasons.append(
 
                         "15M bearish BOS confirmed"
@@ -595,11 +676,14 @@ class ConfluenceEngine:
 
 
 
+
+
         # ==================================================
-        # 5M Entry BOS
+        # 5M Entry BOS / CHoCH
         # ==================================================
 
         if self.context.entry:
+
 
 
             if self.context.entry.bos.confirmed:
@@ -613,6 +697,7 @@ class ConfluenceEngine:
 
 
                     bullish_score += 10
+
 
 
                     reasons.append(
@@ -629,11 +714,53 @@ class ConfluenceEngine:
                     bearish_score += 10
 
 
+
                     reasons.append(
 
                         "5M bearish BOS confirmation"
 
                     )
+
+
+
+            # ----------------------------------------------
+            # CHoCH detection
+            # ----------------------------------------------
+
+            if self.context.entry.choch:
+
+
+                if self.context.entry.choch.confirmed:
+
+
+
+                    if self.context.entry.choch.direction == "Bullish":
+
+
+                        bullish_score += 5
+
+
+                        reasons.append(
+
+                            "5M bullish CHoCH detected"
+
+                        )
+
+
+
+                    elif self.context.entry.choch.direction == "Bearish":
+
+
+                        bearish_score += 5
+
+
+                        reasons.append(
+
+                            "5M bearish CHoCH detected"
+
+                        )
+
+
 
 
 
@@ -658,6 +785,8 @@ class ConfluenceEngine:
 
 
 
+
+
         # ==================================================
         # Determine Direction
         # ==================================================
@@ -672,11 +801,13 @@ class ConfluenceEngine:
 
 
 
+
+
         # ==================================================
         # FVG Validation
         # ==================================================
 
-        fresh_fvg = self.get_fresh_fvg()
+        fresh_fvg, filled_fvg = self.get_fvg_status()
 
 
 
@@ -696,6 +827,7 @@ class ConfluenceEngine:
             )
 
 
+
             if valid_fvg:
 
 
@@ -704,9 +836,21 @@ class ConfluenceEngine:
 
                 reasons.append(
 
-                    "Bullish FVG confirmation"
+                    "Fresh Bullish FVG confirmation"
 
                 )
+
+
+
+            elif filled_fvg:
+
+
+                reasons.append(
+
+                    "FVG already filled"
+
+                )
+
 
 
             elif ignored_fvg:
@@ -736,6 +880,7 @@ class ConfluenceEngine:
             )
 
 
+
             if valid_fvg:
 
 
@@ -744,9 +889,21 @@ class ConfluenceEngine:
 
                 reasons.append(
 
-                    "Bearish FVG confirmation"
+                    "Fresh Bearish FVG confirmation"
 
                 )
+
+
+
+            elif filled_fvg:
+
+
+                reasons.append(
+
+                    "FVG already filled"
+
+                )
+
 
 
             elif ignored_fvg:
@@ -758,6 +915,11 @@ class ConfluenceEngine:
 
                 )
 
+
+
+# ================= PART 3 END =================
+
+# ================= PART 4 START =================
 
 
         # ==================================================
@@ -794,6 +956,10 @@ class ConfluenceEngine:
 
             )
 
+
+
+
+
         # ==================================================
         # Confidence Calculation
         # ==================================================
@@ -809,6 +975,8 @@ class ConfluenceEngine:
 
 
         decision.confidence = score
+
+
 
 
 
@@ -879,6 +1047,7 @@ class ConfluenceEngine:
 
 
 
+
         # ==================================================
         # Pullback Validation
         # ==================================================
@@ -944,6 +1113,8 @@ class ConfluenceEngine:
 
 
 
+
+
         # ==================================================
         # Remove Duplicate Reasons
         # ==================================================
@@ -961,3 +1132,7 @@ class ConfluenceEngine:
 
 
         return decision
+
+
+
+# ================= PART 4 END =================
