@@ -1,85 +1,103 @@
 """
 engine/market_engine.py
 
-Market Engine for the Balaji Market Intelligence Engine (BMIE).
+BMIE Market Engine
 
 Responsibilities
 ----------------
-- Download market data
-- Execute SMC analysis
-- Store results
-- Print analysis summary
-
-Author: BMIE Project
+- Run multi-timeframe market analysis
+- Store analysis results
+- Print formatted market report
 """
 
 from analyzer import analyze_market
+from config import TIMEFRAMES
 from models import MarketAnalysis
 
 
 class MarketEngine:
     """
-    Coordinates the complete market analysis workflow.
+    Runs the complete BMIE analysis pipeline.
     """
 
     def __init__(self, session):
-        """
-        Initialize the Market Engine.
-        """
-
         self.session = session
-        self.market = MarketAnalysis()
+        self.analysis = MarketAnalysis()
 
     # ======================================================
     # Run Analysis
     # ======================================================
 
     def run(self):
-        """
-        Execute analysis on all configured timeframes.
-        """
 
         print("\nRunning Multi-Timeframe Analysis...")
         print("-" * 60)
 
-        for name, timeframe in self.session.timeframes.items():
+        for name, timeframe in TIMEFRAMES.items():
 
             print(f"Analyzing {name.upper()} ({timeframe})...")
 
             result = analyze_market(
-                session=self.session,
-                timeframe=timeframe,
-                bars=self.session.bars,
+                self.session,
+                timeframe,
             )
 
-            setattr(self.market, name, result)
+            setattr(self.analysis, name, result)
 
         print("\nAnalysis Completed Successfully.")
-        print("=" * 60)
-
-        return self.market
 
     # ======================================================
-    # Report
+    # Event Formatter
+    # ======================================================
+
+    @staticmethod
+    def format_event(event):
+
+        if event.direction is None:
+            return "None"
+
+        return (
+            f"{event.direction} | "
+            f"Level: {event.level:.2f} | "
+            f"Time: {event.time}"
+        )
+
+    # ======================================================
+    # Print Report
     # ======================================================
 
     def print_report(self):
-        """
-        Display the current market analysis.
-        """
 
-        for name, result in self.market.as_dict().items():
+        print("=" * 60)
+
+        for section, result in self.analysis.as_dict().items():
 
             if result is None:
                 continue
 
-            print("\n" + "=" * 60)
-            print(name.upper())
+            print(f"\n{section.upper()}")
             print("=" * 60)
 
-            print(f"Timeframe : {result.timeframe}")
-            print(f"Structure : {result.structure}")
-            print(f"BOS       : {result.bos}")
-            print(f"CHoCH     : {result.choch}")
+            print(f"Timeframe      : {result.timeframe}")
+            print(f"Current Price  : {result.current_price:.2f}")
+            print(f"Current Time   : {result.current_time}")
+
+            print()
+
+            print(f"Structure      : {result.structure}")
+
+            if result.market_structure:
+
+                print(f"Trend          : {result.market_structure.trend}")
+                print(f"State          : {result.market_structure.state}")
+
+            print()
+
+            print(f"BOS            : {self.format_event(result.bos)}")
+            print(f"CHoCH          : {self.format_event(result.choch)}")
+
+            print()
+
+            print(f"Confidence     : {result.confidence:.2f}%")
 
         print("\nBMIE analysis completed.")
