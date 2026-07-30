@@ -596,6 +596,74 @@ class MarketEngine:
 
                 )
 
+        # ==================================================
+        # Liquidity
+        # ==================================================
+
+        print()
+
+
+        if entry.liquidity:
+
+
+            print("Liquidity")
+
+
+            latest_liquidity = sorted(
+
+                entry.liquidity,
+
+                key=lambda x: x.end_time,
+
+                reverse=True
+
+            )[0]
+
+
+            print(
+
+                f"Side       : {latest_liquidity.side}"
+
+            )
+
+
+            print(
+
+                f"Level      : "
+
+                f"{latest_liquidity.level:.2f}"
+
+            )
+
+
+            print(
+
+                f"Swept      : "
+
+                f"{latest_liquidity.swept}"
+
+            )
+
+
+            if latest_liquidity.swept:
+
+
+                print(
+
+                    f"Sweep Time : "
+
+                    f"{latest_liquidity.sweep_time}"
+
+                )
+
+
+                print(
+
+                    f"Sweep Price: "
+
+                    f"{latest_liquidity.sweep_price:.2f}"
+
+                )
 
 
         fvg = self.latest_fvg(entry)
