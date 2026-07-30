@@ -3,8 +3,8 @@ smc/market_structure.py
 
 Market Structure Engine for BMIE.
 
-This module is responsible for understanding the current
-market structure from major swing highs and lows.
+This module determines the current market phase
+from major swing highs and lows.
 
 Author: BMIE Project
 """
@@ -13,6 +13,19 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from models import SwingPoint
+
+
+# ==========================================================
+# Market States
+# ==========================================================
+
+BULLISH_CONTINUATION = "Bullish Continuation"
+
+BEARISH_CONTINUATION = "Bearish Continuation"
+
+TRANSITION = "Transition"
+
+RANGE = "Range"
 
 
 # ==========================================================
@@ -27,7 +40,7 @@ class MarketStructureState:
 
     trend: str = "Sideways"
 
-    state: str = "Unknown"
+    state: str = TRANSITION
 
     last_high: Optional[SwingPoint] = None
 
@@ -40,7 +53,7 @@ class MarketStructureState:
 
 class MarketStructureEngine:
     """
-    Builds the current market structure from major swings.
+    Builds market structure from major swing points.
     """
 
     def __init__(
@@ -52,15 +65,14 @@ class MarketStructureEngine:
         self.swing_highs = swing_highs
         self.swing_lows = swing_lows
 
+
+    # ======================================================
+    # Analyze
     # ======================================================
 
     def analyze(self) -> MarketStructureState:
         """
-        Analyze market structure.
-
-        Returns
-        -------
-        MarketStructureState
+        Determine current market structure state.
         """
 
         state = MarketStructureState()
@@ -71,27 +83,70 @@ class MarketStructureEngine:
         if len(self.swing_lows) < 2:
             return state
 
+
+        # Latest confirmed swings
+
         last_high = self.swing_highs[-1]
+        previous_high = self.swing_highs[-2]
+
         last_low = self.swing_lows[-1]
+        previous_low = self.swing_lows[-2]
+
 
         state.last_high = last_high
         state.last_low = last_low
 
-        # --------------------------------------------------
 
-        if last_high.label == "HH" and last_low.label == "HL":
+        # ==================================================
+        # Bullish Structure
+        # ==================================================
+
+        if (
+            last_high.label == "HH"
+            and last_low.label == "HL"
+        ):
 
             state.trend = "Bullish"
-            state.state = "Continuation"
+            state.state = BULLISH_CONTINUATION
 
-        elif last_high.label == "LH" and last_low.label == "LL":
+            return state
+
+
+        # ==================================================
+        # Bearish Structure
+        # ==================================================
+
+        if (
+            last_high.label == "LH"
+            and last_low.label == "LL"
+        ):
 
             state.trend = "Bearish"
-            state.state = "Continuation"
+            state.state = BEARISH_CONTINUATION
 
-        else:
+            return state
+
+
+        # ==================================================
+        # Transition
+        # ==================================================
+
+        if (
+            previous_high.label in ["HH", "LH"]
+            and previous_low.label in ["HL", "LL"]
+        ):
 
             state.trend = "Sideways"
-            state.state = "Transition"
+            state.state = TRANSITION
+
+            return state
+
+
+        # ==================================================
+        # Range
+        # ==================================================
+
+        state.trend = "Sideways"
+        state.state = RANGE
 
         return state
