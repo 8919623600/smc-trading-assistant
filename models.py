@@ -10,6 +10,7 @@ Contains:
 - Trade decision
 - Risk decision
 - Analysis result
+- Multi timeframe context
 
 Author: BMIE Project
 """
@@ -272,6 +273,37 @@ class AnalysisResult:
 
     risk_decision: Optional[RiskDecision] = None
 
+
+
+# ==========================================================
+# Multi Timeframe Context
+# ==========================================================
+
+@dataclass
+class MultiTimeframeContext:
+    """
+    Stores all timeframe analysis results.
+
+    Used by the MTF Confluence Engine.
+
+    Timeframes:
+    -------------
+    bias      -> 1D
+    structure -> 4H
+    trend     -> 1H
+    setup     -> 15M
+    entry     -> 5M
+    """
+
+    bias: Optional[AnalysisResult] = None
+
+    structure: Optional[AnalysisResult] = None
+
+    trend: Optional[AnalysisResult] = None
+
+    setup: Optional[AnalysisResult] = None
+
+    entry: Optional[AnalysisResult] = None
 
 
 
