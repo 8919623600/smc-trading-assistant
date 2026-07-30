@@ -3,55 +3,55 @@ main.py
 
 Entry point for the Balaji Market Intelligence Engine (BMIE).
 
-Responsibilities:
+Responsibilities
+----------------
 - Create trading session
-- Run multi-timeframe analysis
-- Display summary
+- Execute Market Engine
+- Display market report
 
 Author: BMIE Project
 """
 
 from core.session import create_session
-from analyzer import analyze_market
+from engine.market_engine import MarketEngine
 
 
 def main():
+    """
+    BMIE application entry point.
+    """
 
-    # ============================================
+    # ======================================================
+    # Banner
+    # ======================================================
+
+    print("=" * 60)
+    print("BALAJI MARKET INTELLIGENCE ENGINE")
+    print("=" * 60)
+
+    # ======================================================
     # Create Trading Session
-    # ============================================
+    # ======================================================
 
     session = create_session()
 
-    print("\nRunning Multi-Timeframe Analysis...")
-    print("-" * 60)
+    # ======================================================
+    # Create Market Engine
+    # ======================================================
 
-    analyses = {}
+    engine = MarketEngine(session)
 
-    # Analyze every configured timeframe
-    for name, timeframe in session.timeframes.items():
+    # ======================================================
+    # Run Analysis
+    # ======================================================
 
-        print(f"Analyzing {name.upper()} ({timeframe})...")
+    engine.run()
 
-        analyses[name] = analyze_market(
-            session=session,
-            timeframe=timeframe,
-            bars=session.bars,
-        )
+    # ======================================================
+    # Display Report
+    # ======================================================
 
-    print("\nAnalysis Completed Successfully.")
-    print("=" * 60)
-
-    # Temporary Summary
-    for name, result in analyses.items():
-
-        print(f"\n{name.upper()}")
-
-        print(f"Timeframe : {result.timeframe}")
-        print(f"Structure : {result.structure}")
-        print(f"BOS       : {result.bos}")
-
-    print("\nBMIE analysis completed.")
+    engine.print_report()
 
 
 if __name__ == "__main__":
