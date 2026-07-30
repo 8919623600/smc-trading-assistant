@@ -1,15 +1,15 @@
 """
 smc/confluence.py
 
-BMIE Multi-Timeframe Confluence Engine V3.
+BMIE Multi-Timeframe Confluence Engine V4.
 
 Responsibilities
 ----------------
 - Combine multi-timeframe SMC confirmations
-- Weight higher timeframe bias
-- Calculate confidence
+- Weight HTF and LTF signals
+- Calculate setup confidence
 - Generate BUY / SELL / WATCH / WAIT
-- Provide reasoning
+- Provide trade reasoning
 
 Timeframes:
 ------------
@@ -36,7 +36,6 @@ class ConfluenceEngine:
     """
 
 
-
     def __init__(
         self,
         context: MultiTimeframeContext,
@@ -50,7 +49,7 @@ class ConfluenceEngine:
     # Analyze
     # ======================================================
 
-    def analyze(self) -> TradeDecision:
+    def analyze(self):
 
 
         decision = TradeDecision()
@@ -105,8 +104,6 @@ class ConfluenceEngine:
 
                 else:
 
-                    score -= 10
-
                     reasons.append(
                         "Daily bias transition"
                     )
@@ -152,8 +149,6 @@ class ConfluenceEngine:
 
                 else:
 
-                    score -= 10
-
                     reasons.append(
                         "4H structure transition"
                     )
@@ -197,6 +192,18 @@ class ConfluenceEngine:
                     )
 
 
+                if (
+                    "Continuation"
+                    in structure.state
+                ):
+
+                    score += 10
+
+                    reasons.append(
+                        "Trend continuation confirmed"
+                    )
+
+
 
         # ==================================================
         # 15M Setup
@@ -214,7 +221,6 @@ class ConfluenceEngine:
 
                 if self.context.setup.bos.direction == "Bullish":
 
-
                     bullish_score += 15
 
                     reasons.append(
@@ -222,8 +228,7 @@ class ConfluenceEngine:
                     )
 
 
-                else:
-
+                elif self.context.setup.bos.direction == "Bearish":
 
                     bearish_score += 15
 
@@ -249,7 +254,6 @@ class ConfluenceEngine:
 
                 if self.context.entry.bos.direction == "Bullish":
 
-
                     bullish_score += 10
 
                     reasons.append(
@@ -257,8 +261,7 @@ class ConfluenceEngine:
                     )
 
 
-                else:
-
+                elif self.context.entry.bos.direction == "Bearish":
 
                     bearish_score += 10
 
@@ -288,7 +291,6 @@ class ConfluenceEngine:
 
             if self.context.entry.order_blocks:
 
-
                 score += 5
 
                 reasons.append(
@@ -305,7 +307,6 @@ class ConfluenceEngine:
 
 
             if self.context.entry.fair_value_gaps:
-
 
                 score += 5
 
@@ -324,17 +325,16 @@ class ConfluenceEngine:
 
             if self.context.entry.liquidity:
 
-
                 score += 5
 
                 reasons.append(
-                    "Liquidity confirmation"
+                    "Liquidity available"
                 )
 
 
 
         # ==================================================
-        # Normalize
+        # Limit Score
         # ==================================================
 
         score = max(
@@ -351,24 +351,24 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # Signal Classification
+        # Signal
         # ==================================================
 
-        if score < 50:
+        if score < 40:
 
 
             decision.signal = "WAIT"
 
 
 
-        elif score < 70:
+        elif score < 60:
 
 
             decision.signal = "WATCH"
 
 
 
-        elif score < 85:
+        elif score < 80:
 
 
             if bullish_score > bearish_score:
