@@ -3,9 +3,6 @@ engine/market_engine.py
 
 Market Engine for the Balaji Market Intelligence Engine (BMIE).
 
-This engine coordinates the complete market analysis workflow
-across all configured timeframes.
-
 Responsibilities
 ----------------
 - Download market data
@@ -28,11 +25,6 @@ class MarketEngine:
     def __init__(self, session):
         """
         Initialize the Market Engine.
-
-        Parameters
-        ----------
-        session : TradingSession
-            Active trading session.
         """
 
         self.session = session
@@ -81,10 +73,13 @@ class MarketEngine:
             if result is None:
                 continue
 
-            print(f"\n{name.upper()}")
+            print("\n" + "=" * 60)
+            print(name.upper())
+            print("=" * 60)
 
             print(f"Timeframe : {result.timeframe}")
             print(f"Structure : {result.structure}")
             print(f"BOS       : {result.bos}")
+            print(f"CHoCH     : {result.choch}")
 
         print("\nBMIE analysis completed.")

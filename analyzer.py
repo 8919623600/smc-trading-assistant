@@ -1,10 +1,15 @@
 """
 analyzer.py
 
-Main Market Analysis Engine for BMIE.
+Market analysis pipeline for BMIE.
 
-This module coordinates all Smart Money Concept
-analysis components.
+Responsibilities
+----------------
+- Fetch market data
+- Detect swings
+- Analyze market structure
+- Detect Break of Structure (BOS)
+- Detect Change of Character (CHoCH)
 
 Author: BMIE Project
 """
@@ -16,6 +21,7 @@ from fetch_data import get_data
 from smc.swings import find_swings
 from smc.structure import analyze_structure
 from smc.bos import detect_bos
+from smc.choch import detect_choch
 
 from models import AnalysisResult
 
@@ -26,26 +32,11 @@ def analyze_market(
     bars: int = DEFAULT_BARS,
 ) -> AnalysisResult:
     """
-    Execute the complete SMC analysis pipeline.
-
-    Parameters
-    ----------
-    session : TradingSession
-        Active trading session.
-
-    timeframe : str
-        Timeframe to analyze.
-
-    bars : int
-        Number of historical candles.
-
-    Returns
-    -------
-    AnalysisResult
+    Perform complete SMC analysis for a timeframe.
     """
 
     # ======================================================
-    # Step 1 - Fetch Market Data
+    # Fetch Market Data
     # ======================================================
 
     df = get_data(
@@ -55,13 +46,13 @@ def analyze_market(
     )
 
     # ======================================================
-    # Step 2 - Swing Detection
+    # Swing Detection
     # ======================================================
 
     swing_highs, swing_lows = find_swings(df)
 
     # ======================================================
-    # Step 3 - Market Structure
+    # Market Structure
     # ======================================================
 
     swing_highs, swing_lows, structure = analyze_structure(
@@ -70,7 +61,7 @@ def analyze_market(
     )
 
     # ======================================================
-    # Step 4 - Break of Structure
+    # Break of Structure
     # ======================================================
 
     bos = detect_bos(
@@ -80,21 +71,18 @@ def analyze_market(
     )
 
     # ======================================================
-    # Future Modules
+    # Change of Character
     # ======================================================
-    #
-    # choch = detect_choch(...)
-    #
-    # liquidity = detect_liquidity(...)
-    #
-    # order_blocks = detect_order_blocks(...)
-    #
-    # fair_value_gaps = detect_fvg(...)
-    #
-    # demand_supply = detect_zones(...)
-    #
-    # confidence = calculate_confidence(...)
-    #
+
+    choch = detect_choch(
+        df,
+        swing_highs,
+        swing_lows,
+        structure,
+    )
+
+    # ======================================================
+    # Return Analysis Result
     # ======================================================
 
     return AnalysisResult(
@@ -104,4 +92,5 @@ def analyze_market(
         swing_lows=swing_lows,
         structure=structure,
         bos=bos,
+        choch=choch,
     )
