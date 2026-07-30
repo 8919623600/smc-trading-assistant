@@ -1,15 +1,16 @@
 """
 smc/entry_validator.py
 
-BMIE Entry Validation Engine.
+BMIE Entry Validation Engine V2.
 
 Responsibilities
 ----------------
-- Validate BUY / SELL decisions
-- Check Order Block distance
-- Check FVG confirmation
-- Validate retracement requirement
-- Provide final entry status
+- Validate trade entry conditions
+- Detect pullback requirement
+- Detect retracement phase
+- Detect entry zone
+- Validate FVG
+- Provide execution state
 
 Author: BMIE Project
 """
@@ -21,8 +22,7 @@ from typing import List, Any
 
 class EntryValidator:
     """
-    Validates whether a trade setup
-    is ready for execution.
+    Controls trade execution timing.
     """
 
 
@@ -49,19 +49,17 @@ class EntryValidator:
 
 
     # ======================================================
-    # Order Block Validation
+    # Latest Order Block
     # ======================================================
 
-    def validate_order_block(self):
-
+    def latest_order_block(self):
 
         if not self.order_blocks:
 
-            return False, "No Order Block available"
+            return None
 
 
-
-        latest_ob = sorted(
+        return sorted(
 
             self.order_blocks,
 
@@ -73,12 +71,38 @@ class EntryValidator:
 
 
 
+    # ======================================================
+    # Order Block Distance
+    # ======================================================
+
+    def validate_order_block(self):
+
+
+        block = self.latest_order_block()
+
+
+
+        if not block:
+
+
+            return {
+
+                "valid": False,
+
+                "state": "WAIT",
+
+                "reason": "No Order Block available"
+
+            }
+
+
+
         midpoint = (
 
-            latest_ob.high
+            block.high
 
             +
-            latest_ob.low
+            block.low
 
         ) / 2
 
@@ -106,26 +130,88 @@ class EntryValidator:
 
 
 
+        # ==============================================
+        # Price far away
+        # ==============================================
+
         if percentage > 2:
 
 
-            return (
+            return {
 
-                False,
+                "valid": False,
 
-                "Order Block too far from current price"
+                "state": "WAIT FOR PULLBACK",
 
-            )
+                "reason":
+
+                    "Price extended from Order Block"
+
+            }
 
 
 
-        return (
+        # ==============================================
+        # Price approaching zone
+        # ==============================================
 
-            True,
+        elif percentage > 0.5:
 
-            "Order Block location valid"
 
-        )
+            return {
+
+                "valid": False,
+
+                "state": "WAIT FOR RETRACEMENT",
+
+                "reason":
+
+                    "Waiting for Order Block mitigation"
+
+            }
+
+
+
+        # ==============================================
+        # Price inside zone
+        # ==============================================
+
+        elif (
+
+            block.low
+
+            <= self.current_price
+
+            <= block.high
+
+        ):
+
+
+            return {
+
+                "valid": False,
+
+                "state": "ENTRY ZONE",
+
+                "reason":
+
+                    "Price inside Order Block"
+
+            }
+
+
+
+        return {
+
+            "valid": True,
+
+            "state": "ENTRY READY",
+
+            "reason":
+
+                "Order Block location valid"
+
+        }
 
 
 
@@ -138,53 +224,60 @@ class EntryValidator:
 
         if not self.fair_value_gaps:
 
-            return (
 
-                False,
+            return {
 
-                "No FVG available"
+                "valid": False,
 
-            )
+                "reason":
 
+                    "No FVG available"
 
-
-        latest_fvg = sorted(
-
-            self.fair_value_gaps,
-
-            key=lambda x:x.created_at,
-
-            reverse=True
-
-        )[0]
+            }
 
 
 
-        if latest_fvg.filled:
+        fresh = [
+
+            fvg
+
+            for fvg in self.fair_value_gaps
+
+            if not fvg.filled
+
+        ]
 
 
-            return (
 
-                False,
+        if fresh:
+
+
+            return {
+
+                "valid": True,
+
+                "reason":
+
+                    "Fresh FVG confirmation"
+
+            }
+
+
+
+        return {
+
+            "valid": False,
+
+            "reason":
 
                 "FVG already filled"
 
-            )
-
-
-
-        return (
-
-            True,
-
-            "Fresh FVG available"
-
-        )
+        }
 
 
 
     # ======================================================
-    # Liquidity Validation
+    # Liquidity
     # ======================================================
 
     def validate_liquidity(self):
@@ -193,28 +286,32 @@ class EntryValidator:
         if self.liquidity:
 
 
-            return (
+            return {
 
-                True,
+                "valid": True,
 
-                "Liquidity confirmation available"
+                "reason":
 
-            )
+                    "Liquidity confirmation available"
+
+            }
 
 
 
-        return (
+        return {
 
-            False,
+            "valid": False,
 
-            "No liquidity confirmation"
+            "reason":
 
-        )
+                "No liquidity confirmation"
+
+            }
 
 
 
     # ======================================================
-    # Final Validation
+    # Final Analysis
     # ======================================================
 
     def analyze(self):
@@ -235,20 +332,84 @@ class EntryValidator:
         if not self.trade_decision:
 
 
+            return {
+
+                "valid": False,
+
+                "status": "WAIT",
+
+                "reasons":
+
+                    [
+
+                        "No trade decision"
+
+                    ]
+
+            }
+
+
+
+        # ----------------------------------------------
+        # Order Block
+        # ----------------------------------------------
+
+        ob_result = self.validate_order_block()
+
+
+
+        result["reasons"].append(
+
+            ob_result["reason"]
+
+        )
+
+
+
+        if not ob_result["valid"]:
+
+
             result["valid"] = False
 
-            result["status"] = "WAIT"
-
-            result["reasons"].append(
-
-                "No trade decision"
-
-            )
+            result["status"] = ob_result["state"]
 
 
-            return result
+
+        # ----------------------------------------------
+        # FVG
+        # ----------------------------------------------
+
+        fvg_result = self.validate_fvg()
 
 
+
+        result["reasons"].append(
+
+            fvg_result["reason"]
+
+        )
+
+
+
+        # ----------------------------------------------
+        # Liquidity
+        # ----------------------------------------------
+
+        liquidity_result = self.validate_liquidity()
+
+
+
+        result["reasons"].append(
+
+            liquidity_result["reason"]
+
+        )
+
+
+
+        # ----------------------------------------------
+        # Existing weak signals
+        # ----------------------------------------------
 
         if self.trade_decision.signal in [
 
@@ -262,70 +423,6 @@ class EntryValidator:
             result["valid"] = False
 
             result["status"] = "WAIT"
-
-
-
-        # Order Block
-
-        ob_valid, ob_reason = (
-
-            self.validate_order_block()
-
-        )
-
-
-        result["reasons"].append(
-
-            ob_reason
-
-        )
-
-
-
-        if not ob_valid:
-
-
-            result["valid"] = False
-
-            result["status"] = (
-
-                "WAIT FOR RETRACEMENT"
-
-            )
-
-
-
-        # FVG
-
-        fvg_valid, fvg_reason = (
-
-            self.validate_fvg()
-
-        )
-
-
-        result["reasons"].append(
-
-            fvg_reason
-
-        )
-
-
-
-        # Liquidity
-
-        liq_valid, liq_reason = (
-
-            self.validate_liquidity()
-
-        )
-
-
-        result["reasons"].append(
-
-            liq_reason
-
-        )
 
 
 
