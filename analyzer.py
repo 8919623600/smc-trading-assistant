@@ -26,7 +26,7 @@ from smc.swings import find_swings
 from smc.major_swings import find_major_swings
 from smc.structure import analyze_structure
 from smc.market_structure import MarketStructureEngine
-from smc.bos import detect_bos
+from smc.bos import BOSEngine
 from smc.choch import detect_choch
 from smc.liquidity import LiquidityEngine
 
@@ -85,12 +85,12 @@ def analyze_market(
     # Market Structure Engine
     # ======================================================
 
-    engine = MarketStructureEngine(
+    structure_engine = MarketStructureEngine(
         major_highs,
         major_lows,
     )
 
-    state = engine.analyze()
+    state = structure_engine.analyze()
 
     market_structure = MarketStructure(
         trend=state.trend,
@@ -100,14 +100,22 @@ def analyze_market(
     )
 
     # ======================================================
+    # Shared Analysis Context
+    # ======================================================
+
+    context = AnalysisContext(
+        df=df,
+        swing_highs=major_highs,
+        swing_lows=major_lows,
+        market_structure=market_structure,
+    )
+
+    # ======================================================
     # Break of Structure (BOS)
     # ======================================================
 
-    bos = detect_bos(
-        df,
-        major_highs,
-        major_lows,
-    )
+    bos_engine = BOSEngine(context)
+    bos = bos_engine.analyze()
 
     market_structure.last_bos = bos
 
@@ -123,17 +131,6 @@ def analyze_market(
     )
 
     market_structure.last_choch = choch
-
-    # ======================================================
-    # Shared Analysis Context
-    # ======================================================
-
-    context = AnalysisContext(
-        df=df,
-        swing_highs=major_highs,
-        swing_lows=major_lows,
-        market_structure=market_structure,
-    )
 
     # ======================================================
     # Liquidity

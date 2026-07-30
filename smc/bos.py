@@ -1,85 +1,122 @@
 """
-Break of Structure (BOS) Detection
+Break of Structure (BOS) Engine
+
+Detects the latest confirmed Break of Structure (BOS)
+by scanning all major swings and all subsequent candles.
 """
 
 from models import BOSEvent
 
 
-# ==========================================================
-# Helper Functions
-# ==========================================================
-
-def _empty_event() -> BOSEvent:
+class BOSEngine:
     """
-    Returns an empty BOS event.
-    """
-    return BOSEvent()
-
-
-# ==========================================================
-# Bullish BOS
-# ==========================================================
-
-def detect_bullish_bos(df, swing_highs):
-    latest_close = float(df.iloc[-1]["close"])
-
-    if not swing_highs:
-        return _empty_event()
-
-    last_high = swing_highs[-1]
-
-    if latest_close > last_high.price:
-        last_high.broken = True
-
-        return BOSEvent(
-            direction="Bullish",
-            level=last_high.price,
-            time=last_high.time,
-            confirmed=True,
-        )
-
-    return _empty_event()
-
-
-# ==========================================================
-# Bearish BOS
-# ==========================================================
-
-def detect_bearish_bos(df, swing_lows):
-    latest_close = float(df.iloc[-1]["close"])
-
-    if not swing_lows:
-        return _empty_event()
-
-    last_low = swing_lows[-1]
-
-    if latest_close < last_low.price:
-        last_low.broken = True
-
-        return BOSEvent(
-            direction="Bearish",
-            level=last_low.price,
-            time=last_low.time,
-            confirmed=True,
-        )
-
-    return _empty_event()
-
-
-# ==========================================================
-# Public API
-# ==========================================================
-
-def detect_bos(df, swing_highs, swing_lows):
-    """
-    Detect Break of Structure.
+    Detects the latest confirmed Break of Structure.
     """
 
-    bullish = detect_bullish_bos(df, swing_highs)
+    def __init__(self, context):
+        self.context = context
 
-    if bullish.confirmed:
-        return bullish
+    # ======================================================
+    # Private Helpers
+    # ======================================================
 
-    bearish = detect_bearish_bos(df, swing_lows)
+    def _empty_event(self) -> BOSEvent:
+        return BOSEvent()
 
-    return bearish
+    def _detect_bullish_bos(self) -> BOSEvent:
+        """
+        Find the latest bullish BOS.
+        """
+
+        latest_event = self._empty_event()
+
+        df = self.context.df
+
+        for swing in self.context.swing_highs:
+
+            # Ignore swings that are not present in dataframe index
+            if swing.time not in df.index:
+                continue
+
+            start_idx = df.index.get_loc(swing.time)
+
+            for i in range(start_idx + 1, len(df)):
+
+                close = float(df.iloc[i]["close"])
+
+                if close > swing.price:
+
+                    latest_event = BOSEvent(
+                        direction="Bullish",
+                        level=swing.price,
+                        time=df.index[i],
+                        confirmed=True,
+                    )
+
+                    swing.broken = True
+
+                    break
+
+        return latest_event
+
+    def _detect_bearish_bos(self) -> BOSEvent:
+        """
+        Find the latest bearish BOS.
+        """
+
+        latest_event = self._empty_event()
+
+        df = self.context.df
+
+        for swing in self.context.swing_lows:
+
+            if swing.time not in df.index:
+                continue
+
+            start_idx = df.index.get_loc(swing.time)
+
+            for i in range(start_idx + 1, len(df)):
+
+                close = float(df.iloc[i]["close"])
+
+                if close < swing.price:
+
+                    latest_event = BOSEvent(
+                        direction="Bearish",
+                        level=swing.price,
+                        time=df.index[i],
+                        confirmed=True,
+                    )
+
+                    swing.broken = True
+
+                    break
+
+        return latest_event
+
+    # ======================================================
+    # Public API
+    # ======================================================
+
+    def analyze(self) -> BOSEvent:
+        """
+        Returns the latest confirmed BOS.
+        """
+
+        bullish = self._detect_bullish_bos()
+        bearish = self._detect_bearish_bos()
+
+        if bullish.confirmed and bearish.confirmed:
+
+            if bullish.time >= bearish.time:
+                return bullish
+
+            return bearish
+
+        if bullish.confirmed:
+            return bullish
+
+        if bearish.confirmed:
+            return bearish
+
+        return self._empty_event()
