@@ -16,6 +16,7 @@ Responsibilities
 - Detect Order Blocks
 - Detect Fair Value Gaps
 - Generate Trade Decision
+- Generate Risk Plan
 
 Author: BMIE Project
 """
@@ -48,6 +49,8 @@ from smc.fvg import FVGEngine
 
 from smc.confluence import ConfluenceEngine
 
+from smc.risk_manager import RiskManager
+
 
 from models import (
     AnalysisResult,
@@ -61,10 +64,14 @@ def analyze_market(
     timeframe: str,
     bars: int = DEFAULT_BARS,
 ) -> AnalysisResult:
+    """
+    Perform complete BMIE analysis for one timeframe.
+    """
+
 
 
     # ======================================================
-    # Fetch Data
+    # Fetch Market Data
     # ======================================================
 
     df = get_data(
@@ -73,6 +80,11 @@ def analyze_market(
         bars=bars,
     )
 
+
+
+    # ======================================================
+    # Market Snapshot
+    # ======================================================
 
     current_price = float(
         df.iloc[-1]["close"]
@@ -83,11 +95,16 @@ def analyze_market(
 
 
     # ======================================================
-    # Swings
+    # Detect Swings
     # ======================================================
 
     swing_highs, swing_lows = find_swings(df)
 
+
+
+    # ======================================================
+    # Major Swings
+    # ======================================================
 
     major_highs = find_major_swings(
         swing_highs
@@ -100,7 +117,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Structure
+    # Legacy Structure
     # ======================================================
 
     major_highs, major_lows, structure = analyze_structure(
@@ -109,6 +126,11 @@ def analyze_market(
     )
 
 
+
+    # ======================================================
+    # Market Structure Engine
+    # ======================================================
+
     structure_engine = MarketStructureEngine(
         major_highs,
         major_lows,
@@ -116,6 +138,7 @@ def analyze_market(
 
 
     state = structure_engine.analyze()
+
 
 
     market_structure = MarketStructure(
@@ -132,7 +155,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Context
+    # Analysis Context
     # ======================================================
 
     context = AnalysisContext(
@@ -156,7 +179,9 @@ def analyze_market(
 
     bos = bos_engine.analyze()
 
+
     market_structure.last_bos = bos
+
 
     context.bos = bos
 
@@ -170,7 +195,9 @@ def analyze_market(
 
     choch = choch_engine.analyze()
 
+
     market_structure.last_choch = choch
+
 
     context.choch = choch
 
@@ -224,7 +251,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Fair Value Gap
+    # Fair Value Gaps
     # ======================================================
 
     fvg_engine = FVGEngine(
@@ -261,7 +288,28 @@ def analyze_market(
 
 
     # ======================================================
-    # Result
+    # Risk Management
+    # ======================================================
+
+    risk_manager = RiskManager(
+
+        account_balance=session.balance,
+
+        risk_percent=session.risk_per_trade,
+    )
+
+
+    risk_decision = risk_manager.analyze(
+
+        trade_decision,
+
+        order_blocks,
+    )
+
+
+
+    # ======================================================
+    # Final Result
     # ======================================================
 
     result = AnalysisResult(
@@ -269,6 +317,7 @@ def analyze_market(
         df=df,
 
         timeframe=timeframe,
+
 
         current_price=current_price,
 
@@ -301,11 +350,14 @@ def analyze_market(
 
 
         trade_decision=trade_decision,
+
+
+        risk_decision=risk_decision,
     )
 
 
 
-    # Keep compatibility
+    # Backward compatibility
 
     result.market_state = market_state
 
