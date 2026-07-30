@@ -1,7 +1,7 @@
 """
 analyzer.py
 
-Market analysis pipeline for BMIE.
+BMIE Market Analysis Pipeline.
 
 Responsibilities
 ----------------
@@ -15,8 +15,10 @@ Responsibilities
 - Detect Liquidity
 - Detect Order Blocks
 - Detect Fair Value Gaps
-- Generate Trade Decision
-- Generate Risk Plan
+
+Note:
+Trade decision and risk management
+are handled after all timeframes are analyzed.
 
 Author: BMIE Project
 """
@@ -47,10 +49,6 @@ from smc.order_blocks import OrderBlockEngine
 
 from smc.fvg import FVGEngine
 
-from smc.confluence import ConfluenceEngine
-
-from smc.risk_manager import RiskManager
-
 
 from models import (
     AnalysisResult,
@@ -65,18 +63,21 @@ def analyze_market(
     bars: int = DEFAULT_BARS,
 ) -> AnalysisResult:
     """
-    Perform complete BMIE analysis for one timeframe.
+    Analyze one timeframe.
     """
 
 
 
     # ======================================================
-    # Fetch Market Data
+    # Fetch Data
     # ======================================================
 
     df = get_data(
+
         session=session,
+
         timeframe=timeframe,
+
         bars=bars,
     )
 
@@ -95,7 +96,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Detect Swings
+    # Swing Detection
     # ======================================================
 
     swing_highs, swing_lows = find_swings(df)
@@ -110,6 +111,7 @@ def analyze_market(
         swing_highs
     )
 
+
     major_lows = find_major_swings(
         swing_lows
     )
@@ -121,7 +123,9 @@ def analyze_market(
     # ======================================================
 
     major_highs, major_lows, structure = analyze_structure(
+
         major_highs,
+
         major_lows,
     )
 
@@ -132,7 +136,9 @@ def analyze_market(
     # ======================================================
 
     structure_engine = MarketStructureEngine(
+
         major_highs,
+
         major_lows,
     )
 
@@ -155,7 +161,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Analysis Context
+    # Shared Context
     # ======================================================
 
     context = AnalysisContext(
@@ -183,9 +189,6 @@ def analyze_market(
     market_structure.last_bos = bos
 
 
-    context.bos = bos
-
-
 
     # ======================================================
     # CHoCH
@@ -197,9 +200,6 @@ def analyze_market(
 
 
     market_structure.last_choch = choch
-
-
-    context.choch = choch
 
 
 
@@ -242,7 +242,10 @@ def analyze_market(
     # ======================================================
 
     order_block_engine = OrderBlockEngine(
-        context
+
+        context.swing_highs,
+
+        context.swing_lows,
     )
 
 
@@ -251,10 +254,11 @@ def analyze_market(
 
 
     # ======================================================
-    # Fair Value Gaps
+    # Fair Value Gap
     # ======================================================
 
     fvg_engine = FVGEngine(
+
         context
     )
 
@@ -264,52 +268,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Confluence Engine
-    # ======================================================
-
-    confluence_engine = ConfluenceEngine(
-
-        market_structure,
-
-        bos,
-
-        choch,
-
-        order_blocks,
-
-        fair_value_gaps,
-
-        liquidity,
-    )
-
-
-    trade_decision = confluence_engine.analyze()
-
-
-
-    # ======================================================
-    # Risk Management
-    # ======================================================
-
-    risk_manager = RiskManager(
-
-        account_balance=session.balance,
-
-        risk_percent=session.risk_per_trade,
-    )
-
-
-    risk_decision = risk_manager.analyze(
-
-        trade_decision,
-
-        order_blocks,
-    )
-
-
-
-    # ======================================================
-    # Final Result
+    # Build Result
     # ======================================================
 
     result = AnalysisResult(
@@ -347,17 +306,11 @@ def analyze_market(
 
 
         fair_value_gaps=fair_value_gaps,
-
-
-        trade_decision=trade_decision,
-
-
-        risk_decision=risk_decision,
     )
 
 
 
-    # Backward compatibility
+    # Attach state internally
 
     result.market_state = market_state
 
