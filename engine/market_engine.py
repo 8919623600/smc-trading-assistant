@@ -7,8 +7,7 @@ Responsibilities
 ----------------
 - Run multi-timeframe market analysis
 - Store analysis results
-- Print formatted market report
-- Display SMC intelligence
+- Print concise trading report
 
 Author: BMIE Project
 """
@@ -19,10 +18,9 @@ from config import TIMEFRAMES
 from models import MarketAnalysis
 
 
-
 class MarketEngine:
     """
-    Runs the complete BMIE analysis pipeline.
+    Runs BMIE analysis pipeline.
     """
 
 
@@ -82,11 +80,7 @@ class MarketEngine:
             return "None"
 
 
-        return (
-            f"{event.direction} | "
-            f"Level: {event.level:.2f} | "
-            f"Time: {event.time}"
-        )
+        return event.direction
 
 
 
@@ -95,210 +89,211 @@ class MarketEngine:
     # ======================================================
 
     @staticmethod
-    def print_order_blocks(order_blocks):
+    def get_best_order_block(result):
 
-        if not order_blocks:
-
-            print(
-                "Order Blocks    : None"
-            )
-
-            return
-
-
-        print(
-            "Order Blocks"
-        )
-
-        print(
-            "-" * 60
-        )
-
-
-        for ob in order_blocks:
-
-            print(
-                f"Direction       : {ob.direction}"
-            )
-
-            print(
-                f"High            : {ob.high:.2f}"
-            )
-
-            print(
-                f"Low             : {ob.low:.2f}"
-            )
-
-            print(
-                f"Created At      : {ob.created_at}"
-            )
-
-            print(
-                f"Mitigated       : {ob.mitigated}"
-            )
-
-            print(
-                f"Broken          : {ob.broken}"
-            )
-
-            print(
-                f"Strength        : {ob.strength}"
-            )
-
-            print()
-
-
-
-    # ======================================================
-    # Market State Formatter
-    # ======================================================
-
-    @staticmethod
-    def format_market_state(result):
-
-        if not hasattr(
-            result,
-            "market_state"
-        ):
+        if not result.order_blocks:
 
             return None
 
 
-        return result.market_state
+        # Latest order block
+        return sorted(
+            result.order_blocks,
+            key=lambda x: x.created_at,
+            reverse=True
+        )[0]
 
 
 
     # ======================================================
-    # Print Report
+    # Short Report
     # ======================================================
 
     def print_report(self):
 
+        print("\n")
+        print("=" * 60)
+        print("BMIE MARKET INTELLIGENCE REPORT")
+        print("=" * 60)
+
+
         print(
-            "=" * 60
+            f"Symbol : {self.session.symbol}"
         )
 
 
-        for section, result in self.analysis.as_dict().items():
+        # Current price from entry timeframe
 
+        entry = self.analysis.entry
+
+
+        if entry:
+
+            print(
+                f"Price  : {entry.current_price:.2f}"
+            )
+
+
+        print()
+        print("-" * 60)
+        print("MULTI TIMEFRAME STRUCTURE")
+        print("-" * 60)
+
+
+
+        for name, result in self.analysis.as_dict().items():
 
             if result is None:
 
                 continue
 
 
+            phase = "Unknown"
 
-            print(
-                f"\n{section.upper()}"
-            )
-
-            print(
-                "=" * 60
-            )
+            event = "None"
 
 
-            print(
-                f"Timeframe      : {result.timeframe}"
-            )
+            if hasattr(
+                result,
+                "market_state"
+            ):
 
+                phase = (
+                    result.market_state.phase
+                )
 
-            print(
-                f"Current Price  : {result.current_price:.2f}"
-            )
-
-
-            print(
-                f"Current Time   : {result.current_time}"
-            )
-
-
-            print()
-
-
-            print(
-                f"Structure      : {result.structure}"
-            )
-
-
-            if result.market_structure:
-
-
-                print(
-                    f"Trend          : {result.market_structure.trend}"
+                event = (
+                    result.market_state.active_event
                 )
 
 
-                print(
-                    f"State          : {result.market_structure.state}"
-                )
-
-
-
-            # ==================================================
-            # Market State
-            # ==================================================
-
-            market_state = self.format_market_state(
-                result
+            print(
+                f"{name.upper():6} : "
+                f"{phase} | {event}"
             )
 
 
-            if market_state:
+
+        print()
+        print("-" * 60)
+        print("ACTIVE SETUP")
+        print("-" * 60)
+
+
+
+        trend = "Unknown"
+
+        if entry and entry.market_structure:
+
+            trend = (
+                entry.market_structure.trend
+            )
+
+
+        print(
+            f"Trend      : {trend}"
+        )
+
+
+        if entry:
+
+            print(
+                f"CHoCH      : "
+                f"{self.format_event(entry.choch)}"
+            )
+
+
+            print(
+                f"BOS        : "
+                f"{self.format_event(entry.bos)}"
+            )
+
+
+
+        # ==================================================
+        # Order Block
+        # ==================================================
+
+        if entry:
+
+            ob = self.get_best_order_block(
+                entry
+            )
+
+
+            if ob:
 
                 print()
 
                 print(
-                    f"Market Phase   : {market_state.phase}"
+                    "Order Block"
                 )
-
 
                 print(
-                    f"Active Event   : {market_state.active_event}"
+                    f"Type       : {ob.direction}"
                 )
-
 
                 print(
-                    f"Reason         : {market_state.reason}"
+                    f"Zone       : "
+                    f"{ob.low:.2f} - {ob.high:.2f}"
+                )
+
+                print(
+                    f"Time       : {ob.created_at}"
+                )
+
+
+            else:
+
+                print(
+                    "Order Block: None"
                 )
 
 
 
-            print()
-
-
-            print(
-                f"BOS            : {self.format_event(result.bos)}"
-            )
-
-
-            print(
-                f"CHoCH          : {self.format_event(result.choch)}"
-            )
+        print()
+        print("-" * 60)
+        print("TRADE BIAS")
+        print("-" * 60)
 
 
 
-            print()
+        if entry and entry.market_state:
+
+            if (
+                entry.market_state.phase
+                == "Bullish Continuation"
+            ):
+
+                print(
+                    "Direction  : BUY"
+                )
 
 
-            # ==================================================
-            # Order Blocks
-            # ==================================================
+            elif (
+                entry.market_state.phase
+                == "Bearish Continuation"
+            ):
 
-            self.print_order_blocks(
-                result.order_blocks
-            )
-
-
-
-            print()
+                print(
+                    "Direction  : SELL"
+                )
 
 
-            print(
-                f"Confidence     : {result.confidence:.2f}%"
-            )
+            else:
 
+                print(
+                    "Direction  : WAIT"
+                )
 
 
         print(
-            "\nBMIE analysis completed."
+            "Confidence : Pending"
+        )
+
+
+        print("=" * 60)
+
+        print(
+            "BMIE analysis completed."
         )
