@@ -6,8 +6,9 @@ BMIE Market Engine
 Responsibilities
 ----------------
 - Run multi-timeframe analysis
+- Build MTF context
+- Generate trade decision
 - Print concise market report
-- Display trade decision
 - Display risk plan
 
 Author: BMIE Project
@@ -15,8 +16,15 @@ Author: BMIE Project
 
 
 from analyzer import analyze_market
+
 from config import TIMEFRAMES
-from models import MarketAnalysis
+
+from models import (
+    MarketAnalysis,
+    MultiTimeframeContext,
+)
+
+from smc.confluence import ConfluenceEngine
 
 
 
@@ -32,7 +40,7 @@ class MarketEngine:
 
 
     # ======================================================
-    # Run
+    # Run Analysis
     # ======================================================
 
     def run(self):
@@ -62,9 +70,45 @@ class MarketEngine:
             )
 
 
+
         print(
             "\nAnalysis Completed Successfully."
         )
+
+
+        # ==================================================
+        # Multi Timeframe Confluence
+        # ==================================================
+
+        context = MultiTimeframeContext(
+
+            bias=self.analysis.bias,
+
+            structure=self.analysis.structure,
+
+            trend=self.analysis.trend,
+
+            setup=self.analysis.setup,
+
+            entry=self.analysis.entry,
+        )
+
+
+
+        confluence_engine = ConfluenceEngine(
+            context
+        )
+
+
+        decision = confluence_engine.analyze()
+
+
+
+        # Attach decision to entry timeframe
+
+        if self.analysis.entry:
+
+            self.analysis.entry.trade_decision = decision
 
 
 
@@ -92,15 +136,25 @@ class MarketEngine:
     @staticmethod
     def latest_order_block(result):
 
+        if not result:
+
+            return None
+
+
         if not result.order_blocks:
 
             return None
 
 
+
         return sorted(
+
             result.order_blocks,
-            key=lambda x:x.created_at,
+
+            key=lambda x: x.created_at,
+
             reverse=True
+
         )[0]
 
 
@@ -108,15 +162,25 @@ class MarketEngine:
     @staticmethod
     def latest_fvg(result):
 
+        if not result:
+
+            return None
+
+
         if not result.fair_value_gaps:
 
             return None
 
 
+
         return sorted(
+
             result.fair_value_gaps,
-            key=lambda x:x.created_at,
+
+            key=lambda x: x.created_at,
+
             reverse=True
+
         )[0]
 
 
@@ -131,15 +195,21 @@ class MarketEngine:
         entry = self.analysis.entry
 
 
+
         print("\n")
+
         print("=" * 60)
+
         print("BMIE MARKET INTELLIGENCE REPORT")
+
         print("=" * 60)
+
 
 
         print(
             f"Symbol : {self.session.symbol}"
         )
+
 
 
         if entry:
@@ -149,15 +219,19 @@ class MarketEngine:
             )
 
 
+
         print()
 
+
         print("-" * 60)
+
         print("MULTI TIMEFRAME STRUCTURE")
+
         print("-" * 60)
 
 
 
-        for name,result in self.analysis.as_dict().items():
+        for name, result in self.analysis.as_dict().items():
 
 
             if result is None:
@@ -165,15 +239,14 @@ class MarketEngine:
                 continue
 
 
+
             phase = "Unknown"
 
             event = "None"
 
 
-            if hasattr(
-                result,
-                "market_state"
-            ):
+
+            if hasattr(result, "market_state"):
 
 
                 phase = result.market_state.phase
@@ -183,8 +256,11 @@ class MarketEngine:
 
 
             print(
+
                 f"{name.upper():10}: "
+
                 f"{phase} | {event}"
+
             )
 
 
@@ -197,36 +273,52 @@ class MarketEngine:
 
         print()
 
+
         print("-" * 60)
+
         print("ACTIVE SETUP")
+
         print("-" * 60)
 
 
 
-        if hasattr(entry,"market_state"):
+        if hasattr(entry, "market_state"):
 
 
             print(
+
                 f"Phase      : "
+
                 f"{entry.market_state.phase}"
+
             )
 
 
             print(
+
                 f"Reason     : "
+
                 f"{entry.market_state.reason}"
+
             )
+
 
 
         print(
+
             f"BOS        : "
+
             f"{self.format_event(entry.bos)}"
+
         )
 
 
         print(
+
             f"CHoCH      : "
+
             f"{self.format_event(entry.choch)}"
+
         )
 
 
@@ -234,7 +326,9 @@ class MarketEngine:
         ob = self.latest_order_block(entry)
 
 
+
         print()
+
 
 
         if ob:
@@ -242,19 +336,27 @@ class MarketEngine:
 
             print("Order Block")
 
+
             print(
+
                 f"Type       : {ob.direction}"
+
             )
 
 
             print(
+
                 f"Zone       : "
+
                 f"{ob.low:.2f} - {ob.high:.2f}"
+
             )
 
 
             print(
+
                 f"Time       : {ob.created_at}"
+
             )
 
 
@@ -262,7 +364,9 @@ class MarketEngine:
         fvg = self.latest_fvg(entry)
 
 
+
         print()
+
 
 
         if fvg:
@@ -272,18 +376,25 @@ class MarketEngine:
 
 
             print(
+
                 f"Type       : {fvg.direction}"
+
             )
 
 
             print(
+
                 f"Zone       : "
+
                 f"{fvg.low:.2f} - {fvg.high:.2f}"
+
             )
 
 
             print(
+
                 f"Filled     : {fvg.filled}"
+
             )
 
 
@@ -294,8 +405,11 @@ class MarketEngine:
 
         print()
 
+
         print("-" * 60)
+
         print("TRADE DECISION")
+
         print("-" * 60)
 
 
@@ -303,30 +417,52 @@ class MarketEngine:
         decision = entry.trade_decision
 
 
+
         if decision:
 
 
             print(
+
                 f"Signal     : {decision.signal}"
+
             )
 
 
             print(
+
                 f"Confidence : "
+
                 f"{decision.confidence:.2f}%"
+
             )
+
 
 
             print()
 
+
             print("Reasons:")
+
 
 
             for reason in decision.reasons:
 
+
                 print(
+
                     f"- {reason}"
+
                 )
+
+
+        else:
+
+
+            print(
+
+                "Decision unavailable"
+
+            )
 
 
 
@@ -336,13 +472,17 @@ class MarketEngine:
 
         print()
 
+
         print("-" * 60)
+
         print("RISK PLAN")
+
         print("-" * 60)
 
 
 
         risk = entry.risk_decision
+
 
 
         if risk:
@@ -352,9 +492,13 @@ class MarketEngine:
 
 
                 print(
+
                     f"Entry Zone : "
+
                     f"{risk.entry_low:.2f} - "
+
                     f"{risk.entry_high:.2f}"
+
                 )
 
 
@@ -362,8 +506,11 @@ class MarketEngine:
 
 
                 print(
+
                     f"Stop Loss  : "
+
                     f"{risk.stop_loss:.2f}"
+
                 )
 
 
@@ -371,20 +518,29 @@ class MarketEngine:
 
 
                 print(
+
                     f"Target     : "
+
                     f"{risk.target:.2f}"
+
                 )
 
 
             print(
+
                 f"Risk Reward: "
+
                 f"{risk.risk_reward:.2f}"
+
             )
 
 
             print(
+
                 f"Risk Amount: ₹"
+
                 f"{risk.risk_amount:.2f}"
+
             )
 
 
@@ -392,12 +548,15 @@ class MarketEngine:
 
 
             print(
+
                 "Risk plan unavailable"
+
             )
 
 
 
         print("=" * 60)
+
 
         print(
             "BMIE analysis completed."

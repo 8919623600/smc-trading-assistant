@@ -1,57 +1,46 @@
 """
 smc/confluence.py
 
-BMIE Confluence Engine.
+BMIE Multi-Timeframe Confluence Engine V2.
 
 Responsibilities
 ----------------
-- Combine SMC confirmations
-- Calculate setup confidence
+- Combine all timeframe confirmations
+- Calculate confidence score
 - Generate BUY / SELL / WAIT decision
 - Provide trade reasoning
+
+Timeframes:
+------------
+1D  -> Bias
+4H  -> Structure
+1H  -> Trend
+15M -> Setup
+5M  -> Entry
 
 Author: BMIE Project
 """
 
 
-from typing import List
-
 from models import (
     TradeDecision,
-    MarketStructure,
-    BOSEvent,
-    CHoCHEvent,
+    MultiTimeframeContext,
 )
 
 
 
 class ConfluenceEngine:
     """
-    Combines all SMC signals into a trade decision.
+    Multi timeframe SMC confluence engine.
     """
 
 
     def __init__(
         self,
-        market_structure: MarketStructure,
-        bos: BOSEvent,
-        choch: CHoCHEvent,
-        order_blocks: List,
-        fair_value_gaps: List,
-        liquidity: List,
+        context: MultiTimeframeContext,
     ):
 
-        self.market_structure = market_structure
-
-        self.bos = bos
-
-        self.choch = choch
-
-        self.order_blocks = order_blocks
-
-        self.fair_value_gaps = fair_value_gaps
-
-        self.liquidity = liquidity
+        self.context = context
 
 
 
@@ -61,9 +50,8 @@ class ConfluenceEngine:
 
     def analyze(self) -> TradeDecision:
         """
-        Generate final trading decision.
+        Generate final trade decision.
         """
-
 
         decision = TradeDecision()
 
@@ -72,75 +60,183 @@ class ConfluenceEngine:
 
         reasons = []
 
+        bullish_points = 0
+
+        bearish_points = 0
+
 
 
         # ==================================================
-        # Market Structure
+        # 1D Bias
         # ==================================================
 
-        trend = (
-            self.market_structure.trend
-        )
+        if self.context.bias:
 
-
-
-        if trend == "Bullish":
-
-            score += 20
-
-            reasons.append(
-                "Bullish market structure"
+            structure = (
+                self.context.bias.market_structure
             )
 
 
-        elif trend == "Bearish":
+            if structure:
 
-            score += 20
+                if structure.trend == "Bullish":
 
-            reasons.append(
-                "Bearish market structure"
+                    score += 20
+                    bullish_points += 20
+
+                    reasons.append(
+                        "Daily bias bullish"
+                    )
+
+
+                elif structure.trend == "Bearish":
+
+                    score += 20
+                    bearish_points += 20
+
+                    reasons.append(
+                        "Daily bias bearish"
+                    )
+
+
+
+        # ==================================================
+        # 4H Structure
+        # ==================================================
+
+        if self.context.structure:
+
+            structure = (
+                self.context.structure.market_structure
             )
 
 
+            if structure:
+
+                if structure.trend == "Bullish":
+
+                    score += 20
+                    bullish_points += 20
+
+                    reasons.append(
+                        "4H structure bullish"
+                    )
+
+
+                elif structure.trend == "Bearish":
+
+                    score += 20
+                    bearish_points += 20
+
+                    reasons.append(
+                        "4H structure bearish"
+                    )
+
+
 
         # ==================================================
-        # BOS
+        # 1H Trend
         # ==================================================
 
-        if self.bos.confirmed:
+        if self.context.trend:
+
+            structure = (
+                self.context.trend.market_structure
+            )
 
 
-            if self.bos.direction == "Bullish":
+            if structure:
 
-                score += 25
+                if structure.trend == "Bullish":
+
+                    score += 20
+                    bullish_points += 20
+
+                    reasons.append(
+                        "1H trend bullish"
+                    )
+
+
+                elif structure.trend == "Bearish":
+
+                    score += 20
+                    bearish_points += 20
+
+                    reasons.append(
+                        "1H trend bearish"
+                    )
+
+
+
+        # ==================================================
+        # 15M Setup
+        # ==================================================
+
+        if self.context.setup:
+
+            if self.context.setup.bos.confirmed:
+
+                score += 15
+
+
+                if self.context.setup.bos.direction == "Bullish":
+
+                    bullish_points += 15
+
+                    reasons.append(
+                        "15M bullish BOS confirmed"
+                    )
+
+
+                elif self.context.setup.bos.direction == "Bearish":
+
+                    bearish_points += 15
+
+                    reasons.append(
+                        "15M bearish BOS confirmed"
+                    )
+
+
+
+        # ==================================================
+        # 5M Entry
+        # ==================================================
+
+        if self.context.entry:
+
+
+            if self.context.entry.bos.confirmed:
+
+                score += 10
+
+
+                if self.context.entry.bos.direction == "Bullish":
+
+                    bullish_points += 10
+
+                    reasons.append(
+                        "5M bullish BOS entry confirmation"
+                    )
+
+
+                elif self.context.entry.bos.direction == "Bearish":
+
+                    bearish_points += 10
+
+                    reasons.append(
+                        "5M bearish BOS entry confirmation"
+                    )
+
+
+
+            if self.context.entry.choch.confirmed:
+
+                score += 5
+
 
                 reasons.append(
-                    "Bullish BOS confirmed"
+                    "5M CHoCH confirmation"
                 )
-
-
-            elif self.bos.direction == "Bearish":
-
-                score += 25
-
-                reasons.append(
-                    "Bearish BOS confirmed"
-                )
-
-
-
-        # ==================================================
-        # CHoCH
-        # ==================================================
-
-        if self.choch.confirmed:
-
-
-            score += 15
-
-            reasons.append(
-                f"{self.choch.direction} CHoCH confirmed"
-            )
 
 
 
@@ -148,9 +244,12 @@ class ConfluenceEngine:
         # Order Block
         # ==================================================
 
-        if self.order_blocks:
+        entry = self.context.entry
 
-            score += 15
+
+        if entry and entry.order_blocks:
+
+            score += 5
 
             reasons.append(
                 "Order Block available"
@@ -159,12 +258,12 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # Fair Value Gap
+        # FVG
         # ==================================================
 
-        if self.fair_value_gaps:
+        if entry and entry.fair_value_gaps:
 
-            score += 15
+            score += 5
 
             reasons.append(
                 "Fair Value Gap available"
@@ -173,7 +272,7 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # Decision
+        # Final Decision
         # ==================================================
 
         decision.confidence = min(
@@ -186,23 +285,26 @@ class ConfluenceEngine:
 
 
 
-        if score >= 70:
+        if score < 60:
 
-
-            if self.bos.direction == "Bullish":
-
-                decision.signal = "BUY"
-
-
-            elif self.bos.direction == "Bearish":
-
-                decision.signal = "SELL"
-
+            decision.signal = "WAIT"
 
 
         else:
 
-            decision.signal = "WAIT"
+            if bullish_points > bearish_points:
+
+                decision.signal = "BUY"
+
+
+            elif bearish_points > bullish_points:
+
+                decision.signal = "SELL"
+
+
+            else:
+
+                decision.signal = "WAIT"
 
 
 
