@@ -239,6 +239,8 @@ def analyze_market(
         context.swing_highs,
 
         context.swing_lows,
+
+        context.df,
     )
 
 

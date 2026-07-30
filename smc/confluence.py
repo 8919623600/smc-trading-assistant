@@ -555,7 +555,7 @@ class ConfluenceEngine:
         decision.confidence = score
 
 
-        decision.reasons = reasons
+        decision.reasons = list(dict.fromkeys(reasons))
 
 
 
