@@ -7,6 +7,7 @@ Responsibilities
 ----------------
 - Fetch market data
 - Detect swings
+- Identify major swings
 - Analyze market structure
 - Detect Break of Structure (BOS)
 - Detect Change of Character (CHoCH)
@@ -19,6 +20,7 @@ from core.session import TradingSession
 from fetch_data import get_data
 
 from smc.swings import find_swings
+from smc.major_swings import find_major_swings
 from smc.structure import analyze_structure
 from smc.bos import detect_bos
 from smc.choch import detect_choch
@@ -52,12 +54,19 @@ def analyze_market(
     swing_highs, swing_lows = find_swings(df)
 
     # ======================================================
+    # Major Swing Detection
+    # ======================================================
+
+    major_highs = find_major_swings(swing_highs)
+    major_lows = find_major_swings(swing_lows)
+
+    # ======================================================
     # Market Structure
     # ======================================================
 
-    swing_highs, swing_lows, structure = analyze_structure(
-        swing_highs,
-        swing_lows,
+    major_highs, major_lows, structure = analyze_structure(
+        major_highs,
+        major_lows,
     )
 
     # ======================================================
@@ -66,8 +75,8 @@ def analyze_market(
 
     bos = detect_bos(
         df,
-        swing_highs,
-        swing_lows,
+        major_highs,
+        major_lows,
     )
 
     # ======================================================
@@ -76,8 +85,8 @@ def analyze_market(
 
     choch = detect_choch(
         df,
-        swing_highs,
-        swing_lows,
+        major_highs,
+        major_lows,
         structure,
     )
 
@@ -88,8 +97,8 @@ def analyze_market(
     return AnalysisResult(
         df=df,
         timeframe=timeframe,
-        swing_highs=swing_highs,
-        swing_lows=swing_lows,
+        swing_highs=major_highs,
+        swing_lows=major_lows,
         structure=structure,
         bos=bos,
         choch=choch,
