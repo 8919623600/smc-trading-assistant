@@ -18,6 +18,8 @@ Author: BMIE Project
 
 from config import DEFAULT_BARS
 from core.session import TradingSession
+from core.analysis_context import AnalysisContext
+
 from fetch_data import get_data
 
 from smc.swings import find_swings
@@ -123,12 +125,23 @@ def analyze_market(
     market_structure.last_choch = choch
 
     # ======================================================
+    # Shared Analysis Context
+    # ======================================================
+
+    context = AnalysisContext(
+        df=df,
+        swing_highs=major_highs,
+        swing_lows=major_lows,
+        market_structure=market_structure,
+    )
+
+    # ======================================================
     # Liquidity
     # ======================================================
 
     liquidity_engine = LiquidityEngine(
-        major_highs,
-        major_lows,
+        context.swing_highs,
+        context.swing_lows,
     )
 
     liquidity = liquidity_engine.analyze()
