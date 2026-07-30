@@ -1,7 +1,27 @@
+"""
+core/analysis_context.py
+
+Shared analysis context passed between BMIE SMC engines.
+
+Responsibilities
+----------------
+- Store common market data
+- Store swing information
+- Store market structure
+- Store structural events (BOS / CHoCH)
+
+Author: BMIE Project
+"""
+
 from dataclasses import dataclass, field
 from typing import Any, List
 
-from models import SwingPoint, MarketStructure
+from models import (
+    SwingPoint,
+    MarketStructure,
+    BOSEvent,
+    CHoCHEvent,
+)
 
 
 @dataclass
@@ -9,21 +29,52 @@ class AnalysisContext:
     """
     Shared analysis context passed between SMC engines.
 
-    This object contains the common inputs required during
-    market analysis. It is created by the Analyzer and
-    passed to each engine as needed.
-
-    Note:
-        This is an internal working object and should not be
-        returned outside the analysis pipeline.
+    Created by analyzer.py and consumed by:
+        - BOSEngine
+        - CHoCHEngine
+        - LiquidityEngine
+        - OrderBlockEngine
+        - Future SMC engines
     """
 
-    # Raw market data
+
+    # ======================================================
+    # Raw Market Data
+    # ======================================================
+
     df: Any
 
-    # Swing data
-    swing_highs: List[SwingPoint] = field(default_factory=list)
-    swing_lows: List[SwingPoint] = field(default_factory=list)
 
-    # Market structure
-    market_structure: MarketStructure = field(default_factory=MarketStructure)
+    # ======================================================
+    # Swing Data
+    # ======================================================
+
+    swing_highs: List[SwingPoint] = field(
+        default_factory=list
+    )
+
+    swing_lows: List[SwingPoint] = field(
+        default_factory=list
+    )
+
+
+    # ======================================================
+    # Market Structure
+    # ======================================================
+
+    market_structure: MarketStructure = field(
+        default_factory=MarketStructure
+    )
+
+
+    # ======================================================
+    # Structural Events
+    # ======================================================
+
+    bos: BOSEvent = field(
+        default_factory=BOSEvent
+    )
+
+    choch: CHoCHEvent = field(
+        default_factory=CHoCHEvent
+    )
