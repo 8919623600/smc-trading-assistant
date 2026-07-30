@@ -8,6 +8,7 @@ Responsibilities
 - Run multi-timeframe analysis
 - Build MTF context
 - Generate trade decision
+- Select best Order Block
 - Generate risk plan
 - Print concise market report
 
@@ -43,6 +44,55 @@ class MarketEngine:
 
         self.analysis = MarketAnalysis()
 
+        self.selected_order_block = None
+
+
+
+    # ======================================================
+    # Select Best Order Block
+    # ======================================================
+
+    def select_order_block(self):
+
+        """
+        Select OB using SMC priority.
+
+        Priority:
+        1H Trend
+        15M Setup
+        5M Entry
+        """
+
+        priority = [
+
+            self.analysis.trend,
+
+            self.analysis.setup,
+
+            self.analysis.entry,
+
+        ]
+
+
+        for result in priority:
+
+
+            if result and result.order_blocks:
+
+
+                return sorted(
+
+                    result.order_blocks,
+
+                    key=lambda x: x.created_at,
+
+                    reverse=True
+
+                )[0]
+
+
+        return None
+
 
 
     # ======================================================
@@ -51,7 +101,9 @@ class MarketEngine:
 
     def run(self):
 
+
         print("\nRunning Multi-Timeframe Analysis...")
+
         print("-" * 60)
 
 
@@ -60,7 +112,9 @@ class MarketEngine:
 
 
             print(
+
                 f"Analyzing {name.upper()} ({timeframe})..."
+
             )
 
 
@@ -86,7 +140,21 @@ class MarketEngine:
 
 
         print(
+
             "\nAnalysis Completed Successfully."
+
+        )
+
+
+
+        # ==================================================
+        # Select Institutional Zone
+        # ==================================================
+
+        self.selected_order_block = (
+
+            self.select_order_block()
+
         )
 
 
@@ -152,15 +220,27 @@ class MarketEngine:
             )
 
 
+            order_blocks = []
+
+
+            if self.selected_order_block:
+
+
+                order_blocks.append(
+
+                    self.selected_order_block
+
+                )
+
+
 
             risk_decision = risk_manager.analyze(
 
                 trade_decision,
 
-                entry.order_blocks,
+                order_blocks,
 
             )
-
 
 
             entry.risk_decision = risk_decision
@@ -172,7 +252,6 @@ class MarketEngine:
     # ======================================================
     # Helpers
     # ======================================================
-
 
     @staticmethod
     def format_event(event):
@@ -188,32 +267,6 @@ class MarketEngine:
 
 
         return event.direction
-
-
-
-    @staticmethod
-    def latest_order_block(result):
-
-        if not result:
-
-            return None
-
-
-        if not result.order_blocks:
-
-            return None
-
-
-
-        return sorted(
-
-            result.order_blocks,
-
-            key=lambda x: x.created_at,
-
-            reverse=True
-
-        )[0]
 
 
 
@@ -235,7 +288,7 @@ class MarketEngine:
 
             result.fair_value_gaps,
 
-            key=lambda x: x.created_at,
+            key=lambda x:x.created_at,
 
             reverse=True
 
@@ -285,7 +338,6 @@ class MarketEngine:
         print()
 
 
-
         print("-" * 60)
 
         print("MULTI TIMEFRAME STRUCTURE")
@@ -294,7 +346,7 @@ class MarketEngine:
 
 
 
-        for name, result in self.analysis.as_dict().items():
+        for name,result in self.analysis.as_dict().items():
 
 
             if result is None:
@@ -309,8 +361,7 @@ class MarketEngine:
 
 
 
-            if hasattr(result, "market_state"):
-
+            if hasattr(result,"market_state"):
 
                 phase = result.market_state.phase
 
@@ -337,7 +388,6 @@ class MarketEngine:
         print()
 
 
-
         print("-" * 60)
 
         print("ACTIVE SETUP")
@@ -346,23 +396,19 @@ class MarketEngine:
 
 
 
-        if hasattr(entry, "market_state"):
+        if hasattr(entry,"market_state"):
 
 
             print(
 
-                f"Phase      : "
-
-                f"{entry.market_state.phase}"
+                f"Phase      : {entry.market_state.phase}"
 
             )
 
 
             print(
 
-                f"Reason     : "
-
-                f"{entry.market_state.reason}"
+                f"Reason     : {entry.market_state.reason}"
 
             )
 
@@ -370,24 +416,16 @@ class MarketEngine:
 
         print(
 
-            f"BOS        : "
-
-            f"{self.format_event(entry.bos)}"
+            f"BOS        : {self.format_event(entry.bos)}"
 
         )
 
 
         print(
 
-            f"CHoCH      : "
-
-            f"{self.format_event(entry.choch)}"
+            f"CHoCH      : {self.format_event(entry.choch)}"
 
         )
-
-
-
-        ob = self.latest_order_block(entry)
 
 
 
@@ -395,11 +433,13 @@ class MarketEngine:
 
 
 
-        if ob:
+        if self.selected_order_block:
+
+
+            ob = self.selected_order_block
 
 
             print("Order Block")
-
 
             print(
 
@@ -463,10 +503,6 @@ class MarketEngine:
 
 
 
-        # ==================================================
-        # Trade Decision
-        # ==================================================
-
         print()
 
 
@@ -494,9 +530,7 @@ class MarketEngine:
 
             print(
 
-                f"Confidence : "
-
-                f"{decision.confidence:.2f}%"
+                f"Confidence : {decision.confidence:.2f}%"
 
             )
 
@@ -510,7 +544,6 @@ class MarketEngine:
 
             for reason in decision.reasons:
 
-
                 print(
 
                     f"- {reason}"
@@ -518,20 +551,6 @@ class MarketEngine:
                 )
 
 
-        else:
-
-
-            print(
-
-                "Decision unavailable"
-
-            )
-
-
-
-        # ==================================================
-        # Risk Plan
-        # ==================================================
 
         print()
 
@@ -564,48 +583,37 @@ class MarketEngine:
 
             print(
 
-                f"Stop Loss  : "
-
-                f"{risk.stop_loss:.2f}"
+                f"Stop Loss  : {risk.stop_loss:.2f}"
 
             )
 
 
             print(
 
-                f"Target     : "
-
-                f"{risk.target:.2f}"
+                f"Target     : {risk.target:.2f}"
 
             )
 
 
             print(
 
-                f"Risk Reward: "
-
-                f"{risk.risk_reward:.2f}"
+                f"Risk Reward: {risk.risk_reward:.2f}"
 
             )
 
 
             print(
 
-                f"Risk Amount: ₹"
-
-                f"{risk.risk_amount:.2f}"
+                f"Risk Amount: ₹{risk.risk_amount:.2f}"
 
             )
 
 
             print(
 
-                f"Position   : "
-
-                f"{risk.position_size:.2f}"
+                f"Position   : {risk.position_size:.2f}"
 
             )
-
 
 
         else:
@@ -620,7 +628,6 @@ class MarketEngine:
 
 
         print("=" * 60)
-
 
         print(
 
