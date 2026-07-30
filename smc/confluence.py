@@ -48,7 +48,7 @@ class ConfluenceEngine:
 
 
     # ======================================================
-    # Fresh FVG Check
+    # FVG Status Check
     # ======================================================
 
     def get_fvg_status(self):
@@ -127,10 +127,12 @@ class ConfluenceEngine:
 
                 if fvg_direction == "bullish":
 
+
                     valid.append(fvg)
 
 
                 else:
+
 
                     ignored.append(fvg)
 
@@ -141,10 +143,12 @@ class ConfluenceEngine:
 
                 if fvg_direction == "bearish":
 
+
                     valid.append(fvg)
 
 
                 else:
+
 
                     ignored.append(fvg)
 
@@ -188,11 +192,14 @@ class ConfluenceEngine:
 
             return {
 
+
                 "valid": False,
+
 
                 "reason":
 
                     "No liquidity confirmation"
+
 
             }
 
@@ -241,7 +248,6 @@ class ConfluenceEngine:
 
             # ==============================================
             # Bullish Setup
-            # Need Sell-side Liquidity Sweep
             # ==============================================
 
             if direction == "Bullish":
@@ -271,16 +277,20 @@ class ConfluenceEngine:
 
                         return {
 
+
                             "valid": True,
+
 
                             "reason":
 
                                 "Sell-side liquidity swept"
 
+
                         }
 
 
                     else:
+
 
                         invalid_sweep = True
 
@@ -291,12 +301,12 @@ class ConfluenceEngine:
 # ================= PART 2 START =================
 
 
-                    # Continue bearish validation
+                    # Continue bullish validation
+
 
 
             # ==============================================
             # Bearish Setup
-            # Need Buy-side Liquidity Sweep
             # ==============================================
 
             elif direction == "Bearish":
@@ -326,18 +336,23 @@ class ConfluenceEngine:
 
                         return {
 
+
                             "valid": True,
+
 
                             "reason":
 
                                 "Buy-side liquidity swept"
+
 
                         }
 
 
                     else:
 
+
                         invalid_sweep = True
+
 
 
 
@@ -346,23 +361,30 @@ class ConfluenceEngine:
 
             return {
 
+
                 "valid": False,
+
 
                 "reason":
 
                     "Liquidity sweep too deep"
 
+
             }
+
 
 
 
         return {
 
+
             "valid": False,
+
 
             "reason":
 
                 "No liquidity confirmation"
+
 
         }
 
@@ -383,11 +405,13 @@ class ConfluenceEngine:
 
         if bullish_score > bearish_score:
 
+
             return "Bullish"
 
 
 
         elif bearish_score > bullish_score:
+
 
             return "Bearish"
 
@@ -421,6 +445,8 @@ class ConfluenceEngine:
 
 
         reasons = []
+
+
 
 
 
@@ -553,7 +579,6 @@ class ConfluenceEngine:
                         "4H structure transition"
 
                     )
-
 
 
 # ================= PART 2 END =================
@@ -723,8 +748,9 @@ class ConfluenceEngine:
 
 
 
+
             # ----------------------------------------------
-            # CHoCH detection
+            # CHoCH Detection
             # ----------------------------------------------
 
             if self.context.entry.choch:
@@ -804,7 +830,7 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # FVG Validation
+        # FVG Validation (FIXED)
         # ==================================================
 
         fresh_fvg, filled_fvg = self.get_fvg_status()
@@ -842,6 +868,17 @@ class ConfluenceEngine:
 
 
 
+            elif ignored_fvg:
+
+
+                reasons.append(
+
+                    "Opposite FVG ignored"
+
+                )
+
+
+
             elif filled_fvg:
 
 
@@ -852,15 +889,6 @@ class ConfluenceEngine:
                 )
 
 
-
-            elif ignored_fvg:
-
-
-                reasons.append(
-
-                    "Opposite FVG ignored"
-
-                )
 
 
 
@@ -895,17 +923,6 @@ class ConfluenceEngine:
 
 
 
-            elif filled_fvg:
-
-
-                reasons.append(
-
-                    "FVG already filled"
-
-                )
-
-
-
             elif ignored_fvg:
 
 
@@ -915,6 +932,16 @@ class ConfluenceEngine:
 
                 )
 
+
+
+            elif filled_fvg:
+
+
+                reasons.append(
+
+                    "FVG already filled"
+
+                )
 
 
 # ================= PART 3 END =================
