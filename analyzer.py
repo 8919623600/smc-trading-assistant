@@ -9,8 +9,9 @@ Responsibilities
 - Detect swings
 - Identify major swings
 - Build market structure
-- Detect Break of Structure (BOS)
-- Detect Change of Character (CHoCH)
+- Detect BOS
+- Detect CHoCH
+- Resolve market state
 - Detect Liquidity
 
 Author: BMIE Project
@@ -28,6 +29,7 @@ from smc.structure import analyze_structure
 from smc.market_structure import MarketStructureEngine
 from smc.bos import BOSEngine
 from smc.choch import CHoCHEngine
+from smc.state_manager import MarketStateManager
 from smc.liquidity import LiquidityEngine
 
 from models import AnalysisResult, MarketStructure
@@ -66,14 +68,14 @@ def analyze_market(
     swing_highs, swing_lows = find_swings(df)
 
     # ======================================================
-    # Filter Major Swings
+    # Major Swings
     # ======================================================
 
     major_highs = find_major_swings(swing_highs)
     major_lows = find_major_swings(swing_lows)
 
     # ======================================================
-    # Legacy Structure (kept for compatibility)
+    # Legacy Structure
     # ======================================================
 
     major_highs, major_lows, structure = analyze_structure(
@@ -100,7 +102,7 @@ def analyze_market(
     )
 
     # ======================================================
-    # Shared Analysis Context
+    # Analysis Context
     # ======================================================
 
     context = AnalysisContext(
@@ -111,22 +113,38 @@ def analyze_market(
     )
 
     # ======================================================
-    # Break of Structure (BOS)
+    # BOS
     # ======================================================
 
     bos_engine = BOSEngine(context)
+
     bos = bos_engine.analyze()
 
     market_structure.last_bos = bos
 
     # ======================================================
-    # Change of Character (CHoCH)
+    # CHoCH
     # ======================================================
 
     choch_engine = CHoCHEngine(context)
+
     choch = choch_engine.analyze()
 
     market_structure.last_choch = choch
+
+
+    # ======================================================
+    # Market State Interpretation
+    # ======================================================
+
+    state_manager = MarketStateManager(
+        market_structure,
+        bos,
+        choch,
+    )
+
+    market_state = state_manager.analyze()
+
 
     # ======================================================
     # Liquidity
@@ -139,11 +157,12 @@ def analyze_market(
 
     liquidity = liquidity_engine.analyze()
 
+
     # ======================================================
-    # Build Analysis Result
+    # Result
     # ======================================================
 
-    return AnalysisResult(
+    result = AnalysisResult(
         df=df,
         timeframe=timeframe,
         current_price=current_price,
@@ -156,3 +175,9 @@ def analyze_market(
         choch=choch,
         liquidity=liquidity,
     )
+
+    # Attach interpreted state dynamically
+    # (No models.py change yet)
+    result.market_state = market_state
+
+    return result
