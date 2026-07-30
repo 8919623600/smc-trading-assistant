@@ -5,10 +5,10 @@ BMIE Market Engine
 
 Responsibilities
 ----------------
-- Run multi-timeframe market analysis
-- Store analysis results
-- Print concise trading report
-- Display SMC trade decision
+- Run multi-timeframe analysis
+- Print concise market report
+- Display trade decision
+- Display risk plan
 
 Author: BMIE Project
 """
@@ -21,9 +21,7 @@ from models import MarketAnalysis
 
 
 class MarketEngine:
-    """
-    Runs BMIE analysis pipeline.
-    """
+
 
     def __init__(self, session):
 
@@ -34,7 +32,7 @@ class MarketEngine:
 
 
     # ======================================================
-    # Run Analysis
+    # Run
     # ======================================================
 
     def run(self):
@@ -44,6 +42,7 @@ class MarketEngine:
 
 
         for name, timeframe in TIMEFRAMES.items():
+
 
             print(
                 f"Analyzing {name.upper()} ({timeframe})..."
@@ -70,17 +69,19 @@ class MarketEngine:
 
 
     # ======================================================
-    # Event Formatter
+    # Helpers
     # ======================================================
 
     @staticmethod
     def format_event(event):
 
         if event is None:
+
             return "None"
 
 
         if event.direction is None:
+
             return "None"
 
 
@@ -88,12 +89,8 @@ class MarketEngine:
 
 
 
-    # ======================================================
-    # Latest Order Block
-    # ======================================================
-
     @staticmethod
-    def get_order_block(result):
+    def latest_order_block(result):
 
         if not result.order_blocks:
 
@@ -102,18 +99,14 @@ class MarketEngine:
 
         return sorted(
             result.order_blocks,
-            key=lambda x: x.created_at,
+            key=lambda x:x.created_at,
             reverse=True
         )[0]
 
 
 
-    # ======================================================
-    # Latest FVG
-    # ======================================================
-
     @staticmethod
-    def get_fvg(result):
+    def latest_fvg(result):
 
         if not result.fair_value_gaps:
 
@@ -122,31 +115,30 @@ class MarketEngine:
 
         return sorted(
             result.fair_value_gaps,
-            key=lambda x: x.created_at,
+            key=lambda x:x.created_at,
             reverse=True
         )[0]
 
 
 
     # ======================================================
-    # Print Report
+    # Report
     # ======================================================
 
     def print_report(self):
 
 
-        print("\n")
+        entry = self.analysis.entry
 
+
+        print("\n")
         print("=" * 60)
         print("BMIE MARKET INTELLIGENCE REPORT")
         print("=" * 60)
 
 
-        entry = self.analysis.entry
-
-
         print(
-            f"Symbol : {self.session.symbol.upper()}"
+            f"Symbol : {self.session.symbol}"
         )
 
 
@@ -157,7 +149,6 @@ class MarketEngine:
             )
 
 
-
         print()
 
         print("-" * 60)
@@ -166,10 +157,11 @@ class MarketEngine:
 
 
 
-        for name, result in self.analysis.as_dict().items():
+        for name,result in self.analysis.as_dict().items():
 
 
             if result is None:
+
                 continue
 
 
@@ -182,6 +174,7 @@ class MarketEngine:
                 result,
                 "market_state"
             ):
+
 
                 phase = result.market_state.phase
 
@@ -210,10 +203,7 @@ class MarketEngine:
 
 
 
-        if hasattr(
-            entry,
-            "market_state"
-        ):
+        if hasattr(entry,"market_state"):
 
 
             print(
@@ -241,11 +231,7 @@ class MarketEngine:
 
 
 
-        # ==================================================
-        # Order Block
-        # ==================================================
-
-        ob = self.get_order_block(entry)
+        ob = self.latest_order_block(entry)
 
 
         print()
@@ -253,34 +239,27 @@ class MarketEngine:
 
         if ob:
 
+
             print("Order Block")
 
             print(
                 f"Type       : {ob.direction}"
             )
 
+
             print(
                 f"Zone       : "
                 f"{ob.low:.2f} - {ob.high:.2f}"
             )
 
+
             print(
                 f"Time       : {ob.created_at}"
             )
 
-        else:
-
-            print(
-                "Order Block : None"
-            )
 
 
-
-        # ==================================================
-        # FVG
-        # ==================================================
-
-        fvg = self.get_fvg(entry)
+        fvg = self.latest_fvg(entry)
 
 
         print()
@@ -288,25 +267,23 @@ class MarketEngine:
 
         if fvg:
 
+
             print("FVG")
+
 
             print(
                 f"Type       : {fvg.direction}"
             )
+
 
             print(
                 f"Zone       : "
                 f"{fvg.low:.2f} - {fvg.high:.2f}"
             )
 
+
             print(
                 f"Filled     : {fvg.filled}"
-            )
-
-        else:
-
-            print(
-                "FVG        : None"
             )
 
 
@@ -342,31 +319,80 @@ class MarketEngine:
 
             print()
 
-
             print("Reasons:")
 
 
-            if decision.reasons:
-
-
-                for reason in decision.reasons:
-
-                    print(
-                        f"- {reason}"
-                    )
-
-
-            else:
+            for reason in decision.reasons:
 
                 print(
-                    "- No confirmation"
+                    f"- {reason}"
                 )
+
+
+
+        # ==================================================
+        # Risk Plan
+        # ==================================================
+
+        print()
+
+        print("-" * 60)
+        print("RISK PLAN")
+        print("-" * 60)
+
+
+
+        risk = entry.risk_decision
+
+
+        if risk:
+
+
+            if risk.entry_low:
+
+
+                print(
+                    f"Entry Zone : "
+                    f"{risk.entry_low:.2f} - "
+                    f"{risk.entry_high:.2f}"
+                )
+
+
+            if risk.stop_loss:
+
+
+                print(
+                    f"Stop Loss  : "
+                    f"{risk.stop_loss:.2f}"
+                )
+
+
+            if risk.target:
+
+
+                print(
+                    f"Target     : "
+                    f"{risk.target:.2f}"
+                )
+
+
+            print(
+                f"Risk Reward: "
+                f"{risk.risk_reward:.2f}"
+            )
+
+
+            print(
+                f"Risk Amount: ₹"
+                f"{risk.risk_amount:.2f}"
+            )
 
 
         else:
 
+
             print(
-                "No decision generated"
+                "Risk plan unavailable"
             )
 
 
