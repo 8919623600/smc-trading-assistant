@@ -13,11 +13,13 @@ Responsibilities
 - Detect CHoCH
 - Resolve market state
 - Detect Liquidity
+- Detect Order Blocks
 
 Author: BMIE Project
 """
 
 from config import DEFAULT_BARS
+
 from core.session import TradingSession
 from core.analysis_context import AnalysisContext
 
@@ -31,6 +33,7 @@ from smc.bos import BOSEngine
 from smc.choch import CHoCHEngine
 from smc.state_manager import MarketStateManager
 from smc.liquidity import LiquidityEngine
+from smc.order_blocks import OrderBlockEngine
 
 from models import AnalysisResult, MarketStructure
 
@@ -44,6 +47,7 @@ def analyze_market(
     Perform complete SMC analysis for a timeframe.
     """
 
+
     # ======================================================
     # Fetch Market Data
     # ======================================================
@@ -54,6 +58,7 @@ def analyze_market(
         bars=bars,
     )
 
+
     # ======================================================
     # Market Snapshot
     # ======================================================
@@ -61,11 +66,13 @@ def analyze_market(
     current_price = float(df.iloc[-1]["close"])
     current_time = df.index[-1]
 
+
     # ======================================================
     # Detect Swings
     # ======================================================
 
     swing_highs, swing_lows = find_swings(df)
+
 
     # ======================================================
     # Major Swings
@@ -73,6 +80,7 @@ def analyze_market(
 
     major_highs = find_major_swings(swing_highs)
     major_lows = find_major_swings(swing_lows)
+
 
     # ======================================================
     # Legacy Structure
@@ -82,6 +90,7 @@ def analyze_market(
         major_highs,
         major_lows,
     )
+
 
     # ======================================================
     # Market Structure Engine
@@ -94,6 +103,7 @@ def analyze_market(
 
     state = structure_engine.analyze()
 
+
     market_structure = MarketStructure(
         trend=state.trend,
         state=state.state,
@@ -101,8 +111,9 @@ def analyze_market(
         major_low=state.last_low,
     )
 
+
     # ======================================================
-    # Analysis Context
+    # Shared Analysis Context
     # ======================================================
 
     context = AnalysisContext(
@@ -111,6 +122,7 @@ def analyze_market(
         swing_lows=major_lows,
         market_structure=market_structure,
     )
+
 
     # ======================================================
     # BOS
@@ -122,6 +134,11 @@ def analyze_market(
 
     market_structure.last_bos = bos
 
+    # Update shared context
+    context.bos = bos
+
+
+
     # ======================================================
     # CHoCH
     # ======================================================
@@ -131,6 +148,10 @@ def analyze_market(
     choch = choch_engine.analyze()
 
     market_structure.last_choch = choch
+
+    # Update shared context
+    context.choch = choch
+
 
 
     # ======================================================
@@ -146,6 +167,7 @@ def analyze_market(
     market_state = state_manager.analyze()
 
 
+
     # ======================================================
     # Liquidity
     # ======================================================
@@ -158,26 +180,55 @@ def analyze_market(
     liquidity = liquidity_engine.analyze()
 
 
+
+    # ======================================================
+    # Order Blocks
+    # ======================================================
+
+    order_block_engine = OrderBlockEngine(
+        context
+    )
+
+    order_blocks = order_block_engine.analyze()
+
+
+
     # ======================================================
     # Result
     # ======================================================
 
     result = AnalysisResult(
+
         df=df,
+
         timeframe=timeframe,
+
         current_price=current_price,
+
         current_time=current_time,
+
         swing_highs=major_highs,
+
         swing_lows=major_lows,
+
         structure=structure,
+
         market_structure=market_structure,
+
         bos=bos,
+
         choch=choch,
+
         liquidity=liquidity,
+
+        order_blocks=order_blocks,
     )
 
-    # Attach interpreted state dynamically
+
+    # Dynamic attachment
     # (No models.py change yet)
+
     result.market_state = market_state
+
 
     return result
