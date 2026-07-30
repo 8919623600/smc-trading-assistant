@@ -1,14 +1,15 @@
 """
 smc/fvg.py
 
-Fair Value Gap (FVG) Engine for BMIE.
+Fair Value Gap (FVG) Engine V2 for BMIE.
 
 Responsibilities
 ----------------
 - Detect Bullish Fair Value Gaps
 - Detect Bearish Fair Value Gaps
-- Track filled gaps
-- Return typed FVG objects
+- Track FVG mitigation
+- Return clean FVG objects
+- Remove invalid historical gaps
 
 Author: BMIE Project
 """
@@ -30,10 +31,10 @@ from core.analysis_context import AnalysisContext
 @dataclass
 class FairValueGap:
     """
-    Represents a market imbalance.
+    Represents market imbalance.
     """
 
-    direction: str       # Bullish / Bearish
+    direction: str
 
     high: float
 
@@ -52,9 +53,6 @@ class FairValueGap:
 # ==========================================================
 
 class FVGEngine:
-    """
-    Detects Fair Value Gaps from candle imbalance.
-    """
 
 
     def __init__(
@@ -72,9 +70,8 @@ class FVGEngine:
     # Bullish FVG
     # ======================================================
 
-    def detect_bullish_fvg(
-        self,
-    ) -> List[FairValueGap]:
+    def detect_bullish_fvg(self):
+
 
         gaps = []
 
@@ -82,44 +79,50 @@ class FVGEngine:
         df = self.df
 
 
+
         for i in range(
             2,
             len(df)
         ):
 
-            candle1 = df.iloc[i - 2]
+
+            candle1 = df.iloc[i-2]
 
             candle3 = df.iloc[i]
 
 
-            candle1_high = float(
+
+            first_high = float(
                 candle1["high"]
             )
 
-            candle3_low = float(
+
+            third_low = float(
                 candle3["low"]
             )
 
 
-            # Bullish imbalance
 
-            if candle3_low > candle1_high:
+            if third_low > first_high:
 
 
-                gaps.append(
-                    FairValueGap(
+                gap = FairValueGap(
 
-                        direction="Bullish",
+                    direction="Bullish",
 
-                        high=candle3_low,
+                    low=first_high,
 
-                        low=candle1_high,
+                    high=third_low,
 
-                        created_at=df.index[i],
+                    created_at=df.index[i],
 
-                        strength=1,
-                    )
+                    strength=1
+
                 )
+
+
+                gaps.append(gap)
+
 
 
         return gaps
@@ -130,9 +133,8 @@ class FVGEngine:
     # Bearish FVG
     # ======================================================
 
-    def detect_bearish_fvg(
-        self,
-    ) -> List[FairValueGap]:
+    def detect_bearish_fvg(self):
+
 
         gaps = []
 
@@ -140,44 +142,50 @@ class FVGEngine:
         df = self.df
 
 
+
         for i in range(
             2,
             len(df)
         ):
 
-            candle1 = df.iloc[i - 2]
+
+            candle1 = df.iloc[i-2]
 
             candle3 = df.iloc[i]
 
 
-            candle1_low = float(
+
+            first_low = float(
                 candle1["low"]
             )
 
-            candle3_high = float(
+
+            third_high = float(
                 candle3["high"]
             )
 
 
-            # Bearish imbalance
 
-            if candle3_high < candle1_low:
+            if third_high < first_low:
 
 
-                gaps.append(
-                    FairValueGap(
+                gap = FairValueGap(
 
-                        direction="Bearish",
+                    direction="Bearish",
 
-                        high=candle1_low,
+                    low=third_high,
 
-                        low=candle3_high,
+                    high=first_low,
 
-                        created_at=df.index[i],
+                    created_at=df.index[i],
 
-                        strength=1,
-                    )
+                    strength=1
+
                 )
+
+
+                gaps.append(gap)
+
 
 
         return gaps
@@ -185,7 +193,7 @@ class FVGEngine:
 
 
     # ======================================================
-    # Filled Check
+    # Mitigation Check
     # ======================================================
 
     def check_filled(
@@ -193,20 +201,58 @@ class FVGEngine:
         gaps: List[FairValueGap],
     ):
 
-        current_price = float(
-            self.df.iloc[-1]["close"]
-        )
+
+        df = self.df
+
 
 
         for gap in gaps:
 
-            if (
-                gap.low
-                <= current_price
-                <= gap.high
-            ):
 
-                gap.filled = True
+            created_index = df.index.get_loc(
+                gap.created_at
+            )
+
+
+
+            future_candles = df.iloc[
+                created_index + 1 :
+            ]
+
+
+
+            for _, candle in future_candles.iterrows():
+
+
+                high = float(
+                    candle["high"]
+                )
+
+
+                low = float(
+                    candle["low"]
+                )
+
+
+
+                # Price returned into FVG
+
+                if (
+
+                    low <= gap.high
+
+                    and
+
+                    high >= gap.low
+
+                ):
+
+
+                    gap.filled = True
+
+
+                    break
+
 
 
         return gaps
@@ -214,33 +260,73 @@ class FVGEngine:
 
 
     # ======================================================
+    # Remove Old Filled Gaps
+    # ======================================================
+
+    def clean_gaps(
+        self,
+        gaps,
+    ):
+
+
+        return sorted(
+
+            gaps,
+
+            key=lambda x:x.created_at,
+
+            reverse=True
+
+        )[:5]
+
+
+
+    # ======================================================
     # Public API
     # ======================================================
 
-    def analyze(
-        self,
-    ) -> List[FairValueGap]:
+    def analyze(self):
 
 
         gaps = []
 
 
+
         gaps.extend(
+
             self.detect_bullish_fvg()
+
         )
 
 
         gaps.extend(
+
             self.detect_bearish_fvg()
+
         )
+
 
 
         gaps = self.check_filled(
+
             gaps
+
         )
 
 
+
+        gaps = self.clean_gaps(
+
+            gaps
+
+        )
+
+
+
         return sorted(
+
             gaps,
-            key=lambda x: x.created_at,
+
+            key=lambda x:x.created_at
+
         )
