@@ -1,14 +1,14 @@
 """
 smc/confluence.py
 
-BMIE Multi-Timeframe Confluence Engine V5.
+BMIE Multi-Timeframe Confluence Engine V6.
 
 Responsibilities
 ----------------
 - Combine multi-timeframe SMC confirmations
 - Determine trade direction
 - Validate directional FVG
-- Validate liquidity sweep
+- Validate liquidity sweep quality
 - Calculate setup confidence
 - Generate BUY / SELL / WATCH decision
 - Provide trade reasoning
@@ -129,7 +129,7 @@ class ConfluenceEngine:
 
 
     # ======================================================
-    # Liquidity Sweep Validation
+    # Liquidity Sweep Validation V2
     # ======================================================
 
     def validate_liquidity(
@@ -145,8 +145,11 @@ class ConfluenceEngine:
 
 
             liquidity = (
+
                 self.context.entry.liquidity
+
                 or []
+
             )
 
 
@@ -166,11 +169,18 @@ class ConfluenceEngine:
 
 
 
+        invalid_sweep = False
+
+
+
         for zone in liquidity:
 
 
 
-            # BUY setup requires sell-side sweep
+            # ==============================================
+            # BUY setup
+            # Sell-side liquidity sweep required
+            # ==============================================
 
             if direction == "Bullish":
 
@@ -186,19 +196,34 @@ class ConfluenceEngine:
                 ):
 
 
-                    return {
-
-                        "valid": True,
-
-                        "reason":
-
-                            "Sell-side liquidity swept"
-
-                    }
+                    if getattr(
+                        zone,
+                        "sweep_valid",
+                        False
+                    ):
 
 
+                        return {
 
-            # SELL setup requires buy-side sweep
+                            "valid": True,
+
+                            "reason":
+
+                                "Sell-side liquidity swept"
+
+                        }
+
+
+                    else:
+
+                        invalid_sweep = True
+
+
+
+            # ==============================================
+            # SELL setup
+            # Buy-side liquidity sweep required
+            # ==============================================
 
             elif direction == "Bearish":
 
@@ -214,15 +239,42 @@ class ConfluenceEngine:
                 ):
 
 
-                    return {
+                    if getattr(
+                        zone,
+                        "sweep_valid",
+                        False
+                    ):
 
-                        "valid": True,
 
-                        "reason":
+                        return {
 
-                            "Buy-side liquidity swept"
+                            "valid": True,
 
-                    }
+                            "reason":
+
+                                "Buy-side liquidity swept"
+
+                        }
+
+
+                    else:
+
+                        invalid_sweep = True
+
+
+
+        if invalid_sweep:
+
+
+            return {
+
+                "valid": False,
+
+                "reason":
+
+                    "Liquidity sweep too deep"
+
+            }
 
 
 
@@ -585,16 +637,9 @@ class ConfluenceEngine:
                 )
 
 
-        elif self.context.entry and self.context.entry.fair_value_gaps:
-
-            reasons.append(
-                "FVG direction unclear"
-            )
-
-
 
         # ==================================================
-        # Liquidity Sweep
+        # Liquidity Sweep Validation
         # ==================================================
 
         liquidity_result = self.validate_liquidity(
@@ -614,13 +659,6 @@ class ConfluenceEngine:
             reasons.append(
 
                 liquidity_result["reason"]
-
-            )
-
-
-            reasons.append(
-
-                "Liquidity sweep confirmation"
 
             )
 
@@ -656,9 +694,13 @@ class ConfluenceEngine:
         # Remove duplicate reasons
 
         decision.reasons = list(
+
             dict.fromkeys(
+
                 reasons
+
             )
+
         )
 
 
