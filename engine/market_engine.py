@@ -688,7 +688,7 @@ class MarketEngine:
 
 
 
-            for reason in decision.reasons:
+            for reason in list(dict.fromkeys(decision.reasons)):
 
 
                 print(
