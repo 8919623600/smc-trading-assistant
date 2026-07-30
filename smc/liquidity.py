@@ -1,7 +1,7 @@
 """
 smc/liquidity.py
 
-Liquidity Engine V3 for BMIE.
+Liquidity Engine V4 for BMIE.
 
 Responsibilities
 ----------------
@@ -12,6 +12,8 @@ Responsibilities
 - Detect Liquidity Sweeps
 - Validate sweep quality
 - Track sweep distance
+- Rank liquidity zones
+- Select best institutional liquidity
 
 Author: BMIE Project
 """
@@ -51,6 +53,7 @@ class LiquidityZone:
     sweep_valid: bool = False
 
 
+
     # Sweep details
 
     sweep_time: Optional[datetime] = None
@@ -60,9 +63,19 @@ class LiquidityZone:
     sweep_distance: Optional[float] = None
 
 
+
+    # Ranking details
+
+    distance_from_price: Optional[float] = None
+
+    strength: int = 0
+
+
+
     swing_points: List[SwingPoint] = field(
         default_factory=list
     )
+
 
 
 
@@ -98,11 +111,13 @@ class LiquidityEngine:
 
 
 
+
     # ======================================================
     # Equal Highs
     # ======================================================
 
     def detect_equal_highs(self):
+
 
         zones = []
 
@@ -114,7 +129,9 @@ class LiquidityEngine:
 
 
         for i in range(
+
             len(self.swing_highs) - 1
+
         ):
 
 
@@ -125,7 +142,9 @@ class LiquidityEngine:
 
 
             if abs(
+
                 first.price - second.price
+
             ) <= self.tolerance:
 
 
@@ -171,11 +190,13 @@ class LiquidityEngine:
 
 
 
+
     # ======================================================
     # Equal Lows
     # ======================================================
 
     def detect_equal_lows(self):
+
 
         zones = []
 
@@ -188,7 +209,9 @@ class LiquidityEngine:
 
 
         for i in range(
+
             len(self.swing_lows) - 1
+
         ):
 
 
@@ -199,7 +222,9 @@ class LiquidityEngine:
 
 
             if abs(
+
                 first.price - second.price
+
             ) <= self.tolerance:
 
 
@@ -242,8 +267,6 @@ class LiquidityEngine:
 
 
         return zones
-
-
 
     # ======================================================
     # Sweep Detection + Validation
@@ -291,15 +314,24 @@ class LiquidityEngine:
 
 
                         distance = (
-                            high - zone.level
+
+                            high
+
+                            -
+
+                            zone.level
+
                         )
 
 
                         zone.swept = True
 
+
                         zone.sweep_time = index
 
+
                         zone.sweep_price = high
+
 
                         zone.sweep_distance = distance
 
@@ -307,11 +339,13 @@ class LiquidityEngine:
 
                         if distance <= self.max_sweep_distance:
 
+
                             zone.sweep_valid = True
 
 
 
                         break
+
 
 
 
@@ -327,21 +361,31 @@ class LiquidityEngine:
 
 
                         distance = (
-                            zone.level - low
+
+                            zone.level
+
+                            -
+
+                            low
+
                         )
 
 
                         zone.swept = True
 
+
                         zone.sweep_time = index
 
+
                         zone.sweep_price = low
+
 
                         zone.sweep_distance = distance
 
 
 
                         if distance <= self.max_sweep_distance:
+
 
                             zone.sweep_valid = True
 
@@ -352,6 +396,193 @@ class LiquidityEngine:
 
 
         return zones
+
+
+
+
+
+    # ======================================================
+    # Liquidity Ranking
+    # ======================================================
+
+    def rank_liquidity(
+        self,
+        zones: List[LiquidityZone],
+        current_price: float,
+        direction: str,
+    ):
+
+
+        candidates = []
+
+
+
+        for zone in zones:
+
+
+
+            # Only swept liquidity
+
+            if not zone.swept:
+
+                continue
+
+
+
+            # Only valid sweep
+
+            if not zone.sweep_valid:
+
+                continue
+
+
+
+            # Bullish setup
+            # Need sell-side liquidity
+
+            if direction == "Bullish":
+
+
+                if zone.side != "Sell-side":
+
+                    continue
+
+
+
+            # Bearish setup
+            # Need buy-side liquidity
+
+            if direction == "Bearish":
+
+
+                if zone.side != "Buy-side":
+
+                    continue
+
+
+
+            distance = abs(
+
+                current_price
+
+                -
+
+                zone.level
+
+            )
+
+
+
+            zone.distance_from_price = distance
+
+
+
+            strength = 0
+
+
+
+            # Valid sweep weight
+
+            if zone.sweep_valid:
+
+
+                strength += 50
+
+
+
+            # Sweep quality
+
+            if zone.sweep_distance is not None:
+
+
+                if zone.sweep_distance < 5:
+
+
+                    strength += 30
+
+
+                elif zone.sweep_distance < 15:
+
+
+                    strength += 20
+
+
+                else:
+
+
+                    strength += 10
+
+
+
+            # Recency bonus
+
+            strength += 20
+
+
+
+            zone.strength = strength
+
+
+
+            candidates.append(zone)
+
+
+
+
+        if not candidates:
+
+            return None
+
+
+
+
+        # Strongest + nearest liquidity
+
+        candidates.sort(
+
+            key=lambda x:
+
+            (
+
+                -x.strength,
+
+                x.distance_from_price
+
+            )
+
+        )
+
+
+
+        return candidates[0]
+
+
+
+
+
+    # ======================================================
+    # Get Best Liquidity
+    # ======================================================
+
+    def get_best_liquidity(
+        self,
+        zones,
+        current_price,
+        direction,
+    ):
+
+
+        return self.rank_liquidity(
+
+            zones,
+
+            current_price,
+
+            direction
+
+        )
+
+
 
 
 

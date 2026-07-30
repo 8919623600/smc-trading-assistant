@@ -10,6 +10,8 @@ Responsibilities
 - Generate trade decision
 - Validate entry conditions
 - Select best Order Block
+- Select best Liquidity
+- Evaluate Setup Quality
 - Generate risk plan
 - Print concise market report
 
@@ -18,6 +20,7 @@ Author: BMIE Project
 
 
 from analyzer import analyze_market
+
 
 from config import (
     TIMEFRAMES,
@@ -38,19 +41,38 @@ from smc.entry_validator import EntryValidator
 
 from smc.risk_manager import RiskManager
 
+from smc.liquidity import LiquidityEngine
+
+from smc.setup_quality import SetupQualityEngine
+
+
 
 
 class MarketEngine:
 
 
 
-    def __init__(self, session):
+    def __init__(
+        self,
+        session
+    ):
+
 
         self.session = session
 
+
         self.analysis = MarketAnalysis()
 
+
         self.selected_order_block = None
+
+
+        self.selected_liquidity = None
+
+
+        self.setup_quality = None
+
+
 
 
 
@@ -59,6 +81,7 @@ class MarketEngine:
     # ======================================================
 
     def select_order_block(self):
+
 
         """
         Select OB using SMC priority.
@@ -86,7 +109,9 @@ class MarketEngine:
         for result in priority:
 
 
+
             if result and result.order_blocks:
+
 
 
                 return sorted(
@@ -105,6 +130,78 @@ class MarketEngine:
 
 
 
+
+
+    # ======================================================
+    # Select Best Liquidity
+    # ======================================================
+
+    def select_liquidity(
+        self,
+        direction
+    ):
+
+
+        entry = self.analysis.entry
+
+
+
+        if not entry:
+
+            return None
+
+
+
+        if not hasattr(
+            entry,
+            "swing_highs"
+        ):
+
+            return None
+
+
+
+        if not hasattr(
+            entry,
+            "swing_lows"
+        ):
+
+            return None
+
+
+
+        liquidity_engine = LiquidityEngine(
+
+            entry.swing_highs,
+
+            entry.swing_lows,
+
+            entry.df
+
+        )
+
+
+
+        all_liquidity = liquidity_engine.analyze()
+
+
+
+        return liquidity_engine.get_best_liquidity(
+
+            all_liquidity,
+
+            entry.current_price,
+
+            direction
+
+        )
+
+
+# ================= PART 1 END =================
+
+# ================= PART 2 START =================
+
+
     # ======================================================
     # Run Analysis
     # ======================================================
@@ -113,16 +210,23 @@ class MarketEngine:
 
 
         print(
+
             "\nRunning Multi-Timeframe Analysis..."
+
         )
 
+
+
         print(
+
             "-" * 60
+
         )
 
 
 
         for name, timeframe in TIMEFRAMES.items():
+
 
 
             print(
@@ -206,9 +310,91 @@ class MarketEngine:
         )
 
 
+
         trade_decision = (
 
             confluence_engine.analyze()
+
+        )
+
+
+
+        # ==================================================
+        # Select Best Liquidity
+        # ==================================================
+
+        direction = "Bullish"
+
+
+
+        if trade_decision.signal in [
+
+            "SELL",
+
+            "STRONG SELL"
+
+        ]:
+
+
+            direction = "Bearish"
+
+
+
+        self.selected_liquidity = (
+
+            self.select_liquidity(
+
+                direction
+
+            )
+
+        )
+
+
+
+        # ==================================================
+        # Setup Quality Evaluation
+        # ==================================================
+
+        latest_fvg = None
+
+
+
+        if self.analysis.entry:
+
+
+            if self.analysis.entry.fair_value_gaps:
+
+
+                latest_fvg = sorted(
+
+                    self.analysis.entry.fair_value_gaps,
+
+                    key=lambda x: x.created_at,
+
+                    reverse=True
+
+                )[0]
+
+
+
+        quality_engine = SetupQualityEngine(
+
+            context=context,
+
+            order_block=self.selected_order_block,
+
+            liquidity=self.selected_liquidity,
+
+            fvg=latest_fvg,
+
+        )
+
+
+
+        self.setup_quality = (
+
+            quality_engine.analyze()
 
         )
 
@@ -219,6 +405,7 @@ class MarketEngine:
 
 
         if entry:
+
 
 
             # ==================================================
@@ -254,7 +441,11 @@ class MarketEngine:
 
                 fair_value_gaps=entry.fair_value_gaps,
 
-                liquidity=entry.liquidity,
+                liquidity=[self.selected_liquidity]
+
+                if self.selected_liquidity
+
+                else [],
 
             )
 
@@ -278,6 +469,7 @@ class MarketEngine:
                 )
 
 
+
                 trade_decision.reasons.extend(
 
                     validation["reasons"]
@@ -288,6 +480,10 @@ class MarketEngine:
 
             entry.trade_decision = trade_decision
 
+
+# ================= PART 2 END =================
+
+# ================= PART 3 START =================
 
 
         # ==================================================
@@ -307,7 +503,9 @@ class MarketEngine:
         ]
 
 
+
         if trade_decision.signal in allowed_signals:
+
 
 
             risk_manager = RiskManager(
@@ -321,6 +519,7 @@ class MarketEngine:
             )
 
 
+
             risk_decision = risk_manager.analyze(
 
                 trade_decision,
@@ -330,13 +529,18 @@ class MarketEngine:
             )
 
 
+
             entry.risk_decision = risk_decision
+
 
 
         else:
 
 
             entry.risk_decision = None
+
+
+
 
     # ======================================================
     # Helpers
@@ -345,9 +549,11 @@ class MarketEngine:
     @staticmethod
     def format_event(event):
 
+
         if event is None:
 
             return "None"
+
 
 
         if event.direction is None:
@@ -355,16 +561,20 @@ class MarketEngine:
             return "None"
 
 
+
         return event.direction
+
 
 
 
     @staticmethod
     def latest_fvg(result):
 
+
         if not result:
 
             return None
+
 
 
         if not result.fair_value_gaps:
@@ -382,6 +592,7 @@ class MarketEngine:
             reverse=True
 
         )[0]
+
 
 
 
@@ -479,8 +690,6 @@ class MarketEngine:
 
         print()
 
-
-
         print("-" * 60)
 
         print("ACTIVE SETUP")
@@ -494,14 +703,18 @@ class MarketEngine:
 
             print(
 
-                f"Phase      : {entry.market_state.phase}"
+                f"Phase      : "
+
+                f"{entry.market_state.phase}"
 
             )
 
 
             print(
 
-                f"Reason     : {entry.market_state.reason}"
+                f"Reason     : "
+
+                f"{entry.market_state.reason}"
 
             )
 
@@ -526,6 +739,10 @@ class MarketEngine:
         )
 
 
+
+        # ==================================================
+        # Order Block
+        # ==================================================
 
         print()
 
@@ -567,6 +784,7 @@ class MarketEngine:
             )
 
 
+
             if hasattr(ob, "status"):
 
 
@@ -575,6 +793,7 @@ class MarketEngine:
                     f"Status     : {ob.status}"
 
                 )
+
 
 
             if hasattr(ob, "strength"):
@@ -587,6 +806,7 @@ class MarketEngine:
                 )
 
 
+
             if hasattr(ob, "distance"):
 
 
@@ -596,75 +816,199 @@ class MarketEngine:
 
                 )
 
+
+# ================= PART 3 END =================
+
+# ================= PART 4 START =================
+
+
         # ==================================================
-        # Liquidity
+        # Selected Liquidity
         # ==================================================
 
         print()
 
 
-        if entry.liquidity:
+
+        if self.selected_liquidity:
+
+
+            liquidity = self.selected_liquidity
+
 
 
             print("Liquidity")
 
 
-            latest_liquidity = sorted(
-
-                entry.liquidity,
-
-                key=lambda x: x.end_time,
-
-                reverse=True
-
-            )[0]
-
 
             print(
 
-                f"Side       : {latest_liquidity.side}"
+                f"Side       : {liquidity.side}"
 
             )
+
 
 
             print(
 
                 f"Level      : "
 
-                f"{latest_liquidity.level:.2f}"
+                f"{liquidity.level:.2f}"
 
             )
+
 
 
             print(
 
                 f"Swept      : "
 
-                f"{latest_liquidity.swept}"
+                f"{liquidity.swept}"
 
             )
 
 
-            if latest_liquidity.swept:
+
+            print(
+
+                f"Valid      : "
+
+                f"{liquidity.sweep_valid}"
+
+            )
+
+
+
+            if liquidity.sweep_time:
 
 
                 print(
 
                     f"Sweep Time : "
 
-                    f"{latest_liquidity.sweep_time}"
+                    f"{liquidity.sweep_time}"
 
                 )
+
+
+
+            if liquidity.sweep_price:
 
 
                 print(
 
                     f"Sweep Price: "
 
-                    f"{latest_liquidity.sweep_price:.2f}"
+                    f"{liquidity.sweep_price:.2f}"
 
                 )
 
+
+
+            if liquidity.distance_from_price:
+
+
+                print(
+
+                    f"Distance   : "
+
+                    f"{liquidity.distance_from_price:.2f}"
+
+                )
+
+
+
+            print(
+
+                f"Strength   : "
+
+                f"{liquidity.strength}%"
+
+            )
+
+
+
+
+        # ==================================================
+        # Setup Quality
+        # ==================================================
+
+        print()
+
+
+
+        if self.setup_quality:
+
+
+            print("SETUP QUALITY")
+
+            print("-" * 60)
+
+
+
+            print(
+
+                f"Score : "
+
+                f"{self.setup_quality.score}/100"
+
+            )
+
+
+
+            print(
+
+                f"Grade : "
+
+                f"{self.setup_quality.grade}"
+
+            )
+
+
+
+            print()
+
+
+
+            print("Strengths:")
+
+
+
+            for item in self.setup_quality.strengths:
+
+
+                print(
+
+                    f"- {item}"
+
+                )
+
+
+
+            print()
+
+
+
+            print("Warnings:")
+
+
+
+            for item in self.setup_quality.warnings:
+
+
+                print(
+
+                    f"- {item}"
+
+                )
+
+
+
+
+
+        # ==================================================
+        # FVG
+        # ==================================================
 
         fvg = self.latest_fvg(entry)
 
@@ -701,9 +1045,13 @@ class MarketEngine:
 
             print(
 
-                f"Filled     : {fvg.filled}"
+                f"Filled     : "
+
+                f"{fvg.filled}"
 
             )
+
+
 
 
 
@@ -732,7 +1080,9 @@ class MarketEngine:
 
             print(
 
-                f"Signal     : {decision.signal}"
+                f"Signal     : "
+
+                f"{decision.signal}"
 
             )
 
@@ -778,13 +1128,13 @@ class MarketEngine:
 
 
 
+
+
         # ==================================================
         # Risk Plan
         # ==================================================
 
         print()
-
-
 
         print("-" * 60)
 
@@ -799,7 +1149,6 @@ class MarketEngine:
 
 
         if risk and risk.stop_loss:
-
 
 
             print(
@@ -863,7 +1212,6 @@ class MarketEngine:
             )
 
 
-
         else:
 
 
@@ -884,3 +1232,6 @@ class MarketEngine:
             "BMIE analysis completed."
 
         )
+
+
+# ================= PART 4 END =================
