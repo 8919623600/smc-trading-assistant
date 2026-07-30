@@ -46,7 +46,7 @@ class MarketState:
 
 class MarketStateManager:
     """
-    Combines structure, BOS and CHoCH
+    Combines market structure, BOS and CHoCH
     into a single market interpretation.
     """
 
@@ -79,83 +79,133 @@ class MarketStateManager:
 
 
         # ==================================================
-        # Newer BOS has priority
+        # Bullish Structure
         # ==================================================
 
-        if self.bos.confirmed:
+        if current_trend == "Bullish":
 
-            if self.bos.direction == "Bullish":
+            # Bullish BOS confirms continuation
+            if (
+                self.bos.confirmed
+                and self.bos.direction == "Bullish"
+            ):
 
                 state.phase = "Bullish Continuation"
-
                 state.active_event = "BOS"
 
                 state.reason = (
-                    "Bullish structure break confirmed"
+                    "Bullish structure continuation confirmed"
                 )
 
                 return state
 
 
-            if self.bos.direction == "Bearish":
+            # Bearish CHoCH means possible reversal
+            if (
+                self.choch.confirmed
+                and self.choch.direction == "Bearish"
+            ):
+
+                state.phase = "Transition"
+                state.active_event = "CHoCH"
+
+                state.reason = (
+                    "Bearish change of character detected"
+                )
+
+                return state
+
+
+        # ==================================================
+        # Bearish Structure
+        # ==================================================
+
+        elif current_trend == "Bearish":
+
+            # Bearish BOS confirms continuation
+            if (
+                self.bos.confirmed
+                and self.bos.direction == "Bearish"
+            ):
 
                 state.phase = "Bearish Continuation"
-
                 state.active_event = "BOS"
 
                 state.reason = (
-                    "Bearish structure break confirmed"
+                    "Bearish structure continuation confirmed"
+                )
+
+                return state
+
+
+            # Bullish CHoCH means possible reversal
+            if (
+                self.choch.confirmed
+                and self.choch.direction == "Bullish"
+            ):
+
+                state.phase = "Transition"
+                state.active_event = "CHoCH"
+
+                state.reason = (
+                    "Bullish change of character detected"
                 )
 
                 return state
 
 
         # ==================================================
-        # CHoCH means transition
+        # Sideways / Transition Structure
         # ==================================================
 
-        if self.choch.confirmed:
+        else:
 
-            state.phase = "Transition"
+            if self.bos.confirmed:
 
-            state.active_event = "CHoCH"
+                if self.bos.direction == "Bullish":
 
-            state.reason = (
-                "Possible market direction change"
-            )
+                    state.phase = "Transition"
+                    state.active_event = "BOS"
 
-            return state
+                    state.reason = (
+                        "Bullish break inside neutral structure"
+                    )
+
+                    return state
+
+
+                if self.bos.direction == "Bearish":
+
+                    state.phase = "Transition"
+                    state.active_event = "BOS"
+
+                    state.reason = (
+                        "Bearish break inside neutral structure"
+                    )
+
+                    return state
 
 
         # ==================================================
-        # Existing trend
+        # Default
         # ==================================================
 
         if current_trend == "Bullish":
 
             state.phase = "Bullish Continuation"
-
-            state.reason = (
-                "Bullish market structure"
-            )
+            state.reason = "Bullish market structure"
 
 
         elif current_trend == "Bearish":
 
             state.phase = "Bearish Continuation"
-
-            state.reason = (
-                "Bearish market structure"
-            )
+            state.reason = "Bearish market structure"
 
 
         else:
 
             state.phase = "Range"
-
-            state.reason = (
-                "No clear directional structure"
-            )
+            state.reason = "No clear directional structure"
 
 
         return state
