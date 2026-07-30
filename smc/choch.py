@@ -1,127 +1,91 @@
 """
-smc/choch.py
-
 Change of Character (CHoCH) Detection
-
-A CHoCH is detected when price breaks the most recent
-significant swing against the current market structure.
-
-Bullish Structure:
-    Bearish -> Bullish transition
-
-Bearish Structure:
-    Bullish -> Bearish transition
 """
 
-from typing import Dict, List
-
-from models import SwingPoint
+from models import CHoCHEvent
 
 
-def _empty_result() -> Dict:
+# ==========================================================
+# Helper Functions
+# ==========================================================
+
+def _empty_event() -> CHoCHEvent:
     """
-    Return an empty CHoCH result.
+    Returns an empty CHoCH event.
     """
-
-    return {
-        "direction": None,
-        "level": None,
-        "time": None,
-    }
+    return CHoCHEvent()
 
 
-def detect_bullish_choch(
-    latest_close: float,
-    swing_highs: List[SwingPoint],
-) -> Dict:
+# ==========================================================
+# Bullish CHoCH
+# ==========================================================
+
+def detect_bullish_choch(df, swing_highs, structure):
     """
-    Detect Bullish CHoCH.
-
-    Bullish CHoCH occurs when price closes above
-    the latest swing high.
+    Detect bullish Change of Character.
     """
+    if structure != "Bearish":
+        return _empty_event()
 
     if not swing_highs:
-        return _empty_result()
+        return _empty_event()
 
+    latest_close = float(df.iloc[-1]["close"])
     last_high = swing_highs[-1]
 
     if latest_close > last_high.price:
+        return CHoCHEvent(
+            direction="Bullish",
+            level=last_high.price,
+            time=last_high.time,
+            confirmed=True,
+        )
 
-        return {
-            "direction": "Bullish",
-            "level": last_high.price,
-            "time": last_high.time,
-        }
-
-    return _empty_result()
+    return _empty_event()
 
 
-def detect_bearish_choch(
-    latest_close: float,
-    swing_lows: List[SwingPoint],
-) -> Dict:
+# ==========================================================
+# Bearish CHoCH
+# ==========================================================
+
+def detect_bearish_choch(df, swing_lows, structure):
     """
-    Detect Bearish CHoCH.
-
-    Bearish CHoCH occurs when price closes below
-    the latest swing low.
+    Detect bearish Change of Character.
     """
+    if structure != "Bullish":
+        return _empty_event()
 
     if not swing_lows:
-        return _empty_result()
+        return _empty_event()
 
+    latest_close = float(df.iloc[-1]["close"])
     last_low = swing_lows[-1]
 
     if latest_close < last_low.price:
+        return CHoCHEvent(
+            direction="Bearish",
+            level=last_low.price,
+            time=last_low.time,
+            confirmed=True,
+        )
 
-        return {
-            "direction": "Bearish",
-            "level": last_low.price,
-            "time": last_low.time,
-        }
-
-    return _empty_result()
+    return _empty_event()
 
 
-def detect_choch(
-    df,
-    swing_highs: List[SwingPoint],
-    swing_lows: List[SwingPoint],
-    structure: str,
-) -> Dict:
+# ==========================================================
+# Public API
+# ==========================================================
+
+def detect_choch(df, swing_highs, swing_lows, structure):
     """
     Detect Change of Character.
-
-    Parameters
-    ----------
-    df
-        Market OHLC data.
-    swing_highs
-        List of detected swing highs.
-    swing_lows
-        List of detected swing lows.
-    structure
-        Current market structure.
-
-    Returns
-    -------
-    dict
-        CHoCH information.
     """
 
-    latest_close = float(df.iloc[-1]["close"])
+    bullish = detect_bullish_choch(df, swing_highs, structure)
 
-    if structure == "Bearish":
-        return detect_bullish_choch(
-            latest_close,
-            swing_highs,
-        )
+    if bullish.confirmed:
+        return bullish
 
-    if structure == "Bullish":
-        return detect_bearish_choch(
-            latest_close,
-            swing_lows,
-        )
+    bearish = detect_bearish_choch(df, swing_lows, structure)
 
-    return _empty_result()
+    return bearish
