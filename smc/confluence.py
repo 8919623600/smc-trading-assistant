@@ -7,7 +7,7 @@ Responsibilities
 ----------------
 - Combine multi-timeframe SMC confirmations
 - Weight HTF and LTF signals
-- Validate fresh FVG
+- Validate fresh FVG direction
 - Calculate setup confidence
 - Generate BUY / SELL / WATCH decision
 - Provide trade reasoning
@@ -64,6 +64,46 @@ class ConfluenceEngine:
             if not fvg.filled
 
         ]
+
+
+
+    # ======================================================
+    # Directional FVG Validation
+    # ======================================================
+
+    def validate_fvg_direction(
+        self,
+        fresh_fvg,
+        direction,
+    ):
+
+
+        valid_fvg = []
+
+
+
+        for fvg in fresh_fvg:
+
+
+            if direction == "Bullish":
+
+
+                if fvg.direction == "Bullish":
+
+                    valid_fvg.append(fvg)
+
+
+
+            elif direction == "Bearish":
+
+
+                if fvg.direction == "Bearish":
+
+                    valid_fvg.append(fvg)
+
+
+
+        return valid_fvg
 
 
 
@@ -220,7 +260,7 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # 15M Setup BOS
+        # 15M BOS
         # ==================================================
 
         if self.context.setup:
@@ -252,7 +292,7 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # 5M Entry BOS
+        # 5M BOS
         # ==================================================
 
         if self.context.entry:
@@ -301,27 +341,76 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # Fresh FVG
+        # Directional Fresh FVG
         # ==================================================
 
         fresh_fvg = self.get_fresh_fvg()
 
 
-        if fresh_fvg:
+
+        if bullish_score > bearish_score:
 
 
-            score += 5
+            valid_fvg = self.validate_fvg_direction(
 
-            reasons.append(
-                "Fresh Fair Value Gap available"
+                fresh_fvg,
+
+                "Bullish"
+
             )
+
+
+            if valid_fvg:
+
+                score += 5
+
+                reasons.append(
+                    "Bullish FVG confirmation"
+                )
+
+
+            elif fresh_fvg:
+
+                reasons.append(
+                    "Bearish FVG ignored for BUY setup"
+                )
+
+
+
+        elif bearish_score > bullish_score:
+
+
+            valid_fvg = self.validate_fvg_direction(
+
+                fresh_fvg,
+
+                "Bearish"
+
+            )
+
+
+            if valid_fvg:
+
+                score += 5
+
+                reasons.append(
+                    "Bearish FVG confirmation"
+                )
+
+
+            elif fresh_fvg:
+
+                reasons.append(
+                    "Bullish FVG ignored for SELL setup"
+                )
+
 
 
         elif self.context.entry and self.context.entry.fair_value_gaps:
 
 
             reasons.append(
-                "Fair Value Gap already filled"
+                "FVG direction unclear"
             )
 
 
@@ -342,15 +431,11 @@ class ConfluenceEngine:
                 )
 
 
-
         # ==================================================
         # Confidence
         # ==================================================
 
-        score = min(
-            score,
-            100
-        )
+        score = min(score, 100)
 
 
         decision.confidence = score
