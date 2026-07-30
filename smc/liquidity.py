@@ -74,7 +74,7 @@ class LiquidityEngine:
         swing_highs: List[SwingPoint],
         swing_lows: List[SwingPoint],
         df=None,
-        tolerance: float = 0.20,
+        tolerance: float = 1.50,
     ):
 
         self.swing_highs = swing_highs
