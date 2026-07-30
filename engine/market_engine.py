@@ -8,6 +8,7 @@ Responsibilities
 - Run multi-timeframe analysis
 - Build MTF context
 - Generate trade decision
+- Validate entry conditions
 - Select best Order Block
 - Generate risk plan
 - Print concise market report
@@ -24,18 +25,23 @@ from config import (
     MINIMUM_RISK_REWARD,
 )
 
+
 from models import (
     MarketAnalysis,
     MultiTimeframeContext,
 )
 
+
 from smc.confluence import ConfluenceEngine
+
+from smc.entry_validator import EntryValidator
 
 from smc.risk_manager import RiskManager
 
 
 
 class MarketEngine:
+
 
 
     def __init__(self, session):
@@ -58,10 +64,12 @@ class MarketEngine:
         Select OB using SMC priority.
 
         Priority:
+
         1H Trend
         15M Setup
         5M Entry
         """
+
 
         priority = [
 
@@ -72,6 +80,7 @@ class MarketEngine:
             self.analysis.entry,
 
         ]
+
 
 
         for result in priority:
@@ -91,20 +100,25 @@ class MarketEngine:
                 )[0]
 
 
+
         return None
 
 
 
     # ======================================================
-    # Run
+    # Run Analysis
     # ======================================================
 
     def run(self):
 
 
-        print("\nRunning Multi-Timeframe Analysis...")
+        print(
+            "\nRunning Multi-Timeframe Analysis..."
+        )
 
-        print("-" * 60)
+        print(
+            "-" * 60
+        )
 
 
 
@@ -118,6 +132,7 @@ class MarketEngine:
             )
 
 
+
             result = analyze_market(
 
                 self.session,
@@ -125,6 +140,7 @@ class MarketEngine:
                 timeframe,
 
             )
+
 
 
             setattr(
@@ -148,7 +164,7 @@ class MarketEngine:
 
 
         # ==================================================
-        # Select Institutional Zone
+        # Select Institutional Order Block
         # ==================================================
 
         self.selected_order_block = (
@@ -180,7 +196,7 @@ class MarketEngine:
 
 
         # ==================================================
-        # Confluence
+        # Confluence Engine
         # ==================================================
 
         confluence_engine = ConfluenceEngine(
@@ -190,7 +206,11 @@ class MarketEngine:
         )
 
 
-        trade_decision = confluence_engine.analyze()
+        trade_decision = (
+
+            confluence_engine.analyze()
+
+        )
 
 
 
@@ -201,26 +221,12 @@ class MarketEngine:
         if entry:
 
 
-            entry.trade_decision = trade_decision
-
-
-
-            # ==============================================
-            # Risk Management
-            # ==============================================
-
-            risk_manager = RiskManager(
-
-                account_balance=self.session.balance,
-
-                risk_percent=RISK_PER_TRADE,
-
-                minimum_rr=MINIMUM_RISK_REWARD,
-
-            )
-
+            # ==================================================
+            # Prepare Order Block List
+            # ==================================================
 
             order_blocks = []
+
 
 
             if self.selected_order_block:
@@ -234,6 +240,72 @@ class MarketEngine:
 
 
 
+            # ==================================================
+            # Entry Validation
+            # ==================================================
+
+            entry_validator = EntryValidator(
+
+                current_price=entry.current_price,
+
+                trade_decision=trade_decision,
+
+                order_blocks=order_blocks,
+
+                fair_value_gaps=entry.fair_value_gaps,
+
+                liquidity=entry.liquidity,
+
+            )
+
+
+
+            validation = (
+
+                entry_validator.analyze()
+
+            )
+
+
+
+            if not validation["valid"]:
+
+
+                trade_decision.signal = (
+
+                    validation["status"]
+
+                )
+
+
+                trade_decision.reasons.extend(
+
+                    validation["reasons"]
+
+                )
+
+
+
+            entry.trade_decision = trade_decision
+
+
+
+            # ==================================================
+            # Risk Management
+            # ==================================================
+
+            risk_manager = RiskManager(
+
+                account_balance=self.session.balance,
+
+                risk_percent=RISK_PER_TRADE,
+
+                minimum_rr=MINIMUM_RISK_REWARD,
+
+            )
+
+
+
             risk_decision = risk_manager.analyze(
 
                 trade_decision,
@@ -243,11 +315,8 @@ class MarketEngine:
             )
 
 
+
             entry.risk_decision = risk_decision
-
-
-
-
 
     # ======================================================
     # Helpers
@@ -288,7 +357,7 @@ class MarketEngine:
 
             result.fair_value_gaps,
 
-            key=lambda x:x.created_at,
+            key=lambda x: x.created_at,
 
             reverse=True
 
@@ -327,6 +396,7 @@ class MarketEngine:
 
         if entry:
 
+
             print(
 
                 f"Price  : {entry.current_price:.2f}"
@@ -338,6 +408,7 @@ class MarketEngine:
         print()
 
 
+
         print("-" * 60)
 
         print("MULTI TIMEFRAME STRUCTURE")
@@ -346,7 +417,7 @@ class MarketEngine:
 
 
 
-        for name,result in self.analysis.as_dict().items():
+        for name, result in self.analysis.as_dict().items():
 
 
             if result is None:
@@ -361,7 +432,8 @@ class MarketEngine:
 
 
 
-            if hasattr(result,"market_state"):
+            if hasattr(result, "market_state"):
+
 
                 phase = result.market_state.phase
 
@@ -388,6 +460,7 @@ class MarketEngine:
         print()
 
 
+
         print("-" * 60)
 
         print("ACTIVE SETUP")
@@ -396,7 +469,7 @@ class MarketEngine:
 
 
 
-        if hasattr(entry,"market_state"):
+        if hasattr(entry, "market_state"):
 
 
             print(
@@ -416,14 +489,19 @@ class MarketEngine:
 
         print(
 
-            f"BOS        : {self.format_event(entry.bos)}"
+            f"BOS        : "
+
+            f"{self.format_event(entry.bos)}"
 
         )
 
 
+
         print(
 
-            f"CHoCH      : {self.format_event(entry.choch)}"
+            f"CHoCH      : "
+
+            f"{self.format_event(entry.choch)}"
 
         )
 
@@ -439,13 +517,17 @@ class MarketEngine:
             ob = self.selected_order_block
 
 
+
             print("Order Block")
+
+
 
             print(
 
                 f"Type       : {ob.direction}"
 
             )
+
 
 
             print(
@@ -457,11 +539,42 @@ class MarketEngine:
             )
 
 
+
             print(
 
                 f"Time       : {ob.created_at}"
 
             )
+
+
+            if hasattr(ob, "status"):
+
+
+                print(
+
+                    f"Status     : {ob.status}"
+
+                )
+
+
+            if hasattr(ob, "strength"):
+
+
+                print(
+
+                    f"Strength   : {ob.strength}%"
+
+                )
+
+
+            if hasattr(ob, "distance"):
+
+
+                print(
+
+                    f"Distance   : {ob.distance}"
+
+                )
 
 
 
@@ -479,11 +592,13 @@ class MarketEngine:
             print("FVG")
 
 
+
             print(
 
                 f"Type       : {fvg.direction}"
 
             )
+
 
 
             print(
@@ -495,6 +610,7 @@ class MarketEngine:
             )
 
 
+
             print(
 
                 f"Filled     : {fvg.filled}"
@@ -503,7 +619,12 @@ class MarketEngine:
 
 
 
+        # ==================================================
+        # Trade Decision
+        # ==================================================
+
         print()
+
 
 
         print("-" * 60)
@@ -528,14 +649,19 @@ class MarketEngine:
             )
 
 
+
             print(
 
-                f"Confidence : {decision.confidence:.2f}%"
+                f"Confidence : "
+
+                f"{decision.confidence:.2f}%"
 
             )
 
 
+
             print()
+
 
 
             print("Reasons:")
@@ -543,6 +669,7 @@ class MarketEngine:
 
 
             for reason in decision.reasons:
+
 
                 print(
 
@@ -552,7 +679,23 @@ class MarketEngine:
 
 
 
+        else:
+
+
+            print(
+
+                "Decision unavailable"
+
+            )
+
+
+
+        # ==================================================
+        # Risk Plan
+        # ==================================================
+
         print()
+
 
 
         print("-" * 60)
@@ -570,6 +713,7 @@ class MarketEngine:
         if risk and risk.stop_loss:
 
 
+
             print(
 
                 f"Entry Zone : "
@@ -581,39 +725,55 @@ class MarketEngine:
             )
 
 
+
             print(
 
-                f"Stop Loss  : {risk.stop_loss:.2f}"
+                f"Stop Loss  : "
+
+                f"{risk.stop_loss:.2f}"
 
             )
 
 
+
             print(
 
-                f"Target     : {risk.target:.2f}"
+                f"Target     : "
+
+                f"{risk.target:.2f}"
 
             )
 
 
+
             print(
 
-                f"Risk Reward: {risk.risk_reward:.2f}"
+                f"Risk Reward: "
+
+                f"{risk.risk_reward:.2f}"
 
             )
 
 
+
             print(
 
-                f"Risk Amount: ₹{risk.risk_amount:.2f}"
+                f"Risk Amount: ₹"
+
+                f"{risk.risk_amount:.2f}"
 
             )
 
 
+
             print(
 
-                f"Position   : {risk.position_size:.2f}"
+                f"Position   : "
+
+                f"{risk.position_size:.2f}"
 
             )
+
 
 
         else:
@@ -628,6 +788,8 @@ class MarketEngine:
 
 
         print("=" * 60)
+
+
 
         print(
 
