@@ -1,13 +1,14 @@
 """
 smc/confluence.py
 
-BMIE Multi-Timeframe Confluence Engine V4.
+BMIE Multi-Timeframe Confluence Engine V5.
 
 Responsibilities
 ----------------
 - Combine multi-timeframe SMC confirmations
 - Determine trade direction
 - Validate directional FVG
+- Validate liquidity sweep
 - Calculate setup confidence
 - Generate BUY / SELL / WATCH decision
 - Provide trade reasoning
@@ -45,6 +46,7 @@ class ConfluenceEngine:
 
     def get_fresh_fvg(self):
 
+
         if not self.context.entry:
 
             return []
@@ -53,6 +55,7 @@ class ConfluenceEngine:
         if not self.context.entry.fair_value_gaps:
 
             return []
+
 
 
         return [
@@ -77,9 +80,11 @@ class ConfluenceEngine:
         fresh_fvg,
     ):
 
+
         valid = []
 
         ignored = []
+
 
 
         for fvg in fresh_fvg:
@@ -124,6 +129,116 @@ class ConfluenceEngine:
 
 
     # ======================================================
+    # Liquidity Sweep Validation
+    # ======================================================
+
+    def validate_liquidity(
+        self,
+        direction,
+    ):
+
+
+        liquidity = []
+
+
+        if self.context.entry:
+
+
+            liquidity = (
+                self.context.entry.liquidity
+                or []
+            )
+
+
+
+        if not liquidity:
+
+
+            return {
+
+                "valid": False,
+
+                "reason":
+
+                    "No liquidity confirmation"
+
+            }
+
+
+
+        for zone in liquidity:
+
+
+
+            # BUY setup requires sell-side sweep
+
+            if direction == "Bullish":
+
+
+                if (
+
+                    zone.side == "Sell-side"
+
+                    and
+
+                    zone.swept
+
+                ):
+
+
+                    return {
+
+                        "valid": True,
+
+                        "reason":
+
+                            "Sell-side liquidity swept"
+
+                    }
+
+
+
+            # SELL setup requires buy-side sweep
+
+            elif direction == "Bearish":
+
+
+                if (
+
+                    zone.side == "Buy-side"
+
+                    and
+
+                    zone.swept
+
+                ):
+
+
+                    return {
+
+                        "valid": True,
+
+                        "reason":
+
+                            "Buy-side liquidity swept"
+
+                    }
+
+
+
+        return {
+
+            "valid": False,
+
+            "reason":
+
+                "No liquidity confirmation"
+
+        }
+
+
+
+    # ======================================================
     # Determine Direction
     # ======================================================
 
@@ -146,8 +261,6 @@ class ConfluenceEngine:
 
         return "Neutral"
 
-
-
     # ======================================================
     # Analyze
     # ======================================================
@@ -159,7 +272,6 @@ class ConfluenceEngine:
 
 
         score = 0
-
 
         bullish_score = 0
 
@@ -185,11 +297,9 @@ class ConfluenceEngine:
 
                 if structure.trend == "Bullish":
 
-
                     score += 25
 
                     bullish_score += 25
-
 
                     reasons.append(
                         "Daily bias bullish"
@@ -198,11 +308,9 @@ class ConfluenceEngine:
 
                 elif structure.trend == "Bearish":
 
-
                     score += 25
 
                     bearish_score += 25
-
 
                     reasons.append(
                         "Daily bias bearish"
@@ -210,7 +318,6 @@ class ConfluenceEngine:
 
 
                 else:
-
 
                     reasons.append(
                         "Daily bias transition"
@@ -233,11 +340,9 @@ class ConfluenceEngine:
 
                 if structure.trend == "Bullish":
 
-
                     score += 20
 
                     bullish_score += 20
-
 
                     reasons.append(
                         "4H structure bullish"
@@ -246,11 +351,9 @@ class ConfluenceEngine:
 
                 elif structure.trend == "Bearish":
 
-
                     score += 20
 
                     bearish_score += 20
-
 
                     reasons.append(
                         "4H structure bearish"
@@ -258,7 +361,6 @@ class ConfluenceEngine:
 
 
                 else:
-
 
                     reasons.append(
                         "4H structure transition"
@@ -281,11 +383,9 @@ class ConfluenceEngine:
 
                 if structure.trend == "Bullish":
 
-
                     score += 15
 
                     bullish_score += 15
-
 
                     reasons.append(
                         "1H trend bullish"
@@ -294,22 +394,19 @@ class ConfluenceEngine:
 
                 elif structure.trend == "Bearish":
 
-
                     score += 15
 
                     bearish_score += 15
-
 
                     reasons.append(
                         "1H trend bearish"
                     )
 
 
+
                 if "Continuation" in structure.state:
 
-
                     score += 10
-
 
                     reasons.append(
                         "Trend continuation confirmed"
@@ -333,21 +430,16 @@ class ConfluenceEngine:
 
                 if self.context.setup.bos.direction == "Bullish":
 
-
                     bullish_score += 15
-
 
                     reasons.append(
                         "15M bullish BOS confirmed"
                     )
 
 
-
                 elif self.context.setup.bos.direction == "Bearish":
 
-
                     bearish_score += 15
-
 
                     reasons.append(
                         "15M bearish BOS confirmed"
@@ -371,21 +463,16 @@ class ConfluenceEngine:
 
                 if self.context.entry.bos.direction == "Bullish":
 
-
                     bullish_score += 10
-
 
                     reasons.append(
                         "5M bullish BOS confirmation"
                     )
 
 
-
                 elif self.context.entry.bos.direction == "Bearish":
 
-
                     bearish_score += 10
-
 
                     reasons.append(
                         "5M bearish BOS confirmation"
@@ -405,7 +492,6 @@ class ConfluenceEngine:
 
                 score += 5
 
-
                 reasons.append(
                     "Order Block available"
                 )
@@ -413,21 +499,21 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # Determine Bias Before FVG
+        # Determine Direction
         # ==================================================
 
         direction = self.determine_direction(
 
             bullish_score,
 
-            bearish_score,
+            bearish_score
 
         )
 
 
 
         # ==================================================
-        # Directional FVG Validation
+        # FVG Validation
         # ==================================================
 
         fresh_fvg = self.get_fresh_fvg()
@@ -437,13 +523,13 @@ class ConfluenceEngine:
         if direction == "Bullish":
 
 
-            valid_fvg, ignored_fvg = (
+            valid_fvg, ignored = (
 
                 self.validate_fvg_direction(
 
                     "Bullish",
 
-                    fresh_fvg,
+                    fresh_fvg
 
                 )
 
@@ -452,17 +538,14 @@ class ConfluenceEngine:
 
             if valid_fvg:
 
-
                 score += 5
-
 
                 reasons.append(
                     "Bullish FVG confirmation"
                 )
 
 
-            elif ignored_fvg:
-
+            elif ignored:
 
                 reasons.append(
                     "Bearish FVG ignored for BUY setup"
@@ -473,13 +556,13 @@ class ConfluenceEngine:
         elif direction == "Bearish":
 
 
-            valid_fvg, ignored_fvg = (
+            valid_fvg, ignored = (
 
                 self.validate_fvg_direction(
 
                     "Bearish",
 
-                    fresh_fvg,
+                    fresh_fvg
 
                 )
 
@@ -488,26 +571,21 @@ class ConfluenceEngine:
 
             if valid_fvg:
 
-
                 score += 5
-
 
                 reasons.append(
                     "Bearish FVG confirmation"
                 )
 
 
-            elif ignored_fvg:
-
+            elif ignored:
 
                 reasons.append(
                     "Bullish FVG ignored for SELL setup"
                 )
 
 
-
         elif self.context.entry and self.context.entry.fair_value_gaps:
-
 
             reasons.append(
                 "FVG direction unclear"
@@ -516,29 +594,45 @@ class ConfluenceEngine:
 
 
         # ==================================================
-        # Liquidity
+        # Liquidity Sweep
         # ==================================================
 
-        if self.context.entry:
+        liquidity_result = self.validate_liquidity(
+
+            direction
+
+        )
 
 
-            if self.context.entry.liquidity:
+
+        if liquidity_result["valid"]:
 
 
-                score += 5
+            score += 10
 
 
-                reasons.append(
-                    "Liquidity confirmation available"
-                )
+            reasons.append(
+
+                liquidity_result["reason"]
+
+            )
 
 
-            else:
+            reasons.append(
+
+                "Liquidity sweep confirmation"
+
+            )
 
 
-                reasons.append(
-                    "No liquidity confirmation"
-                )
+        else:
+
+
+            reasons.append(
+
+                liquidity_result["reason"]
+
+            )
 
 
 
@@ -547,15 +641,25 @@ class ConfluenceEngine:
         # ==================================================
 
         score = min(
+
             score,
+
             100
+
         )
 
 
         decision.confidence = score
 
 
-        decision.reasons = list(dict.fromkeys(reasons))
+
+        # Remove duplicate reasons
+
+        decision.reasons = list(
+            dict.fromkeys(
+                reasons
+            )
+        )
 
 
 
@@ -582,18 +686,15 @@ class ConfluenceEngine:
 
             if direction == "Bullish":
 
-
                 decision.signal = "BUY"
 
 
             elif direction == "Bearish":
 
-
                 decision.signal = "SELL"
 
 
             else:
-
 
                 decision.signal = "WATCH"
 
@@ -604,18 +705,15 @@ class ConfluenceEngine:
 
             if direction == "Bullish":
 
-
                 decision.signal = "STRONG BUY"
 
 
             elif direction == "Bearish":
 
-
                 decision.signal = "STRONG SELL"
 
 
             else:
-
 
                 decision.signal = "WATCH"
 
