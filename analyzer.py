@@ -8,7 +8,7 @@ Responsibilities
 - Fetch market data
 - Detect swings
 - Identify major swings
-- Analyze market structure
+- Build market structure
 - Detect Break of Structure (BOS)
 - Detect Change of Character (CHoCH)
 
@@ -22,10 +22,11 @@ from fetch_data import get_data
 from smc.swings import find_swings
 from smc.major_swings import find_major_swings
 from smc.structure import analyze_structure
+from smc.market_structure import MarketStructureEngine
 from smc.bos import detect_bos
 from smc.choch import detect_choch
 
-from models import AnalysisResult
+from models import AnalysisResult, MarketStructure
 
 
 def analyze_market(
@@ -48,20 +49,20 @@ def analyze_market(
     )
 
     # ======================================================
-    # Swing Detection
+    # Detect Swings
     # ======================================================
 
     swing_highs, swing_lows = find_swings(df)
 
     # ======================================================
-    # Major Swing Detection
+    # Filter Major Swings
     # ======================================================
 
     major_highs = find_major_swings(swing_highs)
     major_lows = find_major_swings(swing_lows)
 
     # ======================================================
-    # Market Structure
+    # Legacy Structure (kept for compatibility)
     # ======================================================
 
     major_highs, major_lows, structure = analyze_structure(
@@ -70,7 +71,25 @@ def analyze_market(
     )
 
     # ======================================================
-    # Break of Structure
+    # New Market Structure Engine
+    # ======================================================
+
+    engine = MarketStructureEngine(
+        major_highs,
+        major_lows,
+    )
+
+    state = engine.analyze()
+
+    market_structure = MarketStructure(
+        trend=state.trend,
+        state=state.state,
+        major_high=state.last_high,
+        major_low=state.last_low,
+    )
+
+    # ======================================================
+    # BOS
     # ======================================================
 
     bos = detect_bos(
@@ -79,8 +98,10 @@ def analyze_market(
         major_lows,
     )
 
+    market_structure.last_bos = bos
+
     # ======================================================
-    # Change of Character
+    # CHoCH
     # ======================================================
 
     choch = detect_choch(
@@ -90,8 +111,10 @@ def analyze_market(
         structure,
     )
 
+    market_structure.last_choch = choch
+
     # ======================================================
-    # Return Analysis Result
+    # Result
     # ======================================================
 
     return AnalysisResult(
@@ -99,7 +122,8 @@ def analyze_market(
         timeframe=timeframe,
         swing_highs=major_highs,
         swing_lows=major_lows,
-        structure=structure,
+        structure=structure,                     # Backward compatibility
+        market_structure=market_structure,       # New engine
         bos=bos,
         choch=choch,
     )
