@@ -1,17 +1,20 @@
 """
 smc/order_blocks.py
 
-Order Block Engine for BMIE.
+BMIE Order Block Engine V2.
 
 Responsibilities
 ----------------
 - Detect Bullish Order Blocks
 - Detect Bearish Order Blocks
-- Use BOS confirmation
-- Return typed OrderBlock objects
+- Validate freshness
+- Calculate OB strength
+- Check mitigation
+- Check distance from current price
 
 Author: BMIE Project
 """
+
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -21,6 +24,7 @@ from models import SwingPoint
 from core.analysis_context import AnalysisContext
 
 
+
 # ==========================================================
 # Order Block Model
 # ==========================================================
@@ -28,7 +32,7 @@ from core.analysis_context import AnalysisContext
 @dataclass
 class OrderBlock:
     """
-    Represents an institutional order block.
+    Represents institutional order block.
     """
 
     direction: str
@@ -39,13 +43,23 @@ class OrderBlock:
 
     created_at: datetime
 
+
     mitigated: bool = False
 
     broken: bool = False
 
+
     strength: int = 0
 
+
     source_swing: Optional[SwingPoint] = None
+
+
+    # New V2 fields
+
+    status: str = "Unknown"
+
+    distance: str = "Unknown"
 
 
 
@@ -55,9 +69,9 @@ class OrderBlock:
 
 class OrderBlockEngine:
     """
-    Detects Order Blocks using market structure
-    and BOS confirmation.
+    Detects and validates SMC order blocks.
     """
+
 
 
     def __init__(
@@ -71,8 +85,6 @@ class OrderBlockEngine:
 
         self.bos = context.bos
 
-        self.choch = context.choch
-
         self.swing_highs = context.swing_highs
 
         self.swing_lows = context.swing_lows
@@ -80,87 +92,229 @@ class OrderBlockEngine:
 
 
     # ======================================================
-    # Bullish Order Block
+    # Distance Validation
+    # ======================================================
+
+    def check_distance(
+        self,
+        block: OrderBlock,
+    ):
+
+
+        current_price = float(
+            self.df.iloc[-1]["close"]
+        )
+
+
+        midpoint = (
+
+            block.high
+
+            +
+            block.low
+
+        ) / 2
+
+
+
+        distance = abs(
+
+            current_price
+
+            -
+            midpoint
+
+        )
+
+
+        # percentage distance
+
+        percent = (
+
+            distance
+
+            /
+            current_price
+
+        ) * 100
+
+
+
+        if percent <= 0.5:
+
+            block.distance = "Valid"
+
+
+        elif percent <= 2:
+
+            block.distance = "Acceptable"
+
+
+        else:
+
+            block.distance = "Far"
+
+
+
+        return block
+
+
+
+    # ======================================================
+    # Strength Calculation
+    # ======================================================
+
+    def calculate_strength(
+        self,
+        block: OrderBlock,
+    ):
+
+
+        score = 0
+
+
+
+        # BOS confirmation
+
+        if self.bos.confirmed:
+
+            score += 40
+
+
+
+        # Freshness
+
+        if not block.mitigated:
+
+            score += 30
+
+
+
+        # Distance
+
+        if block.distance == "Valid":
+
+            score += 20
+
+
+        elif block.distance == "Acceptable":
+
+            score += 10
+
+
+
+        # Cap
+
+        block.strength = min(
+            score,
+            100
+        )
+
+
+        return block
+
+
+
+    # ======================================================
+    # Bullish OB
     # ======================================================
 
     def detect_bullish_order_block(
         self,
     ) -> List[OrderBlock]:
 
+
         blocks = []
 
 
-        # Need bullish BOS
+
         if not self.bos.confirmed:
+
             return blocks
+
 
 
         if self.bos.direction != "Bullish":
+
             return blocks
 
-
-
-        candles = self.df
 
 
         bos_time = self.bos.time
 
 
-        if bos_time not in candles.index:
+
+        if bos_time not in self.df.index:
+
             return blocks
 
 
 
-        bos_index = candles.index.get_loc(
+        bos_index = self.df.index.get_loc(
             bos_time
         )
 
 
-        # Search backwards for last bearish candle
 
         for i in range(
+
             bos_index - 1,
-            max(bos_index - 20, 0),
+
+            max(
+                bos_index - 30,
+                0
+            ),
+
             -1
+
         ):
 
-            candle = candles.iloc[i]
+
+            candle = self.df.iloc[i]
 
 
             open_price = float(
                 candle["open"]
             )
 
+
             close_price = float(
                 candle["close"]
             )
 
 
-            # bearish candle
+
+            # last bearish candle before BOS
 
             if close_price < open_price:
 
-                high = float(
-                    candle["high"]
+
+
+                block = OrderBlock(
+
+                    direction="Bullish",
+
+                    high=float(
+                        candle["high"]
+                    ),
+
+                    low=float(
+                        candle["low"]
+                    ),
+
+                    created_at=self.df.index[i],
+
                 )
 
-                low = float(
-                    candle["low"]
-                )
 
 
                 blocks.append(
-                    OrderBlock(
-                        direction="Bullish",
-                        high=high,
-                        low=low,
-                        created_at=candles.index[i],
-                        strength=1,
-                    )
+                    block
                 )
 
 
                 break
+
 
 
         return blocks
@@ -168,88 +322,106 @@ class OrderBlockEngine:
 
 
     # ======================================================
-    # Bearish Order Block
+    # Bearish OB
     # ======================================================
 
     def detect_bearish_order_block(
         self,
     ) -> List[OrderBlock]:
 
+
         blocks = []
 
 
-        # Need bearish BOS
 
         if not self.bos.confirmed:
+
             return blocks
+
 
 
         if self.bos.direction != "Bearish":
+
             return blocks
 
-
-
-        candles = self.df
 
 
         bos_time = self.bos.time
 
 
-        if bos_time not in candles.index:
+
+        if bos_time not in self.df.index:
+
             return blocks
 
 
 
-        bos_index = candles.index.get_loc(
+        bos_index = self.df.index.get_loc(
             bos_time
         )
 
 
-        # Search backwards for last bullish candle
 
         for i in range(
+
             bos_index - 1,
-            max(bos_index - 20, 0),
+
+            max(
+                bos_index - 30,
+                0
+            ),
+
             -1
+
         ):
 
-            candle = candles.iloc[i]
+
+
+            candle = self.df.iloc[i]
 
 
             open_price = float(
                 candle["open"]
             )
 
+
             close_price = float(
                 candle["close"]
             )
 
 
-            # bullish candle
+
+            # last bullish candle before BOS
 
             if close_price > open_price:
 
-                high = float(
-                    candle["high"]
+
+
+                block = OrderBlock(
+
+                    direction="Bearish",
+
+                    high=float(
+                        candle["high"]
+                    ),
+
+                    low=float(
+                        candle["low"]
+                    ),
+
+                    created_at=self.df.index[i],
+
                 )
 
-                low = float(
-                    candle["low"]
-                )
 
 
                 blocks.append(
-                    OrderBlock(
-                        direction="Bearish",
-                        high=high,
-                        low=low,
-                        created_at=candles.index[i],
-                        strength=1,
-                    )
+                    block
                 )
 
 
                 break
+
 
 
         return blocks
@@ -257,7 +429,7 @@ class OrderBlockEngine:
 
 
     # ======================================================
-    # Mitigation Check
+    # Mitigation
     # ======================================================
 
     def check_mitigation(
@@ -265,20 +437,61 @@ class OrderBlockEngine:
         blocks: List[OrderBlock],
     ):
 
+
         current_price = float(
             self.df.iloc[-1]["close"]
         )
 
 
+
         for block in blocks:
 
+
+
             if (
+
                 block.low
+
                 <= current_price
+
                 <= block.high
+
             ):
 
+
                 block.mitigated = True
+
+                block.status = "Mitigated"
+
+
+
+            elif (
+
+                block.direction == "Bullish"
+
+                and current_price < block.low
+
+            ):
+
+
+                block.broken = True
+
+                block.status = "Broken"
+
+
+
+            elif (
+
+                block.direction == "Bearish"
+
+                and current_price > block.high
+
+            ):
+
+
+                block.broken = True
+
+                block.status = "Broken"
 
 
 
@@ -290,21 +503,26 @@ class OrderBlockEngine:
     # Public API
     # ======================================================
 
-    def analyze(
-        self,
-    ) -> List[OrderBlock]:
+    def analyze(self):
+
 
         blocks = []
 
 
+
         blocks.extend(
+
             self.detect_bullish_order_block()
+
         )
 
 
         blocks.extend(
+
             self.detect_bearish_order_block()
+
         )
+
 
 
         blocks = self.check_mitigation(
@@ -312,7 +530,38 @@ class OrderBlockEngine:
         )
 
 
+
+        for block in blocks:
+
+
+            self.check_distance(
+                block
+            )
+
+
+            self.calculate_strength(
+                block
+            )
+
+
+            if block.status == "Unknown":
+
+
+                if block.distance == "Far":
+
+                    block.status = "Far"
+
+
+                else:
+
+                    block.status = "Fresh"
+
+
+
         return sorted(
+
             blocks,
-            key=lambda x: x.created_at,
+
+            key=lambda x:x.created_at,
+
         )
