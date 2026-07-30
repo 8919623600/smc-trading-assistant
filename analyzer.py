@@ -15,6 +15,7 @@ Responsibilities
 - Detect Liquidity
 - Detect Order Blocks
 - Detect Fair Value Gaps
+- Generate Trade Decision
 
 Author: BMIE Project
 """
@@ -35,7 +36,6 @@ from smc.structure import analyze_structure
 from smc.market_structure import MarketStructureEngine
 
 from smc.bos import BOSEngine
-
 from smc.choch import CHoCHEngine
 
 from smc.state_manager import MarketStateManager
@@ -45,6 +45,8 @@ from smc.liquidity import LiquidityEngine
 from smc.order_blocks import OrderBlockEngine
 
 from smc.fvg import FVGEngine
+
+from smc.confluence import ConfluenceEngine
 
 
 from models import (
@@ -59,13 +61,10 @@ def analyze_market(
     timeframe: str,
     bars: int = DEFAULT_BARS,
 ) -> AnalysisResult:
-    """
-    Perform complete SMC analysis for a timeframe.
-    """
 
 
     # ======================================================
-    # Fetch Market Data
+    # Fetch Data
     # ======================================================
 
     df = get_data(
@@ -74,11 +73,6 @@ def analyze_market(
         bars=bars,
     )
 
-
-
-    # ======================================================
-    # Market Snapshot
-    # ======================================================
 
     current_price = float(
         df.iloc[-1]["close"]
@@ -89,16 +83,11 @@ def analyze_market(
 
 
     # ======================================================
-    # Detect Swings
+    # Swings
     # ======================================================
 
     swing_highs, swing_lows = find_swings(df)
 
-
-
-    # ======================================================
-    # Major Swings
-    # ======================================================
 
     major_highs = find_major_swings(
         swing_highs
@@ -111,7 +100,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Legacy Structure
+    # Structure
     # ======================================================
 
     major_highs, major_lows, structure = analyze_structure(
@@ -120,11 +109,6 @@ def analyze_market(
     )
 
 
-
-    # ======================================================
-    # Market Structure Engine
-    # ======================================================
-
     structure_engine = MarketStructureEngine(
         major_highs,
         major_lows,
@@ -132,7 +116,6 @@ def analyze_market(
 
 
     state = structure_engine.analyze()
-
 
 
     market_structure = MarketStructure(
@@ -149,7 +132,7 @@ def analyze_market(
 
 
     # ======================================================
-    # Analysis Context
+    # Context
     # ======================================================
 
     context = AnalysisContext(
@@ -169,16 +152,11 @@ def analyze_market(
     # BOS
     # ======================================================
 
-    bos_engine = BOSEngine(
-        context
-    )
-
+    bos_engine = BOSEngine(context)
 
     bos = bos_engine.analyze()
 
-
     market_structure.last_bos = bos
-
 
     context.bos = bos
 
@@ -188,16 +166,11 @@ def analyze_market(
     # CHoCH
     # ======================================================
 
-    choch_engine = CHoCHEngine(
-        context
-    )
-
+    choch_engine = CHoCHEngine(context)
 
     choch = choch_engine.analyze()
 
-
     market_structure.last_choch = choch
-
 
     context.choch = choch
 
@@ -264,6 +237,30 @@ def analyze_market(
 
 
     # ======================================================
+    # Confluence Engine
+    # ======================================================
+
+    confluence_engine = ConfluenceEngine(
+
+        market_structure,
+
+        bos,
+
+        choch,
+
+        order_blocks,
+
+        fair_value_gaps,
+
+        liquidity,
+    )
+
+
+    trade_decision = confluence_engine.analyze()
+
+
+
+    # ======================================================
     # Result
     # ======================================================
 
@@ -302,11 +299,13 @@ def analyze_market(
 
         fair_value_gaps=fair_value_gaps,
 
+
+        trade_decision=trade_decision,
     )
 
 
 
-    # Dynamic state attachment
+    # Keep compatibility
 
     result.market_state = market_state
 
