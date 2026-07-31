@@ -184,11 +184,7 @@ class BMIEBacktest:
 
         # Strategy
 
-        strategy = StrategyEngine(
-
-            analyzer=None
-
-        )
+        strategy = StrategyEngine()
 
 
 
