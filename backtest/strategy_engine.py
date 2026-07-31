@@ -1,15 +1,15 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V4
+BMIE Strategy Engine V5
 
 Responsibilities
 ----------------
 - Replay historical candles
-- Run MarketEngine silently
+- Build historical snapshots
+- Prevent look-ahead bias
+- Inject historical data into MarketEngine
 - Extract BMIE signals
-- Avoid console pollution
-- Prepare data for simulator
 
 Author: BMIE Project
 """
@@ -17,6 +17,7 @@ Author: BMIE Project
 
 import contextlib
 import io
+
 
 from core.session import TradingSession
 from engine.market_engine import MarketEngine
@@ -35,6 +36,7 @@ class StrategyEngine:
     ):
 
         self.balance = balance
+
         self.verbose = verbose
 
 
@@ -42,7 +44,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Create Session
+    # Create Trading Session
     # ======================================================
 
     def create_session(
@@ -50,6 +52,7 @@ class StrategyEngine:
         symbol,
         exchange
     ):
+
 
         return TradingSession(
 
@@ -66,7 +69,57 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Extract Signal
+    # Build Historical Snapshot
+    # ======================================================
+
+    def build_market_snapshot(
+        self,
+        timeframe_data,
+        index
+    ):
+
+
+        snapshot = {}
+
+
+
+        current_time = (
+
+            timeframe_data["5m"]
+
+            .iloc[index]
+
+            .name
+
+        )
+
+
+
+        for timeframe, df in timeframe_data.items():
+
+
+            snapshot[timeframe] = (
+
+                df[
+
+                    df.index <= current_time
+
+                ]
+
+                .copy()
+
+            )
+
+
+
+        return snapshot
+
+
+
+
+
+    # ======================================================
+    # Extract BMIE Result
     # ======================================================
 
     def extract_signal(
@@ -80,47 +133,73 @@ class StrategyEngine:
 
 
             "symbol":
+
                 engine.session.symbol,
 
 
             "exchange":
+
                 engine.session.exchange,
 
 
             "time":
+
                 str(candle_time),
 
 
             "signal":
+
                 "NO TRADE",
 
 
             "confidence":
+
                 0,
 
 
             "grade":
+
                 None,
 
 
             "direction":
+
                 None,
 
 
             "entry":
+
                 None,
 
 
             "stop_loss":
+
                 None,
 
 
             "target":
+
+                None,
+
+
+            "setup_quality":
+
+                None,
+
+
+            "entry_confirmation":
+
                 None
 
         }
 
 
+
+
+
+        # ------------------------------
+        # Setup Quality
+        # ------------------------------
 
         if engine.setup_quality:
 
@@ -132,8 +211,36 @@ class StrategyEngine:
             )
 
 
+            result["setup_quality"] = {
+
+
+                "score":
+
+                    engine.setup_quality.score,
+
+
+                "grade":
+
+                    engine.setup_quality.grade
+
+            }
+
+
+
+
+
+        # ------------------------------
+        # Entry Confirmation
+        # ------------------------------
 
         if engine.entry_confirmation:
+
+
+            result["entry_confirmation"] = (
+
+                engine.entry_confirmation
+
+            )
 
 
             result["confidence"] = (
@@ -149,6 +256,7 @@ class StrategyEngine:
             )
 
 
+
             status = (
 
                 engine.entry_confirmation.get(
@@ -162,10 +270,15 @@ class StrategyEngine:
             )
 
 
+
             if status == "ENTRY CONFIRMED":
 
 
-                result["signal"] = "TRADE READY"
+                result["signal"] = (
+
+                    "TRADE READY"
+
+                )
 
 
 
@@ -178,7 +291,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Run Replay
+    # Historical Replay
     # ======================================================
 
     def run(
@@ -194,7 +307,9 @@ class StrategyEngine:
         signals = []
 
 
+
         candles = timeframe_data["5m"]
+
 
 
         end_index = min(
@@ -212,7 +327,9 @@ class StrategyEngine:
 
 
         print(
+
             f"Backtesting candles: {total}"
+
         )
 
 
@@ -227,9 +344,13 @@ class StrategyEngine:
 
         ):
 
+
+
             print(
-        f"Processing candle {index}"
-     )    
+
+                f"Processing candle {index}"
+
+            )
 
 
 
@@ -238,11 +359,15 @@ class StrategyEngine:
 
                 candle_time = (
 
-                    candles.iloc[index]["time"]
+                    candles.iloc[index]
+
+                    .name
 
                 )
 
 
+
+                # Create session
 
                 session = self.create_session(
 
@@ -254,10 +379,19 @@ class StrategyEngine:
 
 
 
-                engine = MarketEngine(
 
-                    session,
-                    market_data=timeframe_data
+
+                # Build historical view
+
+                market_snapshot = (
+
+                    self.build_market_snapshot(
+
+                        timeframe_data,
+
+                        index
+
+                    )
 
                 )
 
@@ -265,7 +399,19 @@ class StrategyEngine:
 
 
 
-                # Silence MarketEngine output
+                # Run BMIE engine
+
+                engine = MarketEngine(
+
+                    session,
+
+                    market_data=market_snapshot
+
+                )
+
+
+
+
 
                 if self.verbose:
 
@@ -311,17 +457,6 @@ class StrategyEngine:
                     )
 
 
-
-
-
-                if self.verbose:
-
-
-                    print(
-
-                        f"Processed candle {index}"
-
-                    )
 
 
 
