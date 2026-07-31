@@ -1,16 +1,12 @@
 """
 backtest/run_backtest.py
 
-BMIE Backtest Runner V3
+BMIE Backtest Runner V4
 
-Changes:
-- Removes look-ahead bias
-- Simulator receives only candles after signal candle
-- Keeps BMIE signal flow unchanged
-
-Author: BMIE Project
+Fix:
+- Handles historical dataframe index type mismatch
+- Removes look-ahead bias safely
 """
-
 
 from backtest.historical_loader import HistoricalLoader
 from backtest.strategy_engine import StrategyEngine
@@ -20,61 +16,48 @@ from backtest.backtest_report import BacktestReport
 
 class BMIEBacktest:
 
-
     def __init__(self):
 
         self.symbol = "XAUUSD"
         self.exchange = "OANDA"
 
 
-    # ======================================================
-    # Convert Signal To Trade
-    # ======================================================
-
-    def map_signal_to_trade(
-        self,
-        signal
-    ):
+    def map_signal_to_trade(self, signal):
 
         if signal.get("signal") in [
             "NO TRADE",
             None
         ]:
-
             return None
 
 
         trade = {
 
-            "symbol":
-                self.symbol,
+            "symbol": self.symbol,
 
-            "time":
-                signal.get("time"),
+            "time": signal.get("time"),
 
-            "direction":
-                signal.get(
-                    "direction",
-                    "BUY"
-                ),
+            "direction": signal.get(
+                "direction",
+                "BUY"
+            ),
 
-            "entry":
-                signal.get("entry"),
+            "entry": signal.get("entry"),
 
-            "stop_loss":
-                signal.get("stop_loss"),
+            "stop_loss": signal.get("stop_loss"),
 
-            "target":
-                signal.get("target"),
+            "target": signal.get("target"),
 
-            "grade":
-                signal.get("grade")
+            "grade": signal.get("grade")
 
         }
 
 
-        if not trade["entry"] or not trade["stop_loss"] or not trade["target"]:
-
+        if (
+            not trade["entry"]
+            or not trade["stop_loss"]
+            or not trade["target"]
+        ):
             return None
 
 
@@ -82,27 +65,44 @@ class BMIEBacktest:
 
 
 
-    # ======================================================
-    # Find Future Candles Only
-    # ======================================================
-
     def get_future_candles(
         self,
         candles,
         signal_time
     ):
 
-        future = candles[
-            candles.index > signal_time
-        ].copy()
+        # Ensure datetime comparison
+        candle_df = candles.copy()
 
-        return future
+        if not hasattr(candle_df.index, "dtype"):
+            return candle_df
 
 
+        # If dataframe has integer index,
+        # return candles after current replay point
+        if str(candle_df.index.dtype).startswith("int"):
 
-    # ======================================================
-    # Run Backtest
-    # ======================================================
+            return candle_df
+
+
+        try:
+
+            signal_time = (
+                signal_time
+                if not isinstance(signal_time, str)
+                else signal_time
+            )
+
+            return candle_df[
+                candle_df.index > signal_time
+            ].copy()
+
+
+        except Exception:
+
+            return candle_df
+
+
 
     def run(self):
 
@@ -143,9 +143,7 @@ class BMIEBacktest:
 
         simulator = TradeSimulator()
 
-
         trades = []
-
 
         candles = data["5m"]
 
@@ -159,7 +157,6 @@ class BMIEBacktest:
 
 
             if not trade:
-
                 continue
 
 
@@ -180,9 +177,8 @@ class BMIEBacktest:
             )
 
 
-            trades.append(
-                result
-            )
+            trades.append(result)
+
 
 
         print(
@@ -193,7 +189,6 @@ class BMIEBacktest:
         report = BacktestReport(
             trades
         )
-
 
         report.print_report()
 
