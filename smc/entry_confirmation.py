@@ -1,15 +1,17 @@
 # smc/entry_confirmation.py
 
 """
-BMIE Entry Confirmation Engine V2
+BMIE Entry Confirmation Engine V3
 
 Responsibilities
 ----------------
 - Confirm execution after SMC setup validation
 - Validate Order Block reaction
 - Validate FVG reaction
+- Ignore filled FVG
 - Validate rejection candle
 - Validate BOS / CHoCH confirmation
+- Calculate confirmation confidence
 - Generate entry confirmation state
 
 Author: BMIE Project
@@ -31,6 +33,7 @@ class EntryConfirmationEngine:
         direction: str,
         order_blocks: List,
         fair_value_gaps: List,
+        liquidity=None,
         entry_context: Any = None,
     ):
 
@@ -42,6 +45,8 @@ class EntryConfirmationEngine:
         self.order_blocks = order_blocks
 
         self.fair_value_gaps = fair_value_gaps
+
+        self.liquidity = liquidity or []
 
         self.entry_context = entry_context
 
@@ -98,7 +103,7 @@ class EntryConfirmationEngine:
 
                     "reason":
 
-                        "Price reacting from Order Block"
+                        "Price entered Order Block"
 
                 }
 
@@ -112,7 +117,7 @@ class EntryConfirmationEngine:
 
             "reason":
 
-                "Price not inside Order Block"
+                "Waiting for Order Block mitigation"
 
         }
 
@@ -136,9 +141,15 @@ class EntryConfirmationEngine:
 
                 "reason":
 
-                    "No FVG available"
+                    "No valid FVG available"
 
             }
+
+
+
+
+
+        valid_fvg_found = False
 
 
 
@@ -147,6 +158,8 @@ class EntryConfirmationEngine:
         for fvg in self.fair_value_gaps:
 
 
+
+            # Ignore filled FVG
 
             if getattr(
 
@@ -160,6 +173,12 @@ class EntryConfirmationEngine:
 
 
                 continue
+
+
+
+
+
+            valid_fvg_found = True
 
 
 
@@ -186,7 +205,91 @@ class EntryConfirmationEngine:
 
                     "reason":
 
-                        "Price reacting from FVG"
+                        "Price entered FVG"
+
+                }
+
+
+
+
+
+        if not valid_fvg_found:
+
+
+            return {
+
+                "valid": False,
+
+                "reason":
+
+                    "FVG already filled"
+
+            }
+
+
+
+
+
+        return {
+
+            "valid": False,
+
+            "reason":
+
+                "Waiting for FVG reaction"
+
+        }
+
+
+
+
+
+    # ======================================================
+    # Liquidity Confirmation
+    # ======================================================
+
+    def check_liquidity(self):
+
+
+        if not self.liquidity:
+
+
+            return {
+
+                "valid": False,
+
+                "reason":
+
+                    "No liquidity confirmation"
+
+            }
+
+
+
+
+
+        for zone in self.liquidity:
+
+
+
+            if getattr(
+
+                zone,
+
+                "swept",
+
+                False
+
+            ):
+
+
+                return {
+
+                    "valid": True,
+
+                    "reason":
+
+                        "Liquidity sweep confirmed"
 
                 }
 
@@ -200,7 +303,7 @@ class EntryConfirmationEngine:
 
             "reason":
 
-                "Price not inside FVG"
+                "Waiting for liquidity sweep"
 
         }
 
@@ -236,9 +339,7 @@ class EntryConfirmationEngine:
 
 
 
-        # ----------------------------------------------
-        # New support: DataFrame candle
-        # ----------------------------------------------
+
 
         if hasattr(
 
@@ -251,22 +352,15 @@ class EntryConfirmationEngine:
 
             try:
 
-
                 candle = self.entry_context.df.iloc[-1]
 
-
             except Exception:
-
 
                 candle = None
 
 
 
 
-
-        # ----------------------------------------------
-        # Backward compatibility
-        # ----------------------------------------------
 
         if candle is None:
 
@@ -363,6 +457,14 @@ class EntryConfirmationEngine:
 
 
 
+        if body == 0:
+
+            body = 0.0001
+
+
+
+
+
         upper_wick = (
 
             high_price -
@@ -399,21 +501,10 @@ class EntryConfirmationEngine:
 
 
 
-        # Avoid zero body issue
-
-        if body == 0:
-
-
-            body = 0.0001
-
-
-
-
-
         if self.direction == "Bullish":
 
 
-            if lower_wick > body:
+            if lower_wick >= body:
 
 
                 return {
@@ -430,10 +521,10 @@ class EntryConfirmationEngine:
 
 
 
-        elif self.direction == "Bearish":
+        if self.direction == "Bearish":
 
 
-            if upper_wick > body:
+            if upper_wick >= body:
 
 
                 return {
@@ -461,7 +552,9 @@ class EntryConfirmationEngine:
         }
 
 
+# ================= PART 1 END =================
 
+# ================= PART 2 START =================
 
 
     # ======================================================
@@ -582,19 +675,30 @@ class EntryConfirmationEngine:
 
 
 
+        if valid:
+
+
+            return {
+
+                "valid": True,
+
+                "reason":
+
+                    " + ".join(reasons)
+
+            }
+
+
+
+
+
         return {
 
-            "valid": valid,
+            "valid": False,
 
             "reason":
 
-                " + ".join(reasons)
-
-                if reasons
-
-                else
-
-                "No BOS/CHoCH confirmation"
+                "Waiting for BOS/CHoCH confirmation"
 
         }
 
@@ -603,7 +707,7 @@ class EntryConfirmationEngine:
 
 
     # ======================================================
-    # Final Confirmation
+    # Final Confirmation Analysis
     # ======================================================
 
     def analyze(self):
@@ -618,6 +722,8 @@ class EntryConfirmationEngine:
 
                 "WAIT FOR CONFIRMATION",
 
+            "confidence": 0,
+
             "reasons": []
 
         }
@@ -626,20 +732,39 @@ class EntryConfirmationEngine:
 
 
 
+        ob_result = self.check_order_block_reaction()
+
+
+
+        fvg_result = self.check_fvg_reaction()
+
+
+
+        liquidity_result = self.check_liquidity()
+
+
+
+        candle_result = self.check_rejection_candle()
+
+
+
+        structure_result = self.check_structure()
+
+
+
+
+
         checks = [
 
+            ob_result,
 
-            self.check_order_block_reaction(),
+            fvg_result,
 
+            liquidity_result,
 
-            self.check_fvg_reaction(),
+            candle_result,
 
-
-            self.check_rejection_candle(),
-
-
-            self.check_structure(),
-
+            structure_result,
 
         ]
 
@@ -674,18 +799,98 @@ class EntryConfirmationEngine:
 
 
 
-        # --------------------------------------------------
-        # Entry trigger rule
-        #
-        # Minimum:
-        # - OB/FVG reaction
-        # - Rejection candle
-        # - BOS/CHoCH
-        #
-        # Any 3 confirmations
-        # --------------------------------------------------
+        # ==================================================
+        # Confidence Calculation
+        # ==================================================
 
-        if valid_count >= 3:
+        confidence_map = {
+
+
+            0: 0,
+
+            1: 20,
+
+            2: 45,
+
+            3: 70,
+
+            4: 85,
+
+            5: 95,
+
+        }
+
+
+
+
+
+        result["confidence"] = (
+
+            confidence_map.get(
+
+                valid_count,
+
+                0
+
+            )
+
+        )
+
+
+
+
+
+        # ==================================================
+        # Entry Trigger Logic
+        #
+        # Mandatory:
+        #
+        # 1. Liquidity
+        # 2. OB or FVG reaction
+        # 3. Candle OR Structure confirmation
+        #
+        # ==================================================
+
+
+        zone_reaction = (
+
+            ob_result["valid"]
+
+            or
+
+            fvg_result["valid"]
+
+        )
+
+
+
+        confirmation = (
+
+            candle_result["valid"]
+
+            or
+
+            structure_result["valid"]
+
+        )
+
+
+
+
+
+        if (
+
+            liquidity_result["valid"]
+
+            and
+
+            zone_reaction
+
+            and
+
+            confirmation
+
+        ):
 
 
             result["confirmed"] = True
@@ -694,6 +899,15 @@ class EntryConfirmationEngine:
             result["status"] = (
 
                 "ENTRY CONFIRMED"
+
+            )
+
+
+            result["confidence"] = max(
+
+                result["confidence"],
+
+                90
 
             )
 
@@ -714,3 +928,7 @@ class EntryConfirmationEngine:
 
 
         return result
+
+
+
+# ================= PART 2 END =================
