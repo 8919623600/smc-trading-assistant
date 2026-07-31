@@ -1,15 +1,12 @@
 """
 backtest/run_backtest.py
 
-BMIE Backtest Runner V2
+BMIE Backtest Runner V3
 
-Responsibilities
-----------------
-- Execute complete backtest flow
-- Load historical data
-- Generate BMIE signals
-- Simulate trades
-- Generate report
+Changes:
+- Removes look-ahead bias
+- Simulator receives only candles after signal candle
+- Keeps BMIE signal flow unchanged
 
 Author: BMIE Project
 """
@@ -30,7 +27,6 @@ class BMIEBacktest:
         self.exchange = "OANDA"
 
 
-
     # ======================================================
     # Convert Signal To Trade
     # ======================================================
@@ -39,11 +35,6 @@ class BMIEBacktest:
         self,
         signal
     ):
-
-        """
-        Converts BMIE signal
-        into simulated trade format
-        """
 
         if signal.get("signal") in [
             "NO TRADE",
@@ -82,14 +73,30 @@ class BMIEBacktest:
         }
 
 
-        # validate risk fields
-
         if not trade["entry"] or not trade["stop_loss"] or not trade["target"]:
 
             return None
 
 
         return trade
+
+
+
+    # ======================================================
+    # Find Future Candles Only
+    # ======================================================
+
+    def get_future_candles(
+        self,
+        candles,
+        signal_time
+    ):
+
+        future = candles[
+            candles.index > signal_time
+        ].copy()
+
+        return future
 
 
 
@@ -102,7 +109,6 @@ class BMIEBacktest:
         print("=" * 60)
         print("BMIE BACKTEST ENGINE V1")
         print("=" * 60)
-
 
 
         loader = HistoricalLoader(
@@ -120,18 +126,13 @@ class BMIEBacktest:
         )
 
 
-
         strategy = StrategyEngine()
 
 
         signals = strategy.run(
-
             self.symbol,
-
             self.exchange,
-
             data
-
         )
 
 
@@ -140,12 +141,13 @@ class BMIEBacktest:
         )
 
 
-
         simulator = TradeSimulator()
 
 
         trades = []
 
+
+        candles = data["5m"]
 
 
         for signal in signals:
@@ -161,13 +163,15 @@ class BMIEBacktest:
                 continue
 
 
+            future_candles = self.get_future_candles(
+                candles,
+                signal.get("time")
+            )
+
 
             result = simulator.simulate(
-
                 trade,
-
-                data["5m"]
-
+                future_candles
             )
 
 
@@ -181,11 +185,9 @@ class BMIEBacktest:
             )
 
 
-
         print(
             f"Trades simulated: {len(trades)}"
         )
-
 
 
         report = BacktestReport(
