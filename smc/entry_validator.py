@@ -1,7 +1,7 @@
 """
 smc/entry_validator.py
 
-BMIE Entry Validation Engine V4.
+BMIE Entry Validation Engine V5.
 
 Responsibilities
 ----------------
@@ -12,6 +12,7 @@ Responsibilities
 - Validate directional FVG
 - Validate liquidity alignment
 - Validate BOS / CHoCH confirmation
+- Use MTF context for execution direction
 
 Author: BMIE Project
 """
@@ -33,6 +34,9 @@ class EntryValidator:
         order_blocks: List,
         fair_value_gaps: List,
         liquidity: List,
+        entry_context=None,
+        setup_context=None,
+        trend_context=None,
     ):
 
 
@@ -45,6 +49,15 @@ class EntryValidator:
         self.fair_value_gaps = fair_value_gaps
 
         self.liquidity = liquidity
+
+
+        # MTF Context
+
+        self.entry_context = entry_context
+
+        self.setup_context = setup_context
+
+        self.trend_context = trend_context
 
 
 
@@ -79,27 +92,189 @@ class EntryValidator:
 
 
     # ======================================================
+    # Extract Event Direction
+    # ======================================================
+
+    def extract_direction(self, event):
+
+
+        if not event:
+
+
+            return None
+
+
+
+        direction = getattr(
+
+            event,
+
+            "direction",
+
+            None
+
+        )
+
+
+
+        if direction:
+
+
+            return str(direction).capitalize()
+
+
+
+        return None
+
+
+
+
+
+    # ======================================================
     # Direction Detection
     # ======================================================
 
     def get_direction(self):
 
         """
-        Detect market direction.
+        Direction priority:
 
-        Priority:
-        1. CHoCH
-        2. BOS
-        3. Trade signal
+        1. 5M CHoCH
+        2. 5M BOS
+        3. 15M BOS
+        4. 1H Trend
+        5. Trade signal
         """
 
 
 
-        # Future structure support
-        # if structure object is passed later,
-        # this logic can be extended.
+        # ----------------------------------------------
+        # Entry CHoCH
+        # ----------------------------------------------
+
+        if self.entry_context:
 
 
+            direction = self.extract_direction(
+
+                getattr(
+
+                    self.entry_context,
+
+                    "choch",
+
+                    None
+
+                )
+
+            )
+
+
+            if direction:
+
+
+                return direction
+
+
+
+
+
+        # ----------------------------------------------
+        # Entry BOS
+        # ----------------------------------------------
+
+        if self.entry_context:
+
+
+            direction = self.extract_direction(
+
+                getattr(
+
+                    self.entry_context,
+
+                    "bos",
+
+                    None
+
+                )
+
+            )
+
+
+            if direction:
+
+
+                return direction
+
+
+
+
+
+        # ----------------------------------------------
+        # Setup BOS
+        # ----------------------------------------------
+
+        if self.setup_context:
+
+
+            direction = self.extract_direction(
+
+                getattr(
+
+                    self.setup_context,
+
+                    "bos",
+
+                    None
+
+                )
+
+            )
+
+
+            if direction:
+
+
+                return direction
+
+
+
+
+
+        # ----------------------------------------------
+        # Trend
+        # ----------------------------------------------
+
+        if self.trend_context:
+
+
+            direction = self.extract_direction(
+
+                getattr(
+
+                    self.trend_context,
+
+                    "trend",
+
+                    None
+
+                )
+
+            )
+
+
+            if direction:
+
+
+                return direction
+
+
+
+
+
+        # ----------------------------------------------
+        # Trade Signal fallback
+        # ----------------------------------------------
 
         if self.trade_decision:
 
@@ -162,6 +337,7 @@ class EntryValidator:
 
 
 
+
         midpoint = (
 
             block.high +
@@ -193,6 +369,7 @@ class EntryValidator:
 
 
 
+
         if percentage > 2:
 
 
@@ -213,6 +390,7 @@ class EntryValidator:
 
 
 
+
         elif percentage > 0.5:
 
 
@@ -229,6 +407,7 @@ class EntryValidator:
                     "Waiting for Order Block mitigation"
 
             }
+
 
 
 
@@ -255,6 +434,7 @@ class EntryValidator:
                     "Price inside Order Block"
 
             }
+
 
 
 
@@ -327,6 +507,7 @@ class EntryValidator:
 
 
 
+
             fvg_direction = str(
 
                 getattr(
@@ -340,6 +521,8 @@ class EntryValidator:
                 )
 
             ).lower()
+
+
 
 
 
@@ -361,6 +544,8 @@ class EntryValidator:
 
 
 
+
+
             elif direction == "Bearish":
 
 
@@ -376,6 +561,7 @@ class EntryValidator:
                             "Bearish FVG confirmation"
 
                     }
+
 
 
 
@@ -456,6 +642,7 @@ class EntryValidator:
 
 
 
+
             if direction == "Bullish":
 
 
@@ -503,6 +690,132 @@ class EntryValidator:
             "reason":
 
                 "Directional liquidity not available"
+
+        }
+
+
+
+
+
+    # ======================================================
+    # Structure Validation
+    # ======================================================
+
+    def validate_structure(self):
+
+
+        reasons = []
+
+
+
+        valid = False
+
+
+
+        if self.entry_context:
+
+
+
+            choch = getattr(
+
+                self.entry_context,
+
+                "choch",
+
+                None
+
+            )
+
+
+
+            if choch:
+
+
+                direction = self.extract_direction(
+
+                    choch
+
+                )
+
+
+                if direction:
+
+
+                    valid = True
+
+
+                    reasons.append(
+
+                        f"{direction} CHoCH detected"
+
+                    )
+
+
+
+
+
+            bos = getattr(
+
+                self.entry_context,
+
+                "bos",
+
+                None
+
+            )
+
+
+
+            if bos:
+
+
+                direction = self.extract_direction(
+
+                    bos
+
+                )
+
+
+                if direction:
+
+
+                    valid = True
+
+
+                    reasons.append(
+
+                        f"{direction} BOS confirmed"
+
+                    )
+
+
+
+
+
+        if valid:
+
+
+            return {
+
+                "valid": True,
+
+                "reason":
+
+                    " + ".join(reasons)
+
+            }
+
+
+
+
+
+        return {
+
+            "valid": False,
+
+            "reason":
+
+                "No structure confirmation"
 
         }
 
@@ -584,6 +897,20 @@ class EntryValidator:
 
 
 
+        structure_result = self.validate_structure()
+
+
+
+        result["reasons"].append(
+
+            structure_result["reason"]
+
+        )
+
+
+
+
+
         fvg_result = self.validate_fvg()
 
 
@@ -622,6 +949,10 @@ class EntryValidator:
 
 
         if (
+
+            structure_result["valid"]
+
+            and
 
             fvg_result["valid"]
 
