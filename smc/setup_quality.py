@@ -5,20 +5,19 @@ BMIE Setup Quality Engine.
 
 Responsibilities
 ----------------
-- Score trade setup quality
-- Evaluate HTF alignment
-- Evaluate liquidity
-- Evaluate Order Block quality
-- Evaluate FVG freshness
+- Evaluate setup strength
+- Score SMC confluence
+- Identify setup weaknesses
 - Generate setup grade
+- Provide setup state
 
 Author: BMIE Project
 """
 
 
 from dataclasses import dataclass, field
-
 from typing import List
+
 
 
 
@@ -30,20 +29,29 @@ from typing import List
 @dataclass
 class SetupQualityResult:
     """
-    Stores setup quality evaluation.
+    Represents setup quality evaluation.
     """
 
     score: int = 0
 
     grade: str = "D"
 
+    state: str = "WAIT FOR PULLBACK"
+
+
     strengths: List[str] = field(
+
         default_factory=list
+
     )
 
+
     warnings: List[str] = field(
+
         default_factory=list
+
     )
+
 
 
 
@@ -54,7 +62,7 @@ class SetupQualityResult:
 
 class SetupQualityEngine:
     """
-    Evaluates overall SMC setup quality.
+    Evaluates BMIE trade setup quality.
     """
 
 
@@ -62,18 +70,20 @@ class SetupQualityEngine:
     def __init__(
         self,
         context,
-        order_block=None,
         liquidity=None,
         fvg=None,
+        order_block=None,
     ):
 
-        self.context = context
 
-        self.order_block = order_block
+        self.context = context
 
         self.liquidity = liquidity
 
         self.fvg = fvg
+
+        self.order_block = order_block
+
 
 
 
@@ -84,17 +94,12 @@ class SetupQualityEngine:
 
     def calculate_grade(
         self,
-        score
+        score: int,
     ):
 
 
-        if score >= 85:
+        if score >= 80:
 
-            return "A+"
-
-
-
-        elif score >= 75:
 
             return "A"
 
@@ -102,27 +107,32 @@ class SetupQualityEngine:
 
         elif score >= 65:
 
+
             return "B"
 
 
 
         elif score >= 50:
 
+
             return "C"
 
 
 
-        return "D"
+        else:
+
+
+            return "D"
 
 
 
 
 
     # ======================================================
-    # Analyze
+    # Main Evaluation
     # ======================================================
 
-    def analyze(self):
+    def evaluate(self):
 
 
         result = SetupQualityResult()
@@ -139,6 +149,8 @@ class SetupQualityEngine:
 
 
 
+
+
         # ==================================================
         # Daily Bias
         # ==================================================
@@ -146,41 +158,31 @@ class SetupQualityEngine:
         if self.context.bias:
 
 
-            if hasattr(
-                self.context.bias,
-                "market_structure"
-            ):
+            structure = (
+
+                self.context.bias.market_structure
+
+            )
 
 
-                trend = (
-
-                    self.context.bias.market_structure.trend
-
-                )
+            if structure:
 
 
+                if structure.trend in [
 
-                if trend == "Bullish":
+                    "Bullish",
 
+                    "Bearish"
 
-                    score += 15
-
-                    strengths.append(
-
-                        "Daily bullish bias"
-
-                    )
-
-
-
-                elif trend == "Bearish":
+                ]:
 
 
                     score += 15
 
+
                     strengths.append(
 
-                        "Daily bearish bias"
+                        "Daily bias aligned"
 
                     )
 
@@ -189,6 +191,7 @@ class SetupQualityEngine:
 
 
                     score -= 5
+
 
                     warnings.append(
 
@@ -253,7 +256,7 @@ class SetupQualityEngine:
 
 
         # ==================================================
-        # 1H Trend
+        # 1H Trend Continuation
         # ==================================================
 
         if self.context.trend:
@@ -281,12 +284,76 @@ class SetupQualityEngine:
 
                     )
 
-                else:
 
 
-                    warnings.append(
+# ================= PART 1 END =================
 
-                        "No 1H continuation"
+# ================= PART 2 START =================
+
+
+        # ==================================================
+        # 15M BOS Confirmation
+        # ==================================================
+
+        if self.context.setup:
+
+
+            if self.context.setup.bos:
+
+
+                if self.context.setup.bos.confirmed:
+
+
+                    score += 10
+
+
+                    strengths.append(
+
+                        "15M BOS confirmation"
+
+                    )
+
+
+
+
+
+        # ==================================================
+        # 5M BOS / CHoCH Confirmation
+        # ==================================================
+
+        if self.context.entry:
+
+
+
+            if self.context.entry.bos:
+
+
+                if self.context.entry.bos.confirmed:
+
+
+                    score += 10
+
+
+                    strengths.append(
+
+                        "5M BOS confirmation"
+
+                    )
+
+
+
+            if self.context.entry.choch:
+
+
+                if self.context.entry.choch.confirmed:
+
+
+                    score += 10
+
+
+                    strengths.append(
+
+                        "5M CHoCH confirmation"
 
                     )
 
@@ -301,46 +368,61 @@ class SetupQualityEngine:
         if self.order_block:
 
 
-            if hasattr(
+
+            if getattr(
+
                 self.order_block,
-                "distance"
-            ):
+
+                "status",
+
+                None
+
+            ) == "Fresh":
 
 
-                if self.order_block.distance == "Valid":
+                score += 10
 
 
-                    score += 10
+                strengths.append(
+
+                    "Fresh Order Block"
+
+                )
 
 
-                    strengths.append(
-
-                        "Valid Order Block"
-
-                    )
+            else:
 
 
-                else:
+                score += 5
 
 
-                    score -= 10
+                warnings.append(
+
+                    "Order Block not fresh"
+
+                )
 
 
-                    warnings.append(
 
-                        "Order Block far"
+            if getattr(
 
-                    )
+                self.order_block,
+
+                "distance",
+
+                None
+
+            ) == "Far":
 
 
-        else:
+                score -= 5
 
 
-            warnings.append(
+                warnings.append(
 
-                "No Order Block"
+                    "Order Block far"
 
-            )
+                )
 
 
 
@@ -353,48 +435,50 @@ class SetupQualityEngine:
         if self.liquidity:
 
 
-            if (
 
-                self.liquidity.swept
+            if getattr(
 
-                and
+                self.liquidity,
 
-                self.liquidity.sweep_valid
+                "swept",
+
+                False
 
             ):
 
 
-                score += 15
+                if getattr(
+
+                    self.liquidity,
+
+                    "sweep_valid",
+
+                    False
+
+                ):
 
 
-                strengths.append(
-
-                    "Valid liquidity sweep"
-
-                )
+                    score += 15
 
 
-            else:
+                    strengths.append(
+
+                        "Valid liquidity sweep"
+
+                    )
 
 
-                score -= 15
+                else:
 
 
-                warnings.append(
-
-                    "Invalid liquidity"
-
-                )
+                    score -= 5
 
 
-        else:
+                    warnings.append(
 
+                        "Weak liquidity sweep"
 
-            warnings.append(
-
-                "No liquidity confirmation"
-
-            )
+                    )
 
 
 
@@ -407,7 +491,16 @@ class SetupQualityEngine:
         if self.fvg:
 
 
-            if self.fvg.filled:
+
+            if getattr(
+
+                self.fvg,
+
+                "filled",
+
+                False
+
+            ):
 
 
                 score -= 5
@@ -415,7 +508,7 @@ class SetupQualityEngine:
 
                 warnings.append(
 
-                    "FVG already filled"
+                    "FVG filled"
 
                 )
 
@@ -423,7 +516,7 @@ class SetupQualityEngine:
             else:
 
 
-                score += 5
+                score += 10
 
 
                 strengths.append(
@@ -437,7 +530,7 @@ class SetupQualityEngine:
 
 
         # ==================================================
-        # Final Result
+        # Normalize Score
         # ==================================================
 
         score = max(
@@ -458,17 +551,38 @@ class SetupQualityEngine:
 
         result.score = score
 
-        result.grade = self.calculate_grade(
 
-            score
+
+        result.grade = (
+
+            self.calculate_grade(
+
+                score
+
+            )
 
         )
 
 
+
+        result.state = (
+
+            "WAIT FOR PULLBACK"
+
+        )
+
+
+
         result.strengths = strengths
+
+
 
         result.warnings = warnings
 
 
 
         return result
+
+
+
+# ================= PART 2 END =================
