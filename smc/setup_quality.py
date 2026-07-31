@@ -132,7 +132,7 @@ class SetupQualityEngine:
     # Main Evaluation
     # ======================================================
 
-    def evaluate(self):
+    def analyze(self):
 
 
         result = SetupQualityResult()
