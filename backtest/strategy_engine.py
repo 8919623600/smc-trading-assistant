@@ -1,15 +1,16 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V5
+BMIE Strategy Engine V6
 
 Responsibilities
 ----------------
 - Replay historical candles
-- Build historical snapshots
 - Prevent look-ahead bias
-- Inject historical data into MarketEngine
-- Extract BMIE signals
+- Inject historical market data
+- Run existing MarketEngine
+- Extract trade-ready signals
+- Extract risk plan
 
 Author: BMIE Project
 """
@@ -36,7 +37,6 @@ class StrategyEngine:
     ):
 
         self.balance = balance
-
         self.verbose = verbose
 
 
@@ -69,7 +69,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Build Historical Snapshot
+    # Historical Snapshot
     # ======================================================
 
     def build_market_snapshot(
@@ -82,7 +82,6 @@ class StrategyEngine:
         snapshot = {}
 
 
-
         current_time = (
 
             timeframe_data["5m"]
@@ -92,7 +91,6 @@ class StrategyEngine:
             .name
 
         )
-
 
 
         for timeframe, df in timeframe_data.items():
@@ -111,7 +109,6 @@ class StrategyEngine:
             )
 
 
-
         return snapshot
 
 
@@ -119,7 +116,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Extract BMIE Result
+    # Extract BMIE Signal
     # ======================================================
 
     def extract_signal(
@@ -182,6 +179,11 @@ class StrategyEngine:
                 None,
 
 
+            "risk_reward":
+
+                0,
+
+
             "setup_quality":
 
                 None,
@@ -197,9 +199,9 @@ class StrategyEngine:
 
 
 
-        # ------------------------------
+        # ==================================================
         # Setup Quality
-        # ------------------------------
+        # ==================================================
 
         if engine.setup_quality:
 
@@ -229,9 +231,9 @@ class StrategyEngine:
 
 
 
-        # ------------------------------
+        # ==================================================
         # Entry Confirmation
-        # ------------------------------
+        # ==================================================
 
         if engine.entry_confirmation:
 
@@ -256,7 +258,6 @@ class StrategyEngine:
             )
 
 
-
             status = (
 
                 engine.entry_confirmation.get(
@@ -270,7 +271,6 @@ class StrategyEngine:
             )
 
 
-
             if status == "ENTRY CONFIRMED":
 
 
@@ -279,6 +279,55 @@ class StrategyEngine:
                     "TRADE READY"
 
                 )
+
+
+
+
+
+        # ==================================================
+        # Risk Decision
+        # ==================================================
+
+        entry = engine.analysis.entry
+
+
+
+        if entry and entry.risk_decision:
+
+
+            risk = entry.risk_decision
+
+
+
+            result["entry"] = (
+
+                risk.entry_low
+
+            )
+
+
+
+            result["stop_loss"] = (
+
+                risk.stop_loss
+
+            )
+
+
+
+            result["target"] = (
+
+                risk.target
+
+            )
+
+
+
+            result["risk_reward"] = (
+
+                risk.risk_reward
+
+            )
 
 
 
@@ -305,7 +354,6 @@ class StrategyEngine:
 
 
         signals = []
-
 
 
         candles = timeframe_data["5m"]
@@ -345,13 +393,11 @@ class StrategyEngine:
         ):
 
 
-
             print(
 
                 f"Processing candle {index}"
 
             )
-
 
 
             try:
@@ -367,8 +413,6 @@ class StrategyEngine:
 
 
 
-                # Create session
-
                 session = self.create_session(
 
                     symbol,
@@ -378,10 +422,6 @@ class StrategyEngine:
                 )
 
 
-
-
-
-                # Build historical view
 
                 market_snapshot = (
 
@@ -396,10 +436,6 @@ class StrategyEngine:
                 )
 
 
-
-
-
-                # Run BMIE engine
 
                 engine = MarketEngine(
 
