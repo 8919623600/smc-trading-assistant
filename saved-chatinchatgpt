@@ -1,111 +1,163 @@
-BMIE PROJECT CHECKPOINT
+Continue BMIE from backtest/historical_loader.py
 
-Project:
-Balaji Market Intelligence Engine (BMIE)
+============================================================
+BALAJI MARKET INTELLIGENCE ENGINE (BMIE)
+CHECKPOINT
+============================================================
 
-Current stage:
-Market Intelligence + Decision Engine
+CURRENT STAGE:
+Core Intelligence Complete → Starting Backtesting Phase
 
-========================================
+
 COMPLETED MODULES
-========================================
+------------------------------------------------------------
 
+✅ Data Fetching
 ✅ Multi Timeframe Analysis
-- 1D Bias
-- 4H Structure
-- 1H Trend
-- 15M Setup
-- 5M Entry
+    - 1D Bias
+    - 4H Structure
+    - 1H Trend
+    - 15M Setup
+    - 5M Entry
 
-✅ Market Structure
-- BOS detection
-- CHoCH detection
-- Trend classification
+✅ SMC Analysis
+    - BOS
+    - CHoCH
+    - Order Block
+    - Liquidity
+    - Liquidity Sweep
+    - FVG
 
-✅ SMC Modules
-- Order Block detection
-- Liquidity detection
-- Liquidity sweep validation
-- FVG detection
 
-✅ Confluence Engine
-
-✅ Entry Validator
-
-✅ Entry Confirmation Engine
+✅ Setup Quality V3
 
 Current output example:
 
-ENTRY CONFIRMATION
+Score:
+80/100
+
+Grade:
+A
+
+
+Logic improved:
+- Fresh FVG
+- Mitigated FVG handling
+- Liquidity scoring
+- OB scoring
+
+
+✅ Entry Confirmation Engine
+
+Current behavior:
+
+Strong setup:
++
+No trigger
+=
+WAIT FOR CONFIRMATION
+
+
+Example:
 
 Status:
 WAIT FOR CONFIRMATION
 
 Confidence:
-45%
-
-Reasons:
-- Waiting for Order Block mitigation
-- Waiting for FVG reaction
-- Liquidity sweep confirmed
-- No rejection candle
+70%
 
 
-✅ Risk Manager V2
-Integrated in:
-engine/market_engine.py
+✅ Confluence Engine V2
 
-Current integration:
+Fixed previous issue:
 
-risk_decision = risk_manager.analyze(
-    trade_decision,
-    order_blocks,
-    liquidity=self.selected_liquidity,
-)
+Before:
+
+ENTRY CONFIRMED
++
+TRADE WAIT
+
+(conflict)
 
 
-✅ Trade Journal
+Now:
 
-Created:
+Decision follows confirmation logic.
+
+
+✅ Risk Manager
+
+Integrated:
+
+risk_manager.analyze()
+
+
+Current:
+
+Risk plan appears only after valid trade setup.
+
+
+✅ Trade Journal V3
+
+Location:
 
 journal/trade_journal.py
 
-Integrated into:
 
-engine/market_engine.py
+Stores:
 
-Journal save position fixed:
-
-Flow:
-
-Analysis
-   |
-   ↓
-Entry Confirmation
-   |
-   ↓
-Risk Manager
-   |
-   ↓
-Trade Journal Save
+- Market context
+- Setup quality
+- Signal snapshot
+- Entry confirmation
+- Risk data
+- Result tracking
 
 
-========================================
-LATEST VALIDATION
-========================================
+✅ Performance Analytics V2
 
-BMIE ran successfully:
+Location:
 
-python main.py
+journal/performance.py
 
 
-Latest market condition:
+Current report example:
+
+BMIE PERFORMANCE REPORT V2
+
+Total Setups:
+4
+
+Trade Status:
+OPEN: 1
+CLOSED: 0
+PENDING: 3
+
+Results:
+WIN: 0
+LOSS: 0
+PENDING: 4
+
+Grade Distribution:
+D: 1
+A: 3
+
+Average Confidence:
+62.5%
+
+Average RR:
+0
+
+
+============================================================
+LATEST BMIE RUN
+============================================================
 
 Symbol:
 XAUUSD
 
 Price:
-4055.64
+4033.58
 
 
 Structure:
@@ -120,7 +172,7 @@ TREND:
 Bullish Continuation | BOS
 
 SETUP:
-Transition | CHoCH
+Bearish Continuation | BOS
 
 ENTRY:
 Bearish Continuation | BOS
@@ -128,147 +180,109 @@ Bearish Continuation | BOS
 
 Order Block:
 
-Type:
 Bullish
 
-Zone:
 3996.05 - 4010.22
 
 
 Liquidity:
 
-Side:
 Sell-side
 
 Swept:
 True
 
-Valid:
-True
 
-
-Setup Quality:
-
-Score:
-35/100
+Setup:
 
 Grade:
-D
+A
+
+Score:
+80
 
 
-Entry Confirmation:
+Entry:
 
-Status:
 WAIT FOR CONFIRMATION
 
 Confidence:
-45%
+70%
 
 
-Trade Decision:
+Trade:
 
-Signal:
 WAIT FOR RETRACEMENT
 
-
-========================================
-CURRENT ISSUE TO FIX NEXT
-========================================
-
-File:
-
-smc/setup_quality.py
+Confidence:
+55%
 
 
-Next version:
+============================================================
+NEXT STEP
+============================================================
 
-setup_quality.py V3
-
-
-Problem:
-
-Current scoring is too aggressive with filled FVG.
+Start Backtesting Engine V1
 
 
-Current:
+Planned structure:
 
-Filled directional FVG
-        |
-        ↓
-Large penalty
+backtest/
 
-
-Need:
-
-Fresh FVG:
-+10
+├── historical_loader.py
+├── strategy_engine.py
+├── trade_simulator.py
+└── backtest_report.py
 
 
-Same-direction filled FVG:
-small penalty
+First file:
+
+backtest/historical_loader.py
 
 
-Opposite-direction filled FVG:
-neutral
+Purpose:
+
+Load historical candles and feed them into BMIE logic.
 
 
-Filled FVG + BOS/rejection:
-should not heavily reduce score
+Flow:
+
+Historical Data
+       |
+       ↓
+BMIE Analyzer
+       |
+       ↓
+Signal Generation
+       |
+       ↓
+Trade Simulation
+       |
+       ↓
+Performance Report
 
 
-Goal:
+============================================================
+PROJECT COMPLETION
+============================================================
 
-Current:
+Core Intelligence:
+≈90%
 
-Score:
-35
-Grade:
-D
+Journal:
+≈90%
 
+Analytics:
+≈80%
 
-Target:
-
-Score:
-50-70
-Grade:
-C/B
-
-
-========================================
-NEXT DEVELOPMENT ORDER
-========================================
-
-1. Setup Quality V3
-   |
-   ↓
-2. Verify journal/trades.json
-   |
-   ↓
-3. Build Backtesting Engine V1
-   |
-   ↓
-4. Strategy optimization
-   |
-   ↓
-5. Paper trading
-   |
-   ↓
-6. Live execution
+Backtesting:
+0%
 
 
-IMPORTANT:
-When continuing use:
-
-BMIE DIRECT MODE
-
-Rules:
-- Full file only
-- No snippets
-- Split only if unavoidable
-- Avoid indentation issues
-- Prefer complete .py files
+Overall BMIE:
+≈75% complete
 
 
 Continue from:
-
-smc/setup_quality.py V3
+backtest/historical_loader.py
+============================================================
