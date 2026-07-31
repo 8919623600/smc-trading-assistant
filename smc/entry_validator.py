@@ -1,6 +1,6 @@
-# smc/entry_validator.py
-
 """
+smc/entry_validator.py
+
 BMIE Entry Validation Engine V6.
 
 Responsibilities
@@ -19,6 +19,7 @@ Author: BMIE Project
 
 
 from typing import List, Any
+
 
 
 class EntryValidator:
@@ -47,8 +48,6 @@ class EntryValidator:
 
         self.liquidity = liquidity
 
-
-        # MTF Context
 
         self.entry_context = entry_context
 
@@ -421,7 +420,6 @@ class EntryValidator:
 
         }
 
-
 # ================= PART 1 END =================
 
 # ================= PART 2 START =================
@@ -450,6 +448,12 @@ class EntryValidator:
                     "No FVG available"
 
             }
+
+
+
+
+
+        opposite_fvg = False
 
 
 
@@ -512,6 +516,13 @@ class EntryValidator:
 
 
 
+                elif fvg_direction == "bearish":
+
+
+                    opposite_fvg = True
+
+
+
 
 
             elif direction == "Bearish":
@@ -529,6 +540,30 @@ class EntryValidator:
                             "Bearish FVG confirmation"
 
                     }
+
+
+
+                elif fvg_direction == "bullish":
+
+
+                    opposite_fvg = True
+
+
+
+
+
+        if opposite_fvg:
+
+
+            return {
+
+                "valid": True,
+
+                "reason":
+
+                    "Opposite FVG ignored"
+
+            }
 
 
 
@@ -650,9 +685,6 @@ class EntryValidator:
 
 
 
-
-        # fallback:
-        # keep valid liquidity sweep as confirmation
 
         if self.liquidity:
 
@@ -996,3 +1028,4 @@ class EntryValidator:
 
 
 # ================= PART 2 END =================
+    
