@@ -318,7 +318,8 @@ class StrategyEngine:
 
 
             risk_available = True
-
+            
+        if risk_available:
             print(
                 "RISK DEBUG:",
                 risk.entry_low,

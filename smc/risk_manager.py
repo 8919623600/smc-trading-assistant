@@ -1,16 +1,17 @@
 """
 smc/risk_manager.py
 
-BMIE Risk Manager V2
+BMIE Risk Manager V3
 
 Responsibilities
 ----------------
 - Calculate trade risk
 - Generate stop loss from Order Block
-- Generate target from liquidity
+- Generate target from Liquidity
 - Calculate risk reward
 - Calculate position sizing
 - Validate trade plan
+- Support backtest direction fallback
 
 Author: BMIE Project
 """
@@ -28,30 +29,21 @@ class RiskDecision:
 
     valid: bool = False
 
-
     direction: str = None
-
 
     entry: float = None
 
-
     stop_loss: float = None
-
 
     target: float = None
 
-
     risk_amount: float = 0
-
 
     reward_amount: float = 0
 
-
     risk_reward: float = 0
 
-
     position_size: float = 0
-
 
     reason: str = ""
 
@@ -86,7 +78,6 @@ class RiskManager:
 
     def calculate_risk_amount(self):
 
-
         return (
 
             self.account_balance
@@ -111,7 +102,8 @@ class RiskManager:
 
     def get_direction(
         self,
-        trade_decision
+        trade_decision,
+        order_blocks=None
     ):
 
 
@@ -131,21 +123,52 @@ class RiskManager:
 
 
 
-
-
         if "BUY" in signal:
-
 
             return "Bullish"
 
 
 
 
-
         if "SELL" in signal:
 
-
             return "Bearish"
+
+
+
+
+
+        # ==================================================
+        # Backtest fallback
+        # ==================================================
+
+        if order_blocks:
+
+
+            block = order_blocks[0]
+
+
+            block_type = getattr(
+
+                block,
+
+                "type",
+
+                ""
+
+            )
+
+
+
+            if block_type == "Bullish":
+
+                return "Bullish"
+
+
+
+            if block_type == "Bearish":
+
+                return "Bearish"
 
 
 
@@ -171,9 +194,7 @@ class RiskManager:
         if order_blocks:
 
 
-
             block = order_blocks[0]
-
 
 
             return (
@@ -223,7 +244,6 @@ class RiskManager:
 
 
         block = order_blocks[0]
-
 
 
         buffer = (
@@ -280,9 +300,6 @@ class RiskManager:
 
 
 
-# ================= PART 1 END =================
-
-# ================= PART 2 START =================
 
 
     # ======================================================
@@ -305,7 +322,7 @@ class RiskManager:
 
 
 
-        level = getattr(
+        return getattr(
 
             liquidity,
 
@@ -314,10 +331,6 @@ class RiskManager:
             None
 
         )
-
-
-
-        return level
 
 
 
@@ -344,7 +357,7 @@ class RiskManager:
 
 
 
-        stop_distance = abs(
+        distance = abs(
 
             entry -
 
@@ -354,7 +367,7 @@ class RiskManager:
 
 
 
-        if stop_distance == 0:
+        if distance == 0:
 
 
             return 0
@@ -367,7 +380,7 @@ class RiskManager:
 
             risk_amount /
 
-            stop_distance
+            distance
 
         )
 
@@ -425,7 +438,9 @@ class RiskManager:
 
         direction = self.get_direction(
 
-            trade_decision
+            trade_decision,
+
+            order_blocks
 
         )
 
@@ -457,6 +472,8 @@ class RiskManager:
 
 
 
+
+
         stop_loss = self.calculate_stop_loss(
 
             direction,
@@ -464,6 +481,8 @@ class RiskManager:
             order_blocks
 
         )
+
+
 
 
 
@@ -536,27 +555,15 @@ class RiskManager:
 
         result.direction = direction
 
-
-
         result.entry = entry
-
-
 
         result.stop_loss = stop_loss
 
-
-
         result.target = target
-
-
 
         result.risk_amount = risk_amount
 
-
-
         result.reward_amount = reward
-
-
 
         result.risk_reward = round(
 
@@ -565,8 +572,6 @@ class RiskManager:
             2
 
         )
-
-
 
         result.position_size = round(
 
@@ -585,7 +590,6 @@ class RiskManager:
 
             result.valid = True
 
-
             result.reason = (
 
                 "Valid risk reward setup"
@@ -599,7 +603,6 @@ class RiskManager:
 
             result.valid = False
 
-
             result.reason = (
 
                 "Risk reward below minimum"
@@ -611,7 +614,3 @@ class RiskManager:
 
 
         return result
-
-
-
-# ================= PART 2 END =================
