@@ -1,7 +1,7 @@
 """
 smc/entry_validator.py
 
-BMIE Entry Validation Engine V2.
+BMIE Entry Validation Engine V3.
 
 Responsibilities
 ----------------
@@ -9,14 +9,18 @@ Responsibilities
 - Detect pullback requirement
 - Detect retracement phase
 - Detect entry zone
-- Validate FVG
+- Validate FVG direction
+- Validate liquidity sweep
+- Validate BOS / CHoCH confirmation
 - Provide execution state
 
 Author: BMIE Project
 """
 
 
-from typing import List, Any
+from typing import List, Any, Optional
+
+
 
 
 
@@ -34,7 +38,9 @@ class EntryValidator:
         order_blocks: List,
         fair_value_gaps: List,
         liquidity: List,
+        structure: Optional[Any] = None,
     ):
+
 
         self.current_price = current_price
 
@@ -46,6 +52,10 @@ class EntryValidator:
 
         self.liquidity = liquidity
 
+        self.structure = structure
+
+
+
 
 
     # ======================================================
@@ -54,20 +64,25 @@ class EntryValidator:
 
     def latest_order_block(self):
 
+
         if not self.order_blocks:
 
+
             return None
+
 
 
         return sorted(
 
             self.order_blocks,
 
-            key=lambda x:x.created_at,
+            key=lambda x: x.created_at,
 
             reverse=True
 
         )[0]
+
+
 
 
 
@@ -91,7 +106,9 @@ class EntryValidator:
 
                 "state": "WAIT",
 
-                "reason": "No Order Block available"
+                "reason":
+
+                    "No Order Block available"
 
             }
 
@@ -99,9 +116,8 @@ class EntryValidator:
 
         midpoint = (
 
-            block.high
+            block.high +
 
-            +
             block.low
 
         ) / 2
@@ -110,9 +126,8 @@ class EntryValidator:
 
         distance = abs(
 
-            self.current_price
+            self.current_price -
 
-            -
             midpoint
 
         )
@@ -121,18 +136,15 @@ class EntryValidator:
 
         percentage = (
 
-            distance
+            distance /
 
-            /
             self.current_price
 
         ) * 100
 
 
 
-        # ==============================================
-        # Price far away
-        # ==============================================
+
 
         if percentage > 2:
 
@@ -141,7 +153,9 @@ class EntryValidator:
 
                 "valid": False,
 
-                "state": "WAIT FOR PULLBACK",
+                "state":
+
+                    "WAIT FOR PULLBACK",
 
                 "reason":
 
@@ -151,9 +165,7 @@ class EntryValidator:
 
 
 
-        # ==============================================
-        # Price approaching zone
-        # ==============================================
+
 
         elif percentage > 0.5:
 
@@ -162,7 +174,9 @@ class EntryValidator:
 
                 "valid": False,
 
-                "state": "WAIT FOR RETRACEMENT",
+                "state":
+
+                    "WAIT FOR RETRACEMENT",
 
                 "reason":
 
@@ -172,9 +186,7 @@ class EntryValidator:
 
 
 
-        # ==============================================
-        # Price inside zone
-        # ==============================================
+
 
         elif (
 
@@ -191,7 +203,9 @@ class EntryValidator:
 
                 "valid": False,
 
-                "state": "ENTRY ZONE",
+                "state":
+
+                    "ENTRY ZONE",
 
                 "reason":
 
@@ -201,11 +215,15 @@ class EntryValidator:
 
 
 
+
+
         return {
 
             "valid": True,
 
-            "state": "ENTRY READY",
+            "state":
+
+                "ENTRY READY",
 
             "reason":
 
@@ -215,11 +233,59 @@ class EntryValidator:
 
 
 
+
+
+    # ======================================================
+    # Trade Direction
+    # ======================================================
+
+    def get_direction(self):
+
+
+        if not self.trade_decision:
+
+
+            return None
+
+
+
+        signal = str(
+
+            self.trade_decision.signal
+
+        ).upper()
+
+
+
+        if "BUY" in signal:
+
+
+            return "Bullish"
+
+
+
+        if "SELL" in signal:
+
+
+            return "Bearish"
+
+
+
+        return None
+
+
+
+
+
     # ======================================================
     # FVG Validation
     # ======================================================
 
     def validate_fvg(self):
+
+
+        direction = self.get_direction()
+
 
 
         if not self.fair_value_gaps:
@@ -237,19 +303,66 @@ class EntryValidator:
 
 
 
-        fresh = [
-
-            fvg
-
-            for fvg in self.fair_value_gaps
-
-            if not fvg.filled
-
-        ]
+        valid_fvg = []
 
 
 
-        if fresh:
+        for fvg in self.fair_value_gaps:
+
+
+
+            if getattr(
+
+                fvg,
+
+                "filled",
+
+                False
+
+            ):
+
+
+                continue
+
+
+
+            fvg_direction = str(
+
+                getattr(
+
+                    fvg,
+
+                    "direction",
+
+                    ""
+
+                )
+
+            ).lower()
+
+
+
+            if direction == "Bullish":
+
+
+                if fvg_direction == "bullish":
+
+
+                    valid_fvg.append(fvg)
+
+
+
+            elif direction == "Bearish":
+
+
+                if fvg_direction == "bearish":
+
+
+                    valid_fvg.append(fvg)
+
+
+
+        if valid_fvg:
 
 
             return {
@@ -258,7 +371,7 @@ class EntryValidator:
 
                 "reason":
 
-                    "Fresh FVG confirmation"
+                    "Directional FVG confirmation"
 
             }
 
@@ -270,31 +383,111 @@ class EntryValidator:
 
             "reason":
 
-                "FVG already filled"
+                "No directional FVG confirmation"
 
         }
 
 
+# ================= PART 1 END =================
+
+# ================= PART 2 START =================
+
 
     # ======================================================
-    # Liquidity
+    # Liquidity Validation
     # ======================================================
 
     def validate_liquidity(self):
 
 
-        if self.liquidity:
+        direction = self.get_direction()
+
+
+
+        if not self.liquidity:
 
 
             return {
 
-                "valid": True,
+                "valid": False,
 
                 "reason":
 
-                    "Liquidity confirmation available"
+                    "No liquidity confirmation"
 
             }
+
+
+
+
+        for zone in self.liquidity:
+
+
+
+            if not getattr(
+
+                zone,
+
+                "swept",
+
+                False
+
+            ):
+
+
+                continue
+
+
+
+
+            side = getattr(
+
+                zone,
+
+                "side",
+
+                ""
+
+            )
+
+
+
+            if direction == "Bullish":
+
+
+                if side == "Sell-side":
+
+
+                    return {
+
+                        "valid": True,
+
+                        "reason":
+
+                            "Sell-side liquidity swept"
+
+                    }
+
+
+
+
+            elif direction == "Bearish":
+
+
+                if side == "Buy-side":
+
+
+                    return {
+
+                        "valid": True,
+
+                        "reason":
+
+                            "Buy-side liquidity swept"
+
+                    }
+
+
 
 
 
@@ -304,9 +497,127 @@ class EntryValidator:
 
             "reason":
 
-                "No liquidity confirmation"
+                "Directional liquidity not available"
+
+        }
+
+
+
+
+
+    # ======================================================
+    # Structure Confirmation
+    # ======================================================
+
+    def validate_structure(self):
+
+
+        if not self.structure:
+
+
+            return {
+
+                "valid": False,
+
+                "reason":
+
+                    "No structure confirmation"
 
             }
+
+
+
+
+        reasons = []
+
+
+
+        valid = False
+
+
+
+        if getattr(
+
+            self.structure,
+
+            "bos",
+
+            None
+
+        ):
+
+
+            if self.structure.bos.confirmed:
+
+
+                valid = True
+
+
+                reasons.append(
+
+                    "BOS confirmed"
+
+                )
+
+
+
+
+
+        if getattr(
+
+            self.structure,
+
+            "choch",
+
+            None
+
+        ):
+
+
+            if self.structure.choch.confirmed:
+
+
+                valid = True
+
+
+                reasons.append(
+
+                    "CHoCH confirmed"
+
+                )
+
+
+
+
+
+        if valid:
+
+
+            return {
+
+                "valid": True,
+
+                "reason":
+
+                    " + ".join(reasons)
+
+            }
+
+
+
+
+
+        return {
+
+            "valid": False,
+
+            "reason":
+
+                "No BOS/CHoCH confirmation"
+
+        }
+
+
 
 
 
@@ -319,13 +630,19 @@ class EntryValidator:
 
         result = {
 
+
             "valid": True,
 
-            "status": "READY",
+
+            "status":
+
+                "READY",
+
 
             "reasons": []
 
         }
+
 
 
 
@@ -334,9 +651,14 @@ class EntryValidator:
 
             return {
 
+
                 "valid": False,
 
-                "status": "WAIT",
+
+                "status":
+
+                    "WAIT",
+
 
                 "reasons":
 
@@ -347,6 +669,8 @@ class EntryValidator:
                     ]
 
             }
+
+
 
 
 
@@ -371,7 +695,10 @@ class EntryValidator:
 
             result["valid"] = False
 
+
             result["status"] = ob_result["state"]
+
+
 
 
 
@@ -391,6 +718,8 @@ class EntryValidator:
 
 
 
+
+
         # ----------------------------------------------
         # Liquidity
         # ----------------------------------------------
@@ -407,23 +736,96 @@ class EntryValidator:
 
 
 
-        # ----------------------------------------------
-        # Existing weak signals
-        # ----------------------------------------------
-
-        if self.trade_decision.signal in [
-
-            "WAIT",
-
-            "WATCH"
-
-        ]:
+        if not liquidity_result["valid"]:
 
 
             result["valid"] = False
 
-            result["status"] = "WAIT"
+
+
+
+
+        # ----------------------------------------------
+        # Structure
+        # ----------------------------------------------
+
+        structure_result = self.validate_structure()
+
+
+
+        result["reasons"].append(
+
+            structure_result["reason"]
+
+        )
+
+
+
+
+
+        # ----------------------------------------------
+        # Final Entry Decision
+        # ----------------------------------------------
+
+        if (
+
+            fvg_result["valid"]
+
+            and
+
+            liquidity_result["valid"]
+
+            and
+
+            structure_result["valid"]
+
+            and
+
+            ob_result["valid"]
+
+        ):
+
+
+            result["status"] = (
+
+                "ENTRY CONFIRMED"
+
+            )
+
+
+            result["valid"] = True
+
+
+
+        elif result["status"] == "READY":
+
+
+            result["status"] = (
+
+                "WAIT FOR CONFIRMATION"
+
+            )
+
+
+
+
+
+        # Remove duplicate reasons
+
+        result["reasons"] = list(
+
+            dict.fromkeys(
+
+                result["reasons"]
+
+            )
+
+        )
 
 
 
         return result
+
+
+
+# ================= PART 2 END =================
