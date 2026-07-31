@@ -632,6 +632,10 @@ class MarketEngine:
 
             "STRONG SELL",
 
+            "WAIT FOR CONFIRMATION",
+
+            "WAIT FOR RETRACEMENT",
+
         ]
 
 
@@ -1379,9 +1383,7 @@ class MarketEngine:
 
                 f"Entry Zone : "
 
-                f"{risk.entry_low:.2f} - "
-
-                f"{risk.entry_high:.2f}"
+                f"{risk.entry:.2f}"
 
             )
 
