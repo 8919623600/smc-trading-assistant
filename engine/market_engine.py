@@ -77,9 +77,6 @@ class MarketEngine:
         self.setup_quality = None
 
 
-
-
-
         self.entry_confirmation = None
 
 
@@ -163,8 +160,11 @@ class MarketEngine:
 
 
         if not hasattr(
+
             entry,
+
             "swing_highs"
+
         ):
 
             return None
@@ -172,8 +172,11 @@ class MarketEngine:
 
 
         if not hasattr(
+
             entry,
+
             "swing_lows"
+
         ):
 
             return None
@@ -513,6 +516,12 @@ class MarketEngine:
                 order_blocks=order_blocks,
 
                 fair_value_gaps=entry.fair_value_gaps,
+
+                liquidity=[self.selected_liquidity]
+
+                if self.selected_liquidity
+
+                else [],
 
                 entry_context=self.analysis.entry,
 
@@ -1117,9 +1126,19 @@ class MarketEngine:
 
             print(
 
-                f"Status : "
+                f"Status     : "
 
                 f"{self.entry_confirmation.get('status')}"
+
+            )
+
+
+
+            print(
+
+                f"Confidence : "
+
+                f"{self.entry_confirmation.get('confidence', 0)}%"
 
             )
 
