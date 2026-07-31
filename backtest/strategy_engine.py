@@ -318,7 +318,7 @@ class StrategyEngine:
 
 
             risk_available = True
-            
+
         if risk_available:
             print(
                 "RISK DEBUG:",
@@ -553,11 +553,13 @@ class StrategyEngine:
             except Exception as error:
 
 
+                import traceback
                 print(
 
                     "Backtest candle error:",
 
                     error
+                traceback.print_exc()
 
                 )
 
