@@ -1,16 +1,15 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V6
+BMIE Strategy Engine V7
 
 Responsibilities
 ----------------
 - Replay historical candles
 - Prevent look-ahead bias
-- Inject historical market data
-- Run existing MarketEngine
-- Extract trade-ready signals
-- Extract risk plan
+- Inject historical data into MarketEngine
+- Extract BMIE signals
+- Debug setup qualification
 
 Author: BMIE Project
 """
@@ -44,7 +43,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Create Trading Session
+    # Create Session
     # ======================================================
 
     def create_session(
@@ -52,7 +51,6 @@ class StrategyEngine:
         symbol,
         exchange
     ):
-
 
         return TradingSession(
 
@@ -69,7 +67,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Historical Snapshot
+    # Build Historical Snapshot
     # ======================================================
 
     def build_market_snapshot(
@@ -78,9 +76,7 @@ class StrategyEngine:
         index
     ):
 
-
         snapshot = {}
-
 
         current_time = (
 
@@ -95,13 +91,10 @@ class StrategyEngine:
 
         for timeframe, df in timeframe_data.items():
 
-
             snapshot[timeframe] = (
 
                 df[
-
                     df.index <= current_time
-
                 ]
 
                 .copy()
@@ -116,7 +109,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Extract BMIE Signal
+    # Extract Signal
     # ======================================================
 
     def extract_signal(
@@ -130,77 +123,54 @@ class StrategyEngine:
 
 
             "symbol":
-
                 engine.session.symbol,
 
 
             "exchange":
-
                 engine.session.exchange,
 
 
             "time":
-
                 str(candle_time),
 
 
             "signal":
-
                 "NO TRADE",
 
 
             "confidence":
-
                 0,
 
 
             "grade":
-
                 None,
 
 
             "direction":
-
                 None,
 
 
             "entry":
-
                 None,
 
 
             "stop_loss":
-
                 None,
 
 
             "target":
-
                 None,
 
 
             "risk_reward":
-
-                0,
-
-
-            "setup_quality":
-
-                None,
-
-
-            "entry_confirmation":
-
-                None
+                0
 
         }
 
 
 
-
-
         # ==================================================
-        # Setup Quality
+        # Setup Quality Debug
         # ==================================================
 
         if engine.setup_quality:
@@ -213,49 +183,25 @@ class StrategyEngine:
             )
 
 
-            result["setup_quality"] = {
+            print(
 
+                "QUALITY DEBUG:",
 
-                "score":
+                engine.setup_quality.grade,
 
-                    engine.setup_quality.score,
+                engine.setup_quality.score
 
-
-                "grade":
-
-                    engine.setup_quality.grade
-
-            }
+            )
 
 
 
 
 
         # ==================================================
-        # Entry Confirmation
+        # Entry Confirmation Debug
         # ==================================================
 
         if engine.entry_confirmation:
-
-
-            result["entry_confirmation"] = (
-
-                engine.entry_confirmation
-
-            )
-
-
-            result["confidence"] = (
-
-                engine.entry_confirmation.get(
-
-                    "confidence",
-
-                    0
-
-                )
-
-            )
 
 
             status = (
@@ -269,6 +215,35 @@ class StrategyEngine:
                 )
 
             )
+
+
+            confidence = (
+
+                engine.entry_confirmation.get(
+
+                    "confidence",
+
+                    0
+
+                )
+
+            )
+
+
+            result["confidence"] = confidence
+
+
+
+            print(
+
+                "ENTRY DEBUG:",
+
+                status,
+
+                confidence
+
+            )
+
 
 
             if status == "ENTRY CONFIRMED":
@@ -285,7 +260,7 @@ class StrategyEngine:
 
 
         # ==================================================
-        # Risk Decision
+        # Risk Extraction
         # ==================================================
 
         entry = engine.analysis.entry
@@ -306,7 +281,6 @@ class StrategyEngine:
             )
 
 
-
             result["stop_loss"] = (
 
                 risk.stop_loss
@@ -314,13 +288,11 @@ class StrategyEngine:
             )
 
 
-
             result["target"] = (
 
                 risk.target
 
             )
-
 
 
             result["risk_reward"] = (
@@ -340,7 +312,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Historical Replay
+    # Replay Historical Data
     # ======================================================
 
     def run(
@@ -354,6 +326,8 @@ class StrategyEngine:
 
 
         signals = []
+
+        skipped = 0
 
 
         candles = timeframe_data["5m"]
@@ -398,6 +372,7 @@ class StrategyEngine:
                 f"Processing candle {index}"
 
             )
+
 
 
             try:
@@ -492,6 +467,10 @@ class StrategyEngine:
 
                     )
 
+                else:
+
+                    skipped += 1
+
 
 
 
@@ -513,10 +492,20 @@ class StrategyEngine:
 
         print(
 
-            f"Signals generated: {len(signals)}"
+            "Signals generated:",
+
+            len(signals)
 
         )
 
+
+        print(
+
+            "Skipped setups:",
+
+            skipped
+
+        )
 
 
         return signals
