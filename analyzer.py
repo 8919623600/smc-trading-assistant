@@ -72,12 +72,12 @@ def analyze_market(
     # Fetch Market Data
     # ======================================================
 
-if df is None:
-    df = get_data(
-        session=session,
-        timeframe=timeframe,
-        bars=bars,
-    )
+    if df is None:
+        df = get_data(
+            session=session,
+            timeframe=timeframe,
+            bars=bars,
+        )
 
 
 
