@@ -1,7 +1,7 @@
-"""
-smc/entry_validator.py
+# smc/entry_validator.py
 
-BMIE Entry Validation Engine V5.
+"""
+BMIE Entry Validation Engine V6.
 
 Responsibilities
 ----------------
@@ -19,9 +19,6 @@ Author: BMIE Project
 
 
 from typing import List, Any
-
-
-
 
 
 class EntryValidator:
@@ -72,7 +69,6 @@ class EntryValidator:
 
         if not self.order_blocks:
 
-
             return None
 
 
@@ -92,14 +88,13 @@ class EntryValidator:
 
 
     # ======================================================
-    # Extract Event Direction
+    # Extract Direction
     # ======================================================
 
     def extract_direction(self, event):
 
 
         if not event:
-
 
             return None
 
@@ -119,7 +114,6 @@ class EntryValidator:
 
         if direction:
 
-
             return str(direction).capitalize()
 
 
@@ -137,20 +131,16 @@ class EntryValidator:
     def get_direction(self):
 
         """
-        Direction priority:
+        Priority:
 
         1. 5M CHoCH
         2. 5M BOS
         3. 15M BOS
         4. 1H Trend
-        5. Trade signal
+        5. Trade Signal
         """
 
 
-
-        # ----------------------------------------------
-        # Entry CHoCH
-        # ----------------------------------------------
 
         if self.entry_context:
 
@@ -172,16 +162,11 @@ class EntryValidator:
 
             if direction:
 
-
                 return direction
 
 
 
 
-
-        # ----------------------------------------------
-        # Entry BOS
-        # ----------------------------------------------
 
         if self.entry_context:
 
@@ -203,16 +188,11 @@ class EntryValidator:
 
             if direction:
 
-
                 return direction
 
 
 
 
-
-        # ----------------------------------------------
-        # Setup BOS
-        # ----------------------------------------------
 
         if self.setup_context:
 
@@ -234,16 +214,11 @@ class EntryValidator:
 
             if direction:
 
-
                 return direction
 
 
 
 
-
-        # ----------------------------------------------
-        # Trend
-        # ----------------------------------------------
 
         if self.trend_context:
 
@@ -265,16 +240,11 @@ class EntryValidator:
 
             if direction:
 
-
                 return direction
 
 
 
 
-
-        # ----------------------------------------------
-        # Trade Signal fallback
-        # ----------------------------------------------
 
         if self.trade_decision:
 
@@ -289,13 +259,11 @@ class EntryValidator:
 
             if "BUY" in signal:
 
-
                 return "Bullish"
 
 
 
             if "SELL" in signal:
-
 
                 return "Bearish"
 
@@ -683,6 +651,26 @@ class EntryValidator:
 
 
 
+        # fallback:
+        # keep valid liquidity sweep as confirmation
+
+        if self.liquidity:
+
+
+            return {
+
+                "valid": True,
+
+                "reason":
+
+                    "Liquidity sweep detected"
+
+            }
+
+
+
+
+
         return {
 
             "valid": False,
@@ -706,9 +694,9 @@ class EntryValidator:
 
         reasons = []
 
-
-
         valid = False
+
+
 
 
 
@@ -835,11 +823,9 @@ class EntryValidator:
 
             "valid": True,
 
-
             "status":
 
                 "READY",
-
 
             "reasons": []
 
