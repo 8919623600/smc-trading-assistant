@@ -319,6 +319,19 @@ class StrategyEngine:
 
             risk_available = True
 
+            print(
+                "RISK DEBUG:",
+                risk.entry_low,
+                risk.stop_loss,
+                risk.target,
+                risk.risk_reward
+            )
+        else:
+
+            print(
+                "RISK DEBUG: NO RISK PLAN"
+            )
+
 
 
             result["entry"] = (
