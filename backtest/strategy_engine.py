@@ -559,9 +559,10 @@ class StrategyEngine:
                     "Backtest candle error:",
 
                     error
+                )
                 traceback.print_exc()
 
-                )
+                
 
 
 
