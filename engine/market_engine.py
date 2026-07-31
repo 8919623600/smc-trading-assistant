@@ -632,6 +632,10 @@ class MarketEngine:
 
             "STRONG SELL",
 
+            "WAIT FOR CONFIRMATION",
+
+            "WAIT FOR RETRACEMENT",
+
         ]
 
 
@@ -654,15 +658,7 @@ class MarketEngine:
             ]
         ):
 
-            print(
-                "RISK INPUT SIGNAL:",
-                trade_decision.signal
-            )
-
-            print(
-                "ENTRY CONFIRMATION:",
-                confirmation_status
-            )
+            
 
 
 
@@ -1405,9 +1401,7 @@ class MarketEngine:
 
                 f"Entry Zone : "
 
-                f"{risk.entry_low:.2f} - "
-
-                f"{risk.entry_high:.2f}"
+                f"{risk.entry:.2f}"
 
             )
 
