@@ -1,7 +1,7 @@
 # smc/entry_confirmation.py
 
 """
-BMIE Entry Confirmation Engine V1
+BMIE Entry Confirmation Engine V2
 
 Responsibilities
 ----------------
@@ -9,8 +9,7 @@ Responsibilities
 - Validate Order Block reaction
 - Validate FVG reaction
 - Validate rejection candle
-- Validate 5M BOS
-- Validate 5M CHoCH
+- Validate BOS / CHoCH confirmation
 - Generate entry confirmation state
 
 Author: BMIE Project
@@ -225,7 +224,7 @@ class EntryConfirmationEngine:
 
                 "reason":
 
-                    "No candle context"
+                    "No candle data"
 
             }
 
@@ -233,19 +232,60 @@ class EntryConfirmationEngine:
 
 
 
-        candle = getattr(
+        candle = None
+
+
+
+        # ----------------------------------------------
+        # New support: DataFrame candle
+        # ----------------------------------------------
+
+        if hasattr(
 
             self.entry_context,
 
-            "last_candle",
+            "df"
 
-            None
-
-        )
+        ):
 
 
+            try:
 
-        if not candle:
+
+                candle = self.entry_context.df.iloc[-1]
+
+
+            except Exception:
+
+
+                candle = None
+
+
+
+
+
+        # ----------------------------------------------
+        # Backward compatibility
+        # ----------------------------------------------
+
+        if candle is None:
+
+
+            candle = getattr(
+
+                self.entry_context,
+
+                "last_candle",
+
+                None
+
+            )
+
+
+
+
+
+        if candle is None:
 
 
             return {
@@ -262,11 +302,62 @@ class EntryConfirmationEngine:
 
 
 
+        try:
+
+
+            if hasattr(
+
+                candle,
+
+                "open"
+
+            ):
+
+
+                open_price = candle.open
+
+                high_price = candle.high
+
+                low_price = candle.low
+
+                close_price = candle.close
+
+
+            else:
+
+
+                open_price = candle["open"]
+
+                high_price = candle["high"]
+
+                low_price = candle["low"]
+
+                close_price = candle["close"]
+
+
+
+        except Exception:
+
+
+            return {
+
+                "valid": False,
+
+                "reason":
+
+                    "Invalid candle data"
+
+            }
+
+
+
+
+
         body = abs(
 
-            candle.close -
+            close_price -
 
-            candle.open
+            open_price
 
         )
 
@@ -274,13 +365,13 @@ class EntryConfirmationEngine:
 
         upper_wick = (
 
-            candle.high -
+            high_price -
 
             max(
 
-                candle.open,
+                open_price,
 
-                candle.close
+                close_price
 
             )
 
@@ -292,17 +383,28 @@ class EntryConfirmationEngine:
 
             min(
 
-                candle.open,
+                open_price,
 
-                candle.close
+                close_price
 
             )
 
             -
 
-            candle.low
+            low_price
 
         )
+
+
+
+
+
+        # Avoid zero body issue
+
+        if body == 0:
+
+
+            body = 0.0001
 
 
 
@@ -394,11 +496,11 @@ class EntryConfirmationEngine:
 
 
 
-        bos = getattr(
+        choch = getattr(
 
             self.entry_context,
 
-            "bos",
+            "choch",
 
             None
 
@@ -406,11 +508,11 @@ class EntryConfirmationEngine:
 
 
 
-        choch = getattr(
+        bos = getattr(
 
             self.entry_context,
 
-            "choch",
+            "bos",
 
             None
 
@@ -438,6 +540,7 @@ class EntryConfirmationEngine:
 
 
                 valid = True
+
 
                 reasons.append(
 
@@ -467,6 +570,7 @@ class EntryConfirmationEngine:
 
 
                 valid = True
+
 
                 reasons.append(
 
@@ -512,7 +616,7 @@ class EntryConfirmationEngine:
 
             "status":
 
-                "WAIT",
+                "WAIT FOR CONFIRMATION",
 
             "reasons": []
 
@@ -524,13 +628,18 @@ class EntryConfirmationEngine:
 
         checks = [
 
+
             self.check_order_block_reaction(),
+
 
             self.check_fvg_reaction(),
 
+
             self.check_rejection_candle(),
 
+
             self.check_structure(),
+
 
         ]
 
@@ -565,29 +674,26 @@ class EntryConfirmationEngine:
 
 
 
-        # Minimum execution condition
+        # --------------------------------------------------
+        # Entry trigger rule
+        #
+        # Minimum:
+        # - OB/FVG reaction
+        # - Rejection candle
+        # - BOS/CHoCH
+        #
+        # Any 3 confirmations
+        # --------------------------------------------------
 
         if valid_count >= 3:
 
 
             result["confirmed"] = True
 
+
             result["status"] = (
 
                 "ENTRY CONFIRMED"
-
-            )
-
-
-
-
-
-        else:
-
-
-            result["status"] = (
-
-                "WAIT FOR CONFIRMATION"
 
             )
 
