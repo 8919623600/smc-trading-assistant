@@ -1,11 +1,12 @@
 """
 backtest/trade_simulator.py
 
-BMIE Trade Simulator V1
+BMIE Trade Simulator V2
 
 Responsibilities
 ----------------
 - Simulate historical trades
+- Accept BMIE StrategyEngine signals
 - Check target and stop loss
 - Calculate trade results
 - Prepare backtest statistics
@@ -18,11 +19,7 @@ class TradeSimulator:
 
 
     def __init__(self):
-
         pass
-
-
-
 
 
     # ======================================================
@@ -34,69 +31,65 @@ class TradeSimulator:
         signal
     ):
 
+        direction = signal.get(
+            "direction"
+        )
+
+        # BMIE StrategyEngine currently sends
+        # TRADE READY signals without direction.
+        # Infer direction from target and entry.
+
+        entry = signal.get("entry")
+        target = signal.get("target")
+
+        if not direction:
+
+            if target and entry:
+
+                direction = (
+                    "BUY"
+                    if target > entry
+                    else "SELL"
+                )
+
+            else:
+
+                direction = "BUY"
+
 
         trade = {
 
-
             "symbol":
-
-                signal.get(
-                    "symbol"
-                ),
-
+                signal.get("symbol"),
 
             "time":
-
-                signal.get(
-                    "time"
-                ),
-
+                signal.get("time"),
 
             "direction":
-
-                signal.get(
-                    "direction",
-                    "BUY"
-                ),
-
+                direction,
 
             "entry":
-
-                signal.get(
-                    "entry"
-                ),
-
+                entry,
 
             "stop_loss":
-
-                signal.get(
-                    "stop_loss"
-                ),
-
+                signal.get("stop_loss"),
 
             "target":
+                target,
 
-                signal.get(
-                    "target"
-                ),
-
+            "risk_reward":
+                signal.get("risk_reward", 0),
 
             "status":
-
                 "OPEN",
 
-
             "result":
-
                 "PENDING"
-
 
         }
 
 
         return trade
-
-
 
 
 
@@ -111,122 +104,72 @@ class TradeSimulator:
     ):
 
 
-        entry = trade.get(
-            "entry"
-        )
-
-
-        stop_loss = trade.get(
-            "stop_loss"
-        )
-
-
-        target = trade.get(
-            "target"
-        )
-
-
-        direction = trade.get(
-            "direction"
-        )
-
+        entry = trade.get("entry")
+        stop_loss = trade.get("stop_loss")
+        target = trade.get("target")
+        direction = trade.get("direction")
 
 
         if not entry or not stop_loss or not target:
 
-
             trade["status"] = "INVALID"
-
             trade["result"] = "NO_RISK_PLAN"
 
             return trade
 
 
 
-
-
         for _, candle in candles.iterrows():
 
-
             high = candle["high"]
-
             low = candle["low"]
 
-
-
-            # ==============================================
-            # BUY Trade
-            # ==============================================
 
             if direction == "BUY":
 
 
                 if low <= stop_loss:
 
-
                     trade["status"] = "CLOSED"
-
                     trade["result"] = "LOSS"
-
                     trade["exit_price"] = stop_loss
 
                     break
 
 
-
                 if high >= target:
 
-
                     trade["status"] = "CLOSED"
-
                     trade["result"] = "WIN"
-
                     trade["exit_price"] = target
 
                     break
 
 
-
-
-
-            # ==============================================
-            # SELL Trade
-            # ==============================================
 
             elif direction == "SELL":
 
 
                 if high >= stop_loss:
 
-
                     trade["status"] = "CLOSED"
-
                     trade["result"] = "LOSS"
-
                     trade["exit_price"] = stop_loss
 
                     break
 
 
-
                 if low <= target:
 
-
                     trade["status"] = "CLOSED"
-
                     trade["result"] = "WIN"
-
                     trade["exit_price"] = target
 
                     break
 
 
 
-
-
         return trade
-
-
 
 
 
@@ -239,21 +182,9 @@ class TradeSimulator:
         trade
     ):
 
-
-        entry = trade.get(
-            "entry"
-        )
-
-
-        stop_loss = trade.get(
-            "stop_loss"
-        )
-
-
-        target = trade.get(
-            "target"
-        )
-
+        entry = trade.get("entry")
+        stop_loss = trade.get("stop_loss")
+        target = trade.get("target")
 
 
         if not entry or not stop_loss or not target:
@@ -261,20 +192,14 @@ class TradeSimulator:
             return 0
 
 
-
         risk = abs(
-
             entry - stop_loss
-
         )
 
 
         reward = abs(
-
             target - entry
-
         )
-
 
 
         if risk == 0:
@@ -282,11 +207,7 @@ class TradeSimulator:
             return 0
 
 
-
         return round(
-
             reward / risk,
-
             2
-
         )
