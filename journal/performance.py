@@ -1,15 +1,15 @@
 """
 journal/performance.py
 
-BMIE Performance Analytics V1
+BMIE Performance Analytics V2
 
 Responsibilities
 ----------------
-- Read BMIE journal data
-- Calculate setup statistics
-- Analyze grades
-- Analyze entry confirmations
-- Calculate average confidence
+- Analyze BMIE journal data
+- Track setup quality performance
+- Track trade lifecycle
+- Calculate confidence statistics
+- Prepare data for backtesting
 
 Author: BMIE Project
 """
@@ -75,7 +75,7 @@ class PerformanceAnalyzer:
 
 
     # ======================================================
-    # Total Analysis
+    # Total Trades
     # ======================================================
 
     def total_trades(self):
@@ -92,7 +92,119 @@ class PerformanceAnalyzer:
 
 
     # ======================================================
-    # Grade Distribution
+    # Trade Status
+    # ======================================================
+
+    def trade_status(self):
+
+
+        result = {
+
+
+            "OPEN": 0,
+
+            "CLOSED": 0,
+
+            "PENDING": 0
+
+
+        }
+
+
+
+        for trade in self.load_trades():
+
+
+            status = trade.get(
+
+                "status",
+
+                "PENDING"
+
+            )
+
+
+
+            if status in result:
+
+
+                result[status] += 1
+
+
+
+            else:
+
+
+                result["PENDING"] += 1
+
+
+
+
+
+        return result
+
+
+
+
+
+    # ======================================================
+    # Result Analysis
+    # ======================================================
+
+    def result_analysis(self):
+
+
+        result = {
+
+
+            "WIN": 0,
+
+            "LOSS": 0,
+
+            "PENDING": 0
+
+
+        }
+
+
+
+        for trade in self.load_trades():
+
+
+            outcome = trade.get(
+
+                "result",
+
+                "PENDING"
+
+            )
+
+
+
+            if outcome in result:
+
+
+                result[outcome] += 1
+
+
+
+            else:
+
+
+                result["PENDING"] += 1
+
+
+
+
+
+        return result
+
+
+
+
+
+    # ======================================================
+    # Grade Analysis
     # ======================================================
 
     def grade_analysis(self):
@@ -138,74 +250,6 @@ class PerformanceAnalyzer:
             )
 
         )
-
-
-
-
-
-    # ======================================================
-    # Entry Confirmation Statistics
-    # ======================================================
-
-    def entry_confirmation_analysis(self):
-
-
-        result = {
-
-
-            "ENTRY CONFIRMED": 0,
-
-
-            "WAIT FOR CONFIRMATION": 0,
-
-
-            "OTHER": 0
-
-
-        }
-
-
-
-        for trade in self.load_trades():
-
-
-            confirmation = trade.get(
-
-                "entry_confirmation",
-
-                {}
-
-            )
-
-
-
-            status = confirmation.get(
-
-                "status",
-
-                "OTHER"
-
-            )
-
-
-
-            if status in result:
-
-
-                result[status] += 1
-
-
-
-            else:
-
-
-                result["OTHER"] += 1
-
-
-
-
-
-        return result
 
 
 
@@ -267,7 +311,81 @@ class PerformanceAnalyzer:
 
         return round(
 
-            sum(values) / len(values),
+            sum(values)
+
+            /
+
+            len(values),
+
+            2
+
+        )
+
+
+
+
+
+    # ======================================================
+    # Average Risk Reward
+    # ======================================================
+
+    def average_rr(self):
+
+
+        values = []
+
+
+
+        for trade in self.load_trades():
+
+
+            plan = trade.get(
+
+                "trade_plan",
+
+                {}
+
+            )
+
+
+
+            rr = plan.get(
+
+                "risk_reward"
+
+            )
+
+
+
+            if rr is not None:
+
+
+                values.append(
+
+                    float(rr)
+
+                )
+
+
+
+
+
+        if not values:
+
+
+            return 0
+
+
+
+
+
+        return round(
+
+            sum(values)
+
+            /
+
+            len(values),
 
             2
 
@@ -287,27 +405,34 @@ class PerformanceAnalyzer:
         return {
 
 
-            "total_analysis":
+            "total":
 
                 self.total_trades(),
 
 
+            "status":
 
-            "grade_distribution":
+                self.trade_status(),
+
+
+            "results":
+
+                self.result_analysis(),
+
+
+            "grades":
 
                 self.grade_analysis(),
 
 
-
-            "entry_confirmation":
-
-                self.entry_confirmation_analysis(),
-
-
-
             "average_confidence":
 
-                self.average_confidence()
+                self.average_confidence(),
+
+
+            "average_rr":
+
+                self.average_rr()
 
 
         }
@@ -331,7 +456,7 @@ class PerformanceAnalyzer:
 
         print(
 
-            "BMIE PERFORMANCE REPORT"
+            "BMIE PERFORMANCE REPORT V2"
 
         )
 
@@ -341,13 +466,9 @@ class PerformanceAnalyzer:
 
         print()
 
-
-
         print(
 
-            f"Total Analysis: "
-
-            f"{report['total_analysis']}"
+            f"Total Setups: {report['total']}"
 
         )
 
@@ -355,71 +476,84 @@ class PerformanceAnalyzer:
 
         print()
 
-
-
         print(
 
-            "Grade Distribution:"
+            "Trade Status"
 
         )
 
 
 
-        for grade, count in report[
-
-            "grade_distribution"
-
-        ].items():
+        for key, value in report["status"].items():
 
 
             print(
 
-                f"{grade}: {count}"
+                f"{key}: {value}"
 
             )
 
 
 
-
-
         print()
-
-
 
         print(
 
-            "Entry Confirmation:"
+            "Results"
 
         )
 
 
 
-        for status, count in report[
-
-            "entry_confirmation"
-
-        ].items():
+        for key, value in report["results"].items():
 
 
             print(
 
-                f"{status}: {count}"
+                f"{key}: {value}"
 
             )
 
 
 
+        print()
+
+        print(
+
+            "Grade Distribution"
+
+        )
+
+
+
+        for key, value in report["grades"].items():
+
+
+            print(
+
+                f"{key}: {value}"
+
+            )
+
 
 
         print()
-
-
 
         print(
 
             f"Average Confidence: "
 
             f"{report['average_confidence']}%"
+
+        )
+
+
+
+        print(
+
+            f"Average RR: "
+
+            f"{report['average_rr']}"
 
         )
 
