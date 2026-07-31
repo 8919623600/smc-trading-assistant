@@ -9,6 +9,7 @@ Responsibilities
 - Build MTF context
 - Generate trade decision
 - Validate entry conditions
+- Run entry confirmation
 - Select best Order Block
 - Select best Liquidity
 - Evaluate Setup Quality
@@ -39,11 +40,14 @@ from smc.confluence import ConfluenceEngine
 
 from smc.entry_validator import EntryValidator
 
+from smc.entry_confirmation import EntryConfirmationEngine
+
 from smc.risk_manager import RiskManager
 
 from smc.liquidity import LiquidityEngine
 
 from smc.setup_quality import SetupQualityEngine
+
 
 
 
@@ -71,6 +75,12 @@ class MarketEngine:
 
 
         self.setup_quality = None
+
+
+
+
+
+        self.entry_confirmation = None
 
 
 
@@ -267,6 +277,8 @@ class MarketEngine:
 
 
 
+
+
         # ==================================================
         # Select Institutional Order Block
         # ==================================================
@@ -276,6 +288,8 @@ class MarketEngine:
             self.select_order_block()
 
         )
+
+
 
 
 
@@ -299,6 +313,8 @@ class MarketEngine:
 
 
 
+
+
         # ==================================================
         # Confluence Engine
         # ==================================================
@@ -316,6 +332,8 @@ class MarketEngine:
             confluence_engine.analyze()
 
         )
+
+
 
 
 
@@ -340,6 +358,8 @@ class MarketEngine:
 
 
 
+
+
         self.selected_liquidity = (
 
             self.select_liquidity(
@@ -349,6 +369,8 @@ class MarketEngine:
             )
 
         )
+
+
 
 
 
@@ -363,7 +385,9 @@ class MarketEngine:
         if self.analysis.entry:
 
 
+
             if self.analysis.entry.fair_value_gaps:
+
 
 
                 latest_fvg = sorted(
@@ -375,6 +399,8 @@ class MarketEngine:
                     reverse=True
 
                 )[0]
+
+
 
 
 
@@ -400,6 +426,8 @@ class MarketEngine:
 
 
 
+
+
         entry = self.analysis.entry
 
 
@@ -419,11 +447,14 @@ class MarketEngine:
             if self.selected_order_block:
 
 
+
                 order_blocks.append(
 
                     self.selected_order_block
 
                 )
+
+
 
 
 
@@ -446,11 +477,16 @@ class MarketEngine:
                 if self.selected_liquidity
 
                 else [],
+
                 entry_context=self.analysis.entry,
+
                 setup_context=self.analysis.setup,
+
                 trend_context=self.analysis.trend,
 
             )
+
+
 
 
 
@@ -459,6 +495,46 @@ class MarketEngine:
                 entry_validator.analyze()
 
             )
+
+
+
+
+
+            # ==================================================
+            # Entry Confirmation
+            # ==================================================
+
+            confirmation_engine = EntryConfirmationEngine(
+
+                current_price=entry.current_price,
+
+                direction=entry_validator.get_direction(),
+
+                order_blocks=order_blocks,
+
+                fair_value_gaps=entry.fair_value_gaps,
+
+                entry_context=self.analysis.entry,
+
+            )
+
+
+
+            confirmation = (
+
+                confirmation_engine.analyze()
+
+            )
+
+
+
+            self.entry_confirmation = confirmation
+
+
+
+            entry.entry_confirmation = confirmation
+
+
 
 
 
@@ -473,15 +549,24 @@ class MarketEngine:
 
 
 
-                trade_decision.reasons.extend(
+            trade_decision.reasons.extend(
 
-                    validation["reasons"]
+                validation["reasons"]
 
-                )
+            )
+
+
+
+            trade_decision.reasons.extend(
+
+                confirmation["reasons"]
+
+            )
 
 
 
             entry.trade_decision = trade_decision
+
 
 
 # ================= PART 2 END =================
@@ -545,6 +630,7 @@ class MarketEngine:
 
 
 
+
     # ======================================================
     # Helpers
     # ======================================================
@@ -566,6 +652,7 @@ class MarketEngine:
 
 
         return event.direction
+
 
 
 
@@ -595,6 +682,7 @@ class MarketEngine:
             reverse=True
 
         )[0]
+
 
 
 
@@ -932,6 +1020,7 @@ class MarketEngine:
 
 
 
+
         # ==================================================
         # Setup Quality
         # ==================================================
@@ -1002,6 +1091,60 @@ class MarketEngine:
                 print(
 
                     f"- {item}"
+
+                )
+
+
+
+
+
+        # ==================================================
+        # Entry Confirmation
+        # ==================================================
+
+        print()
+
+
+
+        if self.entry_confirmation:
+
+
+            print("ENTRY CONFIRMATION")
+
+            print("-" * 60)
+
+
+
+            print(
+
+                f"Status : "
+
+                f"{self.entry_confirmation.get('status')}"
+
+            )
+
+
+
+            print()
+
+
+
+            print("Reasons:")
+
+
+
+            for reason in self.entry_confirmation.get(
+
+                "reasons",
+
+                []
+
+            ):
+
+
+                print(
+
+                    f"- {reason}"
 
                 )
 
@@ -1213,6 +1356,7 @@ class MarketEngine:
                 f"{risk.position_size:.2f}"
 
             )
+
 
 
         else:
