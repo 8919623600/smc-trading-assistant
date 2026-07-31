@@ -260,6 +260,8 @@ class MarketEngine:
 
                 timeframe,
 
+                df=self.market_data.get(timeframe)
+
             )
 
 

@@ -60,6 +60,7 @@ def analyze_market(
     session: TradingSession,
     timeframe: str,
     bars: int = DEFAULT_BARS,
+    df=None,
 ) -> AnalysisResult:
     """
     Analyze one timeframe.
@@ -71,6 +72,7 @@ def analyze_market(
     # Fetch Market Data
     # ======================================================
 
+if df is None:
     df = get_data(
         session=session,
         timeframe=timeframe,
