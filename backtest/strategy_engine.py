@@ -1,15 +1,16 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V7
+BMIE Strategy Engine V8
 
 Responsibilities
 ----------------
 - Replay historical candles
 - Prevent look-ahead bias
-- Inject historical data into MarketEngine
-- Extract BMIE signals
-- Debug setup qualification
+- Inject historical data
+- Run MarketEngine
+- Extract setup candidates
+- Apply backtest entry model
 
 Author: BMIE Project
 """
@@ -52,6 +53,7 @@ class StrategyEngine:
         exchange
     ):
 
+
         return TradingSession(
 
             symbol=symbol,
@@ -76,7 +78,9 @@ class StrategyEngine:
         index
     ):
 
+
         snapshot = {}
+
 
         current_time = (
 
@@ -91,10 +95,13 @@ class StrategyEngine:
 
         for timeframe, df in timeframe_data.items():
 
+
             snapshot[timeframe] = (
 
                 df[
+
                     df.index <= current_time
+
                 ]
 
                 .copy()
@@ -123,71 +130,117 @@ class StrategyEngine:
 
 
             "symbol":
+
                 engine.session.symbol,
 
 
             "exchange":
+
                 engine.session.exchange,
 
 
             "time":
+
                 str(candle_time),
 
 
             "signal":
+
                 "NO TRADE",
 
 
             "confidence":
+
                 0,
 
 
             "grade":
-                None,
 
-
-            "direction":
                 None,
 
 
             "entry":
+
                 None,
 
 
             "stop_loss":
+
                 None,
 
 
             "target":
+
                 None,
 
 
             "risk_reward":
-                0
+
+                0,
+
+
+            "setup_quality":
+
+                None,
+
+
+            "entry_confirmation":
+
+                None
 
         }
 
 
 
+
+
+        grade = None
+
+
+
+        confidence = 0
+
+
+
+
+
         # ==================================================
-        # Setup Quality Debug
+        # Setup Quality
         # ==================================================
 
         if engine.setup_quality:
 
 
-            result["grade"] = (
+            grade = (
 
                 engine.setup_quality.grade
 
             )
 
 
+            result["grade"] = grade
+
+
+            result["setup_quality"] = {
+
+
+                "score":
+
+                    engine.setup_quality.score,
+
+
+                "grade":
+
+                    grade
+
+            }
+
+
             print(
 
-                "QUALITY DEBUG:",
+                "QUALITY:",
 
-                engine.setup_quality.grade,
+                grade,
 
                 engine.setup_quality.score
 
@@ -198,21 +251,15 @@ class StrategyEngine:
 
 
         # ==================================================
-        # Entry Confirmation Debug
+        # Entry Confirmation
         # ==================================================
 
         if engine.entry_confirmation:
 
 
-            status = (
+            result["entry_confirmation"] = (
 
-                engine.entry_confirmation.get(
-
-                    "status",
-
-                    ""
-
-                )
+                engine.entry_confirmation
 
             )
 
@@ -236,24 +283,17 @@ class StrategyEngine:
 
             print(
 
-                "ENTRY DEBUG:",
+                "ENTRY:",
 
-                status,
+                engine.entry_confirmation.get(
+
+                    "status"
+
+                ),
 
                 confidence
 
             )
-
-
-
-            if status == "ENTRY CONFIRMED":
-
-
-                result["signal"] = (
-
-                    "TRADE READY"
-
-                )
 
 
 
@@ -267,10 +307,17 @@ class StrategyEngine:
 
 
 
+        risk_available = False
+
+
+
         if entry and entry.risk_decision:
 
 
             risk = entry.risk_decision
+
+
+            risk_available = True
 
 
 
@@ -305,6 +352,29 @@ class StrategyEngine:
 
 
 
+        # ==================================================
+        # BACKTEST ENTRY MODEL V1
+        # ==================================================
+
+        if (
+
+            grade in ["A", "B"]
+
+            and confidence >= 65
+
+            and risk_available
+
+        ):
+
+
+            result["signal"] = (
+
+                "TRADE READY"
+
+            )
+
+
+
         return result
 
 
@@ -327,8 +397,6 @@ class StrategyEngine:
 
         signals = []
 
-        skipped = 0
-
 
         candles = timeframe_data["5m"]
 
@@ -344,13 +412,9 @@ class StrategyEngine:
 
 
 
-        total = end_index - start_index
-
-
-
         print(
 
-            f"Backtesting candles: {total}"
+            f"Backtesting candles: {end_index-start_index}"
 
         )
 
@@ -365,6 +429,7 @@ class StrategyEngine:
             end_index
 
         ):
+
 
 
             print(
@@ -458,7 +523,7 @@ class StrategyEngine:
 
 
 
-                if signal["signal"] != "NO TRADE":
+                if signal["signal"] == "TRADE READY":
 
 
                     signals.append(
@@ -466,10 +531,6 @@ class StrategyEngine:
                         signal
 
                     )
-
-                else:
-
-                    skipped += 1
 
 
 
@@ -498,14 +559,6 @@ class StrategyEngine:
 
         )
 
-
-        print(
-
-            "Skipped setups:",
-
-            skipped
-
-        )
 
 
         return signals
