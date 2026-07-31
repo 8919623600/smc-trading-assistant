@@ -252,7 +252,8 @@ class StrategyEngine:
 
                 engine = MarketEngine(
 
-                    session
+                    session,
+                    market_data=timeframe_data
 
                 )
 

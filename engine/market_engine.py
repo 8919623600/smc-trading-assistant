@@ -59,13 +59,15 @@ class MarketEngine:
 
 
     def __init__(
-        self,
-        session
-    ):
+    self,
+    session,
+    market_data=None
+   ):
 
 
         self.session = session
 
+        self.market_data = market_data
 
         self.analysis = MarketAnalysis()
 
@@ -261,6 +263,8 @@ class MarketEngine:
                 timeframe,
 
                 df=self.market_data.get(timeframe)
+                if self.market_data
+                else None,
 
             )
 
