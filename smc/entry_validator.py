@@ -1,7 +1,7 @@
 """
 smc/entry_validator.py
 
-BMIE Entry Validation Engine V3.
+BMIE Entry Validation Engine V4.
 
 Responsibilities
 ----------------
@@ -9,26 +9,21 @@ Responsibilities
 - Detect pullback requirement
 - Detect retracement phase
 - Detect entry zone
-- Validate FVG direction
-- Validate liquidity sweep
+- Validate directional FVG
+- Validate liquidity alignment
 - Validate BOS / CHoCH confirmation
-- Provide execution state
 
 Author: BMIE Project
 """
 
 
-from typing import List, Any, Optional
+from typing import List, Any
 
 
 
 
 
 class EntryValidator:
-    """
-    Controls trade execution timing.
-    """
-
 
 
     def __init__(
@@ -38,7 +33,6 @@ class EntryValidator:
         order_blocks: List,
         fair_value_gaps: List,
         liquidity: List,
-        structure: Optional[Any] = None,
     ):
 
 
@@ -51,8 +45,6 @@ class EntryValidator:
         self.fair_value_gaps = fair_value_gaps
 
         self.liquidity = liquidity
-
-        self.structure = structure
 
 
 
@@ -87,7 +79,62 @@ class EntryValidator:
 
 
     # ======================================================
-    # Order Block Distance
+    # Direction Detection
+    # ======================================================
+
+    def get_direction(self):
+
+        """
+        Detect market direction.
+
+        Priority:
+        1. CHoCH
+        2. BOS
+        3. Trade signal
+        """
+
+
+
+        # Future structure support
+        # if structure object is passed later,
+        # this logic can be extended.
+
+
+
+        if self.trade_decision:
+
+
+            signal = str(
+
+                self.trade_decision.signal
+
+            ).upper()
+
+
+
+            if "BUY" in signal:
+
+
+                return "Bullish"
+
+
+
+            if "SELL" in signal:
+
+
+                return "Bearish"
+
+
+
+
+        return None
+
+
+
+
+
+    # ======================================================
+    # Order Block Validation
     # ======================================================
 
     def validate_order_block(self):
@@ -111,6 +158,7 @@ class EntryValidator:
                     "No Order Block available"
 
             }
+
 
 
 
@@ -145,7 +193,6 @@ class EntryValidator:
 
 
 
-
         if percentage > 2:
 
 
@@ -162,7 +209,6 @@ class EntryValidator:
                     "Price extended from Order Block"
 
             }
-
 
 
 
@@ -187,12 +233,9 @@ class EntryValidator:
 
 
 
-
         elif (
 
-            block.low
-
-            <= self.current_price
+            block.low <= self.current_price
 
             <= block.high
 
@@ -216,7 +259,6 @@ class EntryValidator:
 
 
 
-
         return {
 
             "valid": True,
@@ -232,49 +274,9 @@ class EntryValidator:
         }
 
 
+# ================= PART 1 END =================
 
-
-
-    # ======================================================
-    # Trade Direction
-    # ======================================================
-
-    def get_direction(self):
-
-
-        if not self.trade_decision:
-
-
-            return None
-
-
-
-        signal = str(
-
-            self.trade_decision.signal
-
-        ).upper()
-
-
-
-        if "BUY" in signal:
-
-
-            return "Bullish"
-
-
-
-        if "SELL" in signal:
-
-
-            return "Bearish"
-
-
-
-        return None
-
-
-
+# ================= PART 2 START =================
 
 
     # ======================================================
@@ -303,8 +305,6 @@ class EntryValidator:
 
 
 
-        valid_fvg = []
-
 
 
         for fvg in self.fair_value_gaps:
@@ -323,6 +323,7 @@ class EntryValidator:
 
 
                 continue
+
 
 
 
@@ -348,7 +349,15 @@ class EntryValidator:
                 if fvg_direction == "bullish":
 
 
-                    valid_fvg.append(fvg)
+                    return {
+
+                        "valid": True,
+
+                        "reason":
+
+                            "Bullish FVG confirmation"
+
+                    }
 
 
 
@@ -358,22 +367,16 @@ class EntryValidator:
                 if fvg_direction == "bearish":
 
 
-                    valid_fvg.append(fvg)
+                    return {
 
+                        "valid": True,
 
+                        "reason":
 
-        if valid_fvg:
+                            "Bearish FVG confirmation"
 
+                    }
 
-            return {
-
-                "valid": True,
-
-                "reason":
-
-                    "Directional FVG confirmation"
-
-            }
 
 
 
@@ -388,9 +391,7 @@ class EntryValidator:
         }
 
 
-# ================= PART 1 END =================
 
-# ================= PART 2 START =================
 
 
     # ======================================================
@@ -420,6 +421,7 @@ class EntryValidator:
 
 
 
+
         for zone in self.liquidity:
 
 
@@ -440,6 +442,7 @@ class EntryValidator:
 
 
 
+
             side = getattr(
 
                 zone,
@@ -449,6 +452,7 @@ class EntryValidator:
                 ""
 
             )
+
 
 
 
@@ -467,6 +471,7 @@ class EntryValidator:
                             "Sell-side liquidity swept"
 
                     }
+
 
 
 
@@ -506,122 +511,6 @@ class EntryValidator:
 
 
     # ======================================================
-    # Structure Confirmation
-    # ======================================================
-
-    def validate_structure(self):
-
-
-        if not self.structure:
-
-
-            return {
-
-                "valid": False,
-
-                "reason":
-
-                    "No structure confirmation"
-
-            }
-
-
-
-
-        reasons = []
-
-
-
-        valid = False
-
-
-
-        if getattr(
-
-            self.structure,
-
-            "bos",
-
-            None
-
-        ):
-
-
-            if self.structure.bos.confirmed:
-
-
-                valid = True
-
-
-                reasons.append(
-
-                    "BOS confirmed"
-
-                )
-
-
-
-
-
-        if getattr(
-
-            self.structure,
-
-            "choch",
-
-            None
-
-        ):
-
-
-            if self.structure.choch.confirmed:
-
-
-                valid = True
-
-
-                reasons.append(
-
-                    "CHoCH confirmed"
-
-                )
-
-
-
-
-
-        if valid:
-
-
-            return {
-
-                "valid": True,
-
-                "reason":
-
-                    " + ".join(reasons)
-
-            }
-
-
-
-
-
-        return {
-
-            "valid": False,
-
-            "reason":
-
-                "No BOS/CHoCH confirmation"
-
-        }
-
-
-
-
-
-    # ======================================================
     # Final Analysis
     # ======================================================
 
@@ -646,19 +535,17 @@ class EntryValidator:
 
 
 
+
         if not self.trade_decision:
 
 
             return {
 
-
                 "valid": False,
-
 
                 "status":
 
                     "WAIT",
-
 
                 "reasons":
 
@@ -673,10 +560,6 @@ class EntryValidator:
 
 
 
-
-        # ----------------------------------------------
-        # Order Block
-        # ----------------------------------------------
 
         ob_result = self.validate_order_block()
 
@@ -695,16 +578,11 @@ class EntryValidator:
 
             result["valid"] = False
 
-
             result["status"] = ob_result["state"]
 
 
 
 
-
-        # ----------------------------------------------
-        # FVG
-        # ----------------------------------------------
 
         fvg_result = self.validate_fvg()
 
@@ -720,10 +598,6 @@ class EntryValidator:
 
 
 
-        # ----------------------------------------------
-        # Liquidity
-        # ----------------------------------------------
-
         liquidity_result = self.validate_liquidity()
 
 
@@ -736,6 +610,8 @@ class EntryValidator:
 
 
 
+
+
         if not liquidity_result["valid"]:
 
 
@@ -745,28 +621,6 @@ class EntryValidator:
 
 
 
-        # ----------------------------------------------
-        # Structure
-        # ----------------------------------------------
-
-        structure_result = self.validate_structure()
-
-
-
-        result["reasons"].append(
-
-            structure_result["reason"]
-
-        )
-
-
-
-
-
-        # ----------------------------------------------
-        # Final Entry Decision
-        # ----------------------------------------------
-
         if (
 
             fvg_result["valid"]
@@ -774,10 +628,6 @@ class EntryValidator:
             and
 
             liquidity_result["valid"]
-
-            and
-
-            structure_result["valid"]
 
             and
 
@@ -797,6 +647,8 @@ class EntryValidator:
 
 
 
+
+
         elif result["status"] == "READY":
 
 
@@ -809,8 +661,6 @@ class EntryValidator:
 
 
 
-
-        # Remove duplicate reasons
 
         result["reasons"] = list(
 
