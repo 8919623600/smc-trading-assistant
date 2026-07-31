@@ -227,6 +227,10 @@ class StrategyEngine:
 
         ):
 
+            print(
+        f"Processing candle {index}"
+     )    
+
 
 
             try:
