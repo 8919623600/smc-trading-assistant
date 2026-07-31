@@ -446,6 +446,9 @@ class MarketEngine:
                 if self.selected_liquidity
 
                 else [],
+                entry_context=self.analysis.entry,
+                setup_context=self.analysis.setup,
+                trend_context=self.analysis.trend,
 
             )
 
