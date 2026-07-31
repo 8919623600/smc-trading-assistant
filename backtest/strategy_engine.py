@@ -1,20 +1,19 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V1
+BMIE Strategy Engine V2
 
 Responsibilities
 ----------------
 - Replay historical candles
-- Run BMIE analysis on historical data
+- Connect with existing BMIE analyzer
 - Generate backtest signals
-- Prepare trades for simulator
 
 Author: BMIE Project
 """
 
 
-from datetime import datetime
+import importlib
 
 
 
@@ -23,19 +22,63 @@ from datetime import datetime
 class StrategyEngine:
 
 
-    def __init__(
-        self,
-        analyzer
-    ):
+    def __init__(self):
 
-        self.analyzer = analyzer
+        self.analyzer = self.load_analyzer()
 
 
 
 
 
     # ======================================================
-    # Analyze Historical Point
+    # Load BMIE Analyzer Dynamically
+    # ======================================================
+
+    def load_analyzer(self):
+
+        try:
+
+            module = importlib.import_module(
+                "analyzer"
+            )
+
+
+            if hasattr(
+                module,
+                "analyze_market"
+            ):
+
+                return module.analyze_market
+
+
+
+            if hasattr(
+                module,
+                "Analyzer"
+            ):
+
+                analyzer = module.Analyzer()
+
+                return analyzer.run
+
+
+
+        except Exception as error:
+
+            print(
+                "Analyzer loading failed:",
+                error
+            )
+
+
+        return None
+
+
+
+
+
+    # ======================================================
+    # Analyze Historical Candle
     # ======================================================
 
     def analyze_point(
@@ -54,7 +97,10 @@ class StrategyEngine:
 
             "exchange": exchange,
 
-            "time": None,
+            "time": str(
+                timeframe_data["5m"]
+                .iloc[index]["time"]
+            ),
 
             "signal": "NO TRADE",
 
@@ -62,10 +108,21 @@ class StrategyEngine:
 
             "grade": None,
 
-            "analysis": None
+            "direction": None,
 
+            "entry": None,
+
+            "stop_loss": None,
+
+            "target": None
 
         }
+
+
+
+        if self.analyzer is None:
+
+            return result
 
 
 
@@ -74,77 +131,94 @@ class StrategyEngine:
         try:
 
 
-            candle = timeframe_data["5m"].iloc[index]
-
-
-            result["time"] = str(
-
-                candle["time"]
-
-            )
-
-
-
-            analysis = self.analyzer.run(
-
+            analysis = self.analyzer(
 
                 symbol,
 
                 exchange,
 
-                timeframe_data,
-
-                index
-
+                timeframe_data
 
             )
-
-
-
-            result["analysis"] = analysis
-
-
 
 
 
             if analysis:
 
 
-                result["signal"] = (
-
-                    analysis.get(
-
-                        "signal",
-
-                        "NO TRADE"
-
-                    )
-
-                )
+                result["analysis"] = analysis
 
 
-                result["confidence"] = (
 
-                    analysis.get(
+                if isinstance(
+                    analysis,
+                    dict
+                ):
 
-                        "confidence",
 
-                        0
+                    result["signal"] = (
+
+                        analysis.get(
+                            "signal",
+                            "NO TRADE"
+                        )
 
                     )
 
-                )
 
+                    result["confidence"] = (
 
-                result["grade"] = (
-
-                    analysis.get(
-
-                        "grade"
+                        analysis.get(
+                            "confidence",
+                            0
+                        )
 
                     )
 
-                )
+
+                    result["grade"] = (
+
+                        analysis.get(
+                            "grade"
+                        )
+
+                    )
+
+
+                    result["direction"] = (
+
+                        analysis.get(
+                            "direction"
+                        )
+
+                    )
+
+
+                    result["entry"] = (
+
+                        analysis.get(
+                            "entry"
+                        )
+
+                    )
+
+
+                    result["stop_loss"] = (
+
+                        analysis.get(
+                            "stop_loss"
+                        )
+
+                    )
+
+
+                    result["target"] = (
+
+                        analysis.get(
+                            "target"
+                        )
+
+                    )
 
 
 
@@ -162,7 +236,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Run Backtest Loop
+    # Run Historical Replay
     # ======================================================
 
     def run(
@@ -178,10 +252,8 @@ class StrategyEngine:
 
 
 
-        total_candles = len(
-
+        candles = len(
             timeframe_data["5m"]
-
         )
 
 
@@ -190,7 +262,7 @@ class StrategyEngine:
 
             start_index,
 
-            total_candles
+            candles
 
         ):
 
@@ -206,7 +278,6 @@ class StrategyEngine:
                 index
 
             )
-
 
 
             if result["signal"] != "NO TRADE":
