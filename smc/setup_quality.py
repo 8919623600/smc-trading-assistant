@@ -1,7 +1,7 @@
 """
 smc/setup_quality.py
 
-BMIE Setup Quality Engine.
+BMIE Setup Quality Engine V2.
 
 Responsibilities
 ----------------
@@ -22,15 +22,9 @@ from typing import List
 
 
 
-# ==========================================================
-# Setup Quality Result
-# ==========================================================
-
 @dataclass
 class SetupQualityResult:
-    """
-    Represents setup quality evaluation.
-    """
+
 
     score: int = 0
 
@@ -56,15 +50,7 @@ class SetupQualityResult:
 
 
 
-# ==========================================================
-# Setup Quality Engine
-# ==========================================================
-
 class SetupQualityEngine:
-    """
-    Evaluates BMIE trade setup quality.
-    """
-
 
 
     def __init__(
@@ -89,6 +75,55 @@ class SetupQualityEngine:
 
 
     # ======================================================
+    # Detect Market Direction
+    # ======================================================
+
+    def get_direction(self):
+
+
+        if self.context.trend:
+
+
+            structure = getattr(
+
+                self.context.trend,
+
+                "market_structure",
+
+                None
+
+            )
+
+
+            if structure:
+
+
+                trend = getattr(
+
+                    structure,
+
+                    "trend",
+
+                    None
+
+                )
+
+
+                if trend:
+
+                    return trend
+
+
+
+
+
+        return None
+
+
+
+
+
+    # ======================================================
     # Grade Calculation
     # ======================================================
 
@@ -100,13 +135,11 @@ class SetupQualityEngine:
 
         if score >= 80:
 
-
             return "A"
 
 
 
         elif score >= 65:
-
 
             return "B"
 
@@ -114,13 +147,11 @@ class SetupQualityEngine:
 
         elif score >= 50:
 
-
             return "C"
 
 
 
         else:
-
 
             return "D"
 
@@ -138,14 +169,16 @@ class SetupQualityEngine:
         result = SetupQualityResult()
 
 
-
         score = 0
-
 
 
         strengths = []
 
         warnings = []
+
+
+
+        direction = self.get_direction()
 
 
 
@@ -158,9 +191,13 @@ class SetupQualityEngine:
         if self.context.bias:
 
 
-            structure = (
+            structure = getattr(
 
-                self.context.bias.market_structure
+                self.context.bias,
+
+                "market_structure",
+
+                None
 
             )
 
@@ -210,9 +247,13 @@ class SetupQualityEngine:
         if self.context.structure:
 
 
-            structure = (
+            structure = getattr(
 
-                self.context.structure.market_structure
+                self.context.structure,
+
+                "market_structure",
+
+                None
 
             )
 
@@ -256,15 +297,19 @@ class SetupQualityEngine:
 
 
         # ==================================================
-        # 1H Trend Continuation
+        # 1H Trend
         # ==================================================
 
         if self.context.trend:
 
 
-            structure = (
+            structure = getattr(
 
-                self.context.trend.market_structure
+                self.context.trend,
+
+                "market_structure",
+
+                None
 
             )
 
@@ -285,23 +330,12 @@ class SetupQualityEngine:
                     )
 
 
-
 # ================= PART 1 END =================
 
 # ================= PART 2 START =================
 
 
-        # ==================================================
-        # 15M BOS Confirmation
-        # ==================================================
-
-        if self.context.setup:
-
-
-            if self.context.setup.bos:
-
-
-                if self.context.setup.bos.confirmed:
+                else:
 
 
                     score += 10
@@ -309,51 +343,7 @@ class SetupQualityEngine:
 
                     strengths.append(
 
-                        "15M BOS confirmation"
-
-                    )
-
-
-
-
-
-        # ==================================================
-        # 5M BOS / CHoCH Confirmation
-        # ==================================================
-
-        if self.context.entry:
-
-
-
-            if self.context.entry.bos:
-
-
-                if self.context.entry.bos.confirmed:
-
-
-                    score += 10
-
-
-                    strengths.append(
-
-                        "5M BOS confirmation"
-
-                    )
-
-
-
-            if self.context.entry.choch:
-
-
-                if self.context.entry.choch.confirmed:
-
-
-                    score += 10
-
-
-                    strengths.append(
-
-                        "5M CHoCH confirmation"
+                        "1H trend confirmed"
 
                     )
 
@@ -368,61 +358,24 @@ class SetupQualityEngine:
         if self.order_block:
 
 
-
-            if getattr(
-
-                self.order_block,
-
-                "status",
-
-                None
-
-            ) == "Fresh":
+            score += 15
 
 
-                score += 10
+            strengths.append(
+
+                "Fresh Order Block"
+
+            )
 
 
-                strengths.append(
-
-                    "Fresh Order Block"
-
-                )
+        else:
 
 
-            else:
+            warnings.append(
 
+                "No Order Block"
 
-                score += 5
-
-
-                warnings.append(
-
-                    "Order Block not fresh"
-
-                )
-
-
-
-            if getattr(
-
-                self.order_block,
-
-                "distance",
-
-                None
-
-            ) == "Far":
-
-
-                score -= 5
-
-
-                warnings.append(
-
-                    "Order Block far"
-
-                )
+            )
 
 
 
@@ -435,8 +388,7 @@ class SetupQualityEngine:
         if self.liquidity:
 
 
-
-            if getattr(
+            swept = getattr(
 
                 self.liquidity,
 
@@ -444,55 +396,99 @@ class SetupQualityEngine:
 
                 False
 
-            ):
+            )
 
 
-                if getattr(
 
-                    self.liquidity,
+            valid = getattr(
 
-                    "sweep_valid",
+                self.liquidity,
 
-                    False
+                "sweep_valid",
 
-                ):
+                False
 
-
-                    score += 15
+            )
 
 
-                    strengths.append(
 
-                        "Valid liquidity sweep"
-
-                    )
+            if swept and valid:
 
 
-                else:
+                score += 15
 
 
-                    score -= 5
+                strengths.append(
+
+                    "Valid liquidity sweep"
+
+                )
 
 
-                    warnings.append(
 
-                        "Weak liquidity sweep"
+            else:
 
-                    )
+
+                warnings.append(
+
+                    "Liquidity sweep not confirmed"
+
+                )
+
+
+
+
+
+        else:
+
+
+            warnings.append(
+
+                "No liquidity confirmation"
+
+            )
 
 
 
 
 
         # ==================================================
-        # FVG
+        # FVG Logic V2
+        #
+        # Important:
+        #
+        # Same direction filled FVG:
+        #     Negative
+        #
+        # Opposite direction filled FVG:
+        #     Neutral
+        #
+        # Fresh FVG:
+        #     Positive
+        #
         # ==================================================
 
         if self.fvg:
 
 
 
-            if getattr(
+            fvg_direction = str(
+
+                getattr(
+
+                    self.fvg,
+
+                    "direction",
+
+                    ""
+
+                )
+
+            ).lower()
+
+
+
+            filled = getattr(
 
                 self.fvg,
 
@@ -500,17 +496,68 @@ class SetupQualityEngine:
 
                 False
 
-            ):
+            )
 
 
-                score -= 5
 
 
-                warnings.append(
 
-                    "FVG filled"
+            market_direction = str(
 
-                )
+                direction
+
+                or ""
+
+            ).lower()
+
+
+
+
+
+            if filled:
+
+
+
+                if (
+
+                    fvg_direction
+
+                    and
+
+                    market_direction
+
+                    and
+
+                    fvg_direction
+
+                    in
+
+                    market_direction
+
+                ):
+
+
+                    score -= 5
+
+
+                    warnings.append(
+
+                        "Directional FVG filled"
+
+                    )
+
+
+                else:
+
+
+                    strengths.append(
+
+                        "Opposite FVG ignored"
+
+                    )
+
+
+
 
 
             else:
@@ -529,35 +576,53 @@ class SetupQualityEngine:
 
 
 
+        else:
+
+
+            warnings.append(
+
+                "No FVG"
+
+            )
+
+
+
+
+
         # ==================================================
         # Normalize Score
         # ==================================================
 
-        score = max(
+        if score < 0:
 
-            0,
+            score = 0
 
-            min(
 
-                score,
 
-                100
+        if score > 100:
 
-            )
+            score = 100
 
-        )
+
 
 
 
         result.score = score
 
 
+        result.grade = self.calculate_grade(
 
-        result.grade = (
+            score
 
-            self.calculate_grade(
+        )
 
-                score
+
+
+        result.strengths = list(
+
+            dict.fromkeys(
+
+                strengths
 
             )
 
@@ -565,19 +630,64 @@ class SetupQualityEngine:
 
 
 
-        result.state = (
+        result.warnings = list(
 
-            "WAIT FOR PULLBACK"
+            dict.fromkeys(
+
+                warnings
+
+            )
 
         )
 
 
 
-        result.strengths = strengths
 
 
+        # ==================================================
+        # Setup State
+        # ==================================================
 
-        result.warnings = warnings
+        if score >= 80:
+
+
+            result.state = (
+
+                "HIGH QUALITY SETUP"
+
+            )
+
+
+        elif score >= 65:
+
+
+            result.state = (
+
+                "GOOD QUALITY SETUP"
+
+            )
+
+
+        elif score >= 50:
+
+
+            result.state = (
+
+                "MODERATE SETUP"
+
+            )
+
+
+        else:
+
+
+            result.state = (
+
+                "WEAK SETUP"
+
+            )
+
+
 
 
 

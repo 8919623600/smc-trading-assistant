@@ -1,42 +1,74 @@
 """
-risk/risk_manager.py
+smc/risk_manager.py
 
-BMIE Risk Management Engine.
+BMIE Risk Manager V2
 
 Responsibilities
 ----------------
-- Calculate entry zone
-- Calculate stop loss
-- Calculate target
+- Calculate trade risk
+- Generate stop loss from Order Block
+- Generate target from liquidity
 - Calculate risk reward
-- Calculate position size
-- Apply account risk rules
+- Calculate position sizing
+- Validate trade plan
 
 Author: BMIE Project
 """
 
 
-from typing import Optional, Any
+from dataclasses import dataclass
 
 
-from models import RiskDecision
+
+
+
+@dataclass
+class RiskDecision:
+
+
+    valid: bool = False
+
+
+    direction: str = None
+
+
+    entry: float = None
+
+
+    stop_loss: float = None
+
+
+    target: float = None
+
+
+    risk_amount: float = 0
+
+
+    reward_amount: float = 0
+
+
+    risk_reward: float = 0
+
+
+    position_size: float = 0
+
+
+    reason: str = ""
+
+
 
 
 
 class RiskManager:
-    """
-    Calculates trade risk parameters
-    from SMC trade setup.
-    """
-
 
 
     def __init__(
         self,
         account_balance: float,
-        risk_percent: float = 1.0,
-        minimum_rr: float = 2.0,
+        risk_percent: float = 1,
+        minimum_rr: float = 2,
     ):
+
 
         self.account_balance = account_balance
 
@@ -46,23 +78,248 @@ class RiskManager:
 
 
 
+
+
     # ======================================================
     # Risk Amount
     # ======================================================
 
     def calculate_risk_amount(self):
 
+
         return (
 
             self.account_balance
 
             *
+
             self.risk_percent
 
             /
+
             100
 
         )
+
+
+
+
+
+    # ======================================================
+    # Direction
+    # ======================================================
+
+    def get_direction(
+        self,
+        trade_decision
+    ):
+
+
+        signal = str(
+
+            getattr(
+
+                trade_decision,
+
+                "signal",
+
+                ""
+
+            )
+
+        ).upper()
+
+
+
+
+
+        if "BUY" in signal:
+
+
+            return "Bullish"
+
+
+
+
+
+        if "SELL" in signal:
+
+
+            return "Bearish"
+
+
+
+
+
+        return None
+
+
+
+
+
+    # ======================================================
+    # Entry Price
+    # ======================================================
+
+    def calculate_entry(
+        self,
+        trade_decision,
+        order_blocks
+    ):
+
+
+        if order_blocks:
+
+
+
+            block = order_blocks[0]
+
+
+
+            return (
+
+                block.high +
+
+                block.low
+
+            ) / 2
+
+
+
+
+
+        return getattr(
+
+            trade_decision,
+
+            "price",
+
+            None
+
+        )
+
+
+
+
+
+    # ======================================================
+    # Stop Loss
+    # ======================================================
+
+    def calculate_stop_loss(
+        self,
+        direction,
+        order_blocks
+    ):
+
+
+        if not order_blocks:
+
+
+            return None
+
+
+
+
+
+        block = order_blocks[0]
+
+
+
+        buffer = (
+
+            abs(
+
+                block.high -
+
+                block.low
+
+            )
+
+            *
+
+            0.2
+
+        )
+
+
+
+
+
+        if direction == "Bullish":
+
+
+            return (
+
+                block.low -
+
+                buffer
+
+            )
+
+
+
+
+
+        elif direction == "Bearish":
+
+
+            return (
+
+                block.high +
+
+                buffer
+
+            )
+
+
+
+
+
+        return None
+
+
+
+# ================= PART 1 END =================
+
+# ================= PART 2 START =================
+
+
+    # ======================================================
+    # Target Calculation
+    # ======================================================
+
+    def calculate_target(
+        self,
+        direction,
+        liquidity
+    ):
+
+
+        if not liquidity:
+
+
+            return None
+
+
+
+
+
+        level = getattr(
+
+            liquidity,
+
+            "level",
+
+            None
+
+        )
+
+
+
+        return level
+
+
 
 
 
@@ -73,106 +330,265 @@ class RiskManager:
     def calculate_position_size(
         self,
         risk_amount,
-        risk_points,
+        entry,
+        stop_loss
     ):
 
-        if risk_points <= 0:
 
-            return 0.0
+        if not entry or not stop_loss:
 
 
-        return (
-            risk_amount
-            /
-            risk_points
+            return 0
+
+
+
+
+
+        stop_distance = abs(
+
+            entry -
+
+            stop_loss
+
         )
 
 
 
+        if stop_distance == 0:
+
+
+            return 0
+
+
+
+
+
+        return (
+
+            risk_amount /
+
+            stop_distance
+
+        )
+
+
+
+
+
     # ======================================================
-    # Generate Risk Plan
+    # Reward Calculation
+    # ======================================================
+
+    def calculate_reward(
+        self,
+        entry,
+        target
+    ):
+
+
+        if not entry or not target:
+
+
+            return 0
+
+
+
+
+
+        return abs(
+
+            target -
+
+            entry
+
+        )
+
+
+
+
+
+    # ======================================================
+    # Final Risk Analysis
     # ======================================================
 
     def analyze(
         self,
-        trade_decision: Any,
-        order_blocks: list,
-    ) -> RiskDecision:
+        trade_decision,
+        order_blocks,
+        liquidity=None
+    ):
 
 
         result = RiskDecision()
 
 
 
-        # ==================================================
-        # No Trade
-        # ==================================================
+        direction = self.get_direction(
 
-        if not trade_decision:
+            trade_decision
 
-            return result
+        )
 
 
 
-        if trade_decision.signal == "WAIT":
-
-            return result
+        if not direction:
 
 
+            result.reason = (
 
-        if not order_blocks:
-
-            return result
-
-
-
-        # ==================================================
-        # Latest Order Block
-        # ==================================================
-
-        latest_ob = sorted(
-
-            order_blocks,
-
-            key=lambda x: x.created_at,
-
-            reverse=True
-
-        )[0]
-
-
-
-        # ==================================================
-        # Entry Zone
-        # ==================================================
-
-        result.entry_low = latest_ob.low
-
-        result.entry_high = latest_ob.high
-
-
-
-        # ==================================================
-        # Stop Loss
-        # ==================================================
-
-        if latest_ob.direction == "Bullish":
-
-
-            result.stop_loss = (
-
-                latest_ob.low - 5
+                "Direction unavailable"
 
             )
 
 
+            return result
 
-        elif latest_ob.direction == "Bearish":
 
 
-            result.stop_loss = (
 
-                latest_ob.high + 5
+
+        entry = self.calculate_entry(
+
+            trade_decision,
+
+            order_blocks
+
+        )
+
+
+
+        stop_loss = self.calculate_stop_loss(
+
+            direction,
+
+            order_blocks
+
+        )
+
+
+
+        target = self.calculate_target(
+
+            direction,
+
+            liquidity
+
+        )
+
+
+
+
+
+        risk_amount = self.calculate_risk_amount()
+
+
+
+        reward = self.calculate_reward(
+
+            entry,
+
+            target
+
+        )
+
+
+
+
+
+        risk_distance = abs(
+
+            entry -
+
+            stop_loss
+
+        ) if entry and stop_loss else 0
+
+
+
+
+
+        rr = 0
+
+
+
+        if risk_distance:
+
+
+            rr = reward / risk_distance
+
+
+
+
+
+        position_size = self.calculate_position_size(
+
+            risk_amount,
+
+            entry,
+
+            stop_loss
+
+        )
+
+
+
+
+
+        result.direction = direction
+
+
+
+        result.entry = entry
+
+
+
+        result.stop_loss = stop_loss
+
+
+
+        result.target = target
+
+
+
+        result.risk_amount = risk_amount
+
+
+
+        result.reward_amount = reward
+
+
+
+        result.risk_reward = round(
+
+            rr,
+
+            2
+
+        )
+
+
+
+        result.position_size = round(
+
+            position_size,
+
+            2
+
+        )
+
+
+
+
+
+        if rr >= self.minimum_rr:
+
+
+            result.valid = True
+
+
+            result.reason = (
+
+                "Valid risk reward setup"
 
             )
 
@@ -180,138 +596,22 @@ class RiskManager:
 
         else:
 
-            return result
+
+            result.valid = False
 
 
+            result.reason = (
 
-        # ==================================================
-        # Target 1:3 RR
-        # ==================================================
-
-        if latest_ob.direction == "Bullish":
-
-
-            risk = (
-
-                result.entry_low
-
-                -
-                result.stop_loss
+                "Risk reward below minimum"
 
             )
 
 
-            result.target = (
-
-                result.entry_high
-
-                +
-                (risk * 3)
-
-            )
-
-
-
-        elif latest_ob.direction == "Bearish":
-
-
-            risk = (
-
-                result.stop_loss
-
-                -
-                result.entry_high
-
-            )
-
-
-            result.target = (
-
-                result.entry_low
-
-                -
-                (risk * 3)
-
-            )
-
-
-
-        # ==================================================
-        # Risk Reward
-        # ==================================================
-
-        if result.stop_loss and result.target:
-
-
-            risk = abs(
-
-                result.entry_low
-
-                -
-                result.stop_loss
-
-            )
-
-
-            reward = abs(
-
-                result.target
-
-                -
-                result.entry_low
-
-            )
-
-
-            if risk > 0:
-
-
-                result.risk_reward = (
-
-                    reward / risk
-
-                )
-
-
-
-        # ==================================================
-        # Account Risk
-        # ==================================================
-
-        result.risk_amount = (
-
-            self.calculate_risk_amount()
-
-        )
-
-
-
-        # ==================================================
-        # Position Size
-        # ==================================================
-
-        risk_points = abs(
-
-            result.entry_low
-
-            -
-            result.stop_loss
-
-        )
-
-
-        result.position_size = (
-
-            self.calculate_position_size(
-
-                result.risk_amount,
-
-                risk_points
-
-            )
-
-        )
 
 
 
         return result
+
+
+
+# ================= PART 2 END =================

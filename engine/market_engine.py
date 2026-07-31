@@ -48,6 +48,8 @@ from smc.liquidity import LiquidityEngine
 
 from smc.setup_quality import SetupQualityEngine
 
+from journal.trade_journal import TradeJournal
+
 
 
 
@@ -78,6 +80,8 @@ class MarketEngine:
 
 
         self.entry_confirmation = None
+
+        self.trade_journal = TradeJournal()
 
 
 
@@ -576,6 +580,31 @@ class MarketEngine:
 
             entry.trade_decision = trade_decision
 
+            # ==================================================
+            # Trade Journal Save
+            # ==================================================
+
+            journal_entry = self.trade_journal.create_entry(
+
+                self.session,
+
+                self.analysis,
+
+                self.setup_quality,
+
+                self.entry_confirmation,
+
+                entry.risk_decision,
+
+            )
+
+
+            self.trade_journal.save_trade(
+
+                journal_entry
+
+            )
+
 
 
 # ================= PART 2 END =================
@@ -623,11 +652,35 @@ class MarketEngine:
 
                 order_blocks,
 
+                liquidity=self.selected_liquidity,
+
             )
 
 
 
             entry.risk_decision = risk_decision
+
+
+            # ==================================================
+            # Trade Journal Save
+            # ==================================================
+
+            journal_entry = self.trade_journal.create_entry(
+
+                self.session,
+                self.analysis,
+                self.setup_quality,
+                self.entry_confirmation,
+                entry.risk_decision,
+
+            )
+
+
+            self.trade_journal.save_trade(
+
+                journal_entry
+
+            )
 
 
 
