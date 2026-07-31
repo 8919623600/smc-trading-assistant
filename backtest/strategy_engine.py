@@ -1,19 +1,22 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V3
+BMIE Strategy Engine V4
 
 Responsibilities
 ----------------
 - Replay historical candles
-- Create BMIE trading sessions
-- Run existing MarketEngine
-- Extract BMIE decisions
-- Generate backtest signals
+- Run MarketEngine silently
+- Extract BMIE signals
+- Avoid console pollution
+- Prepare data for simulator
 
 Author: BMIE Project
 """
 
+
+import contextlib
+import io
 
 from core.session import TradingSession
 from engine.market_engine import MarketEngine
@@ -27,10 +30,12 @@ class StrategyEngine:
 
     def __init__(
         self,
-        balance=100000
+        balance=100000,
+        verbose=False
     ):
 
         self.balance = balance
+        self.verbose = verbose
 
 
 
@@ -45,7 +50,6 @@ class StrategyEngine:
         symbol,
         exchange
     ):
-
 
         return TradingSession(
 
@@ -62,7 +66,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Extract BMIE Result
+    # Extract Signal
     # ======================================================
 
     def extract_signal(
@@ -76,71 +80,47 @@ class StrategyEngine:
 
 
             "symbol":
-
                 engine.session.symbol,
 
 
             "exchange":
-
                 engine.session.exchange,
 
 
             "time":
-
                 str(candle_time),
 
 
             "signal":
-
                 "NO TRADE",
 
 
             "confidence":
-
                 0,
 
 
             "grade":
-
                 None,
 
 
             "direction":
-
                 None,
 
 
             "entry":
-
                 None,
 
 
             "stop_loss":
-
                 None,
 
 
             "target":
-
-                None,
-
-
-            "setup_quality":
-
-                None,
-
-
-            "entry_confirmation":
-
                 None
 
         }
 
 
-
-        # -------------------------------
-        # Setup Quality
-        # -------------------------------
 
         if engine.setup_quality:
 
@@ -152,36 +132,8 @@ class StrategyEngine:
             )
 
 
-            result["setup_quality"] = {
-
-
-                "score":
-
-                    engine.setup_quality.score,
-
-
-                "grade":
-
-                    engine.setup_quality.grade
-
-            }
-
-
-
-
-
-        # -------------------------------
-        # Entry Confirmation
-        # -------------------------------
 
         if engine.entry_confirmation:
-
-
-            result["entry_confirmation"] = (
-
-                engine.entry_confirmation
-
-            )
 
 
             result["confidence"] = (
@@ -195,16 +147,6 @@ class StrategyEngine:
                 )
 
             )
-
-
-
-
-
-        # -------------------------------
-        # Determine Signal
-        # -------------------------------
-
-        if engine.entry_confirmation:
 
 
             status = (
@@ -245,32 +187,33 @@ class StrategyEngine:
         exchange,
         timeframe_data,
         start_index=100,
-        max_candles=None
+        max_candles=50
     ):
 
 
         signals = []
 
 
-
         candles = timeframe_data["5m"]
 
 
+        end_index = min(
 
-        total = len(candles)
+            len(candles),
+
+            start_index + max_candles
+
+        )
 
 
 
-        if max_candles:
+        total = end_index - start_index
 
 
-            total = min(
 
-                total,
-
-                start_index + max_candles
-
-            )
+        print(
+            f"Backtesting candles: {total}"
+        )
 
 
 
@@ -280,21 +223,21 @@ class StrategyEngine:
 
             start_index,
 
-            total
+            end_index
 
         ):
 
 
 
-            current_time = (
-
-                candles.iloc[index]["time"]
-
-            )
-
-
-
             try:
+
+
+                candle_time = (
+
+                    candles.iloc[index]["time"]
+
+                )
+
 
 
                 session = self.create_session(
@@ -315,7 +258,29 @@ class StrategyEngine:
 
 
 
-                engine.run()
+
+
+                # Silence MarketEngine output
+
+                if self.verbose:
+
+
+                    engine.run()
+
+
+                else:
+
+
+                    with contextlib.redirect_stdout(
+
+                        io.StringIO()
+
+                    ):
+
+
+                        engine.run()
+
+
 
 
 
@@ -323,9 +288,11 @@ class StrategyEngine:
 
                     engine,
 
-                    current_time
+                    candle_time
 
                 )
+
+
 
 
 
@@ -335,6 +302,19 @@ class StrategyEngine:
                     signals.append(
 
                         signal
+
+                    )
+
+
+
+
+
+                if self.verbose:
+
+
+                    print(
+
+                        f"Processed candle {index}"
 
                     )
 
@@ -352,6 +332,14 @@ class StrategyEngine:
                 )
 
 
+
+
+
+        print(
+
+            f"Signals generated: {len(signals)}"
+
+        )
 
 
 
