@@ -1,19 +1,22 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V2
+BMIE Strategy Engine V3
 
 Responsibilities
 ----------------
 - Replay historical candles
-- Connect with existing BMIE analyzer
+- Create BMIE trading sessions
+- Run existing MarketEngine
+- Extract BMIE decisions
 - Generate backtest signals
 
 Author: BMIE Project
 """
 
 
-import importlib
+from core.session import TradingSession
+from engine.market_engine import MarketEngine
 
 
 
@@ -22,210 +25,207 @@ import importlib
 class StrategyEngine:
 
 
-    def __init__(self):
+    def __init__(
+        self,
+        balance=100000
+    ):
 
-        self.analyzer = self.load_analyzer()
-
-
-
-
-
-    # ======================================================
-    # Load BMIE Analyzer Dynamically
-    # ======================================================
-
-    def load_analyzer(self):
-
-        try:
-
-            module = importlib.import_module(
-                "analyzer"
-            )
-
-
-            if hasattr(
-                module,
-                "analyze_market"
-            ):
-
-                return module.analyze_market
-
-
-
-            if hasattr(
-                module,
-                "Analyzer"
-            ):
-
-                analyzer = module.Analyzer()
-
-                return analyzer.run
-
-
-
-        except Exception as error:
-
-            print(
-                "Analyzer loading failed:",
-                error
-            )
-
-
-        return None
+        self.balance = balance
 
 
 
 
 
     # ======================================================
-    # Analyze Historical Candle
+    # Create Session
     # ======================================================
 
-    def analyze_point(
+    def create_session(
         self,
         symbol,
-        exchange,
-        timeframe_data,
-        index
+        exchange
+    ):
+
+
+        return TradingSession(
+
+            symbol=symbol,
+
+            exchange=exchange,
+
+            balance=self.balance
+
+        )
+
+
+
+
+
+    # ======================================================
+    # Extract BMIE Result
+    # ======================================================
+
+    def extract_signal(
+        self,
+        engine,
+        candle_time
     ):
 
 
         result = {
 
 
-            "symbol": symbol,
+            "symbol":
 
-            "exchange": exchange,
+                engine.session.symbol,
 
-            "time": str(
-                timeframe_data["5m"]
-                .iloc[index]["time"]
-            ),
 
-            "signal": "NO TRADE",
+            "exchange":
 
-            "confidence": 0,
+                engine.session.exchange,
 
-            "grade": None,
 
-            "direction": None,
+            "time":
 
-            "entry": None,
+                str(candle_time),
 
-            "stop_loss": None,
 
-            "target": None
+            "signal":
+
+                "NO TRADE",
+
+
+            "confidence":
+
+                0,
+
+
+            "grade":
+
+                None,
+
+
+            "direction":
+
+                None,
+
+
+            "entry":
+
+                None,
+
+
+            "stop_loss":
+
+                None,
+
+
+            "target":
+
+                None,
+
+
+            "setup_quality":
+
+                None,
+
+
+            "entry_confirmation":
+
+                None
 
         }
 
 
 
-        if self.analyzer is None:
+        # -------------------------------
+        # Setup Quality
+        # -------------------------------
 
-            return result
-
-
-
-
-
-        try:
+        if engine.setup_quality:
 
 
-            analysis = self.analyzer(
+            result["grade"] = (
 
-                symbol,
+                engine.setup_quality.grade
 
-                exchange,
+            )
 
-                timeframe_data
+
+            result["setup_quality"] = {
+
+
+                "score":
+
+                    engine.setup_quality.score,
+
+
+                "grade":
+
+                    engine.setup_quality.grade
+
+            }
+
+
+
+
+
+        # -------------------------------
+        # Entry Confirmation
+        # -------------------------------
+
+        if engine.entry_confirmation:
+
+
+            result["entry_confirmation"] = (
+
+                engine.entry_confirmation
+
+            )
+
+
+            result["confidence"] = (
+
+                engine.entry_confirmation.get(
+
+                    "confidence",
+
+                    0
+
+                )
 
             )
 
 
 
-            if analysis:
 
 
-                result["analysis"] = analysis
+        # -------------------------------
+        # Determine Signal
+        # -------------------------------
+
+        if engine.entry_confirmation:
 
 
+            status = (
 
-                if isinstance(
-                    analysis,
-                    dict
-                ):
+                engine.entry_confirmation.get(
 
+                    "status",
 
-                    result["signal"] = (
+                    ""
 
-                        analysis.get(
-                            "signal",
-                            "NO TRADE"
-                        )
+                )
 
-                    )
+            )
 
 
-                    result["confidence"] = (
-
-                        analysis.get(
-                            "confidence",
-                            0
-                        )
-
-                    )
+            if status == "ENTRY CONFIRMED":
 
 
-                    result["grade"] = (
-
-                        analysis.get(
-                            "grade"
-                        )
-
-                    )
+                result["signal"] = "TRADE READY"
 
 
-                    result["direction"] = (
-
-                        analysis.get(
-                            "direction"
-                        )
-
-                    )
-
-
-                    result["entry"] = (
-
-                        analysis.get(
-                            "entry"
-                        )
-
-                    )
-
-
-                    result["stop_loss"] = (
-
-                        analysis.get(
-                            "stop_loss"
-                        )
-
-                    )
-
-
-                    result["target"] = (
-
-                        analysis.get(
-                            "target"
-                        )
-
-                    )
-
-
-
-        except Exception as error:
-
-
-            result["error"] = str(error)
 
 
 
@@ -236,7 +236,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Run Historical Replay
+    # Run Replay
     # ======================================================
 
     def run(
@@ -244,7 +244,8 @@ class StrategyEngine:
         symbol,
         exchange,
         timeframe_data,
-        start_index=100
+        start_index=100,
+        max_candles=None
     ):
 
 
@@ -252,9 +253,26 @@ class StrategyEngine:
 
 
 
-        candles = len(
-            timeframe_data["5m"]
-        )
+        candles = timeframe_data["5m"]
+
+
+
+        total = len(candles)
+
+
+
+        if max_candles:
+
+
+            total = min(
+
+                total,
+
+                start_index + max_candles
+
+            )
+
+
 
 
 
@@ -262,32 +280,78 @@ class StrategyEngine:
 
             start_index,
 
-            candles
+            total
 
         ):
 
 
-            result = self.analyze_point(
 
-                symbol,
+            current_time = (
 
-                exchange,
-
-                timeframe_data,
-
-                index
+                candles.iloc[index]["time"]
 
             )
 
 
-            if result["signal"] != "NO TRADE":
+
+            try:
 
 
-                signals.append(
+                session = self.create_session(
 
-                    result
+                    symbol,
+
+                    exchange
 
                 )
+
+
+
+                engine = MarketEngine(
+
+                    session
+
+                )
+
+
+
+                engine.run()
+
+
+
+                signal = self.extract_signal(
+
+                    engine,
+
+                    current_time
+
+                )
+
+
+
+                if signal["signal"] != "NO TRADE":
+
+
+                    signals.append(
+
+                        signal
+
+                    )
+
+
+
+            except Exception as error:
+
+
+                print(
+
+                    "Backtest candle error:",
+
+                    error
+
+                )
+
+
 
 
 
