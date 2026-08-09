@@ -369,7 +369,8 @@ class MarketEngine:
 
             direction = "Bearish"
 
-
+        # Attach direction for RiskManager
+        trade_decision.direction = direction
 
 
 
