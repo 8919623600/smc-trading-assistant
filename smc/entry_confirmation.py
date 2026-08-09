@@ -722,7 +722,14 @@ class EntryConfirmationEngine:
 
                 "WAIT FOR CONFIRMATION",
 
+
             "confidence": 0,
+
+
+            "direction":
+
+                self.direction,
+
 
             "reasons": []
 
@@ -925,7 +932,7 @@ class EntryConfirmationEngine:
 
         )
 
-
+        result["direction"] = self.direction
 
         return result
 
