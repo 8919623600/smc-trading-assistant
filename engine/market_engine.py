@@ -696,6 +696,9 @@ class MarketEngine:
 
             entry.risk_decision = risk_decision
 
+            # Sync risk decision with analysis object
+            self.analysis.entry.risk_decision = risk_decision
+
 
             # ==================================================
             # Trade Journal Save
