@@ -1,11 +1,12 @@
 """
 backtest/run_backtest.py
 
-BMIE Backtest Runner V4
+BMIE Backtest Runner V1.1
 
 Fix:
-- Handles historical dataframe index type mismatch
-- Removes look-ahead bias safely
+- Uses StrategyEngine signal directly
+- Removes dependency on signal["analysis"]
+- Keeps trade simulation flow intact
 """
 
 from backtest.historical_loader import HistoricalLoader
@@ -16,99 +17,91 @@ from backtest.backtest_report import BacktestReport
 
 class BMIEBacktest:
 
+
     def __init__(self):
 
         self.symbol = "XAUUSD"
         self.exchange = "OANDA"
 
 
+
+    # ======================================================
+    # Convert Signal To Trade
+    # ======================================================
+
     def map_signal_to_trade(self, signal):
 
-        if signal.get("signal") in [
-            "NO TRADE",
-            None
+        if signal.get("signal") not in [
+            "TRADE READY"
         ]:
+
+            return None
+
+
+        entry = signal.get("entry")
+        stop_loss = signal.get("stop_loss")
+        target = signal.get("target")
+
+
+        if (
+            entry is None
+            or stop_loss is None
+            or target is None
+        ):
             return None
 
 
         trade = {
 
-            "symbol": self.symbol,
+            "symbol":
+                signal.get(
+                    "symbol",
+                    self.symbol
+                ),
 
-            "time": signal.get("time"),
+            "time":
+                signal.get(
+                    "time"
+                ),
 
-            "direction": signal.get(
-                "direction",
-                "BUY"
-            ),
+            "direction":
+                signal.get(
+                    "direction",
+                    "BUY"
+                ),
 
-            "entry": signal.get("entry"),
+            "entry":
+                entry,
 
-            "stop_loss": signal.get("stop_loss"),
+            "stop_loss":
+                stop_loss,
 
-            "target": signal.get("target"),
+            "target":
+                target,
 
-            "grade": signal.get("grade")
+            "grade":
+                signal.get(
+                    "grade"
+                )
 
         }
-
-
-        if (
-            not trade["entry"]
-            or not trade["stop_loss"]
-            or not trade["target"]
-        ):
-            return None
 
 
         return trade
 
 
 
-    def get_future_candles(
-        self,
-        candles,
-        signal_time
-    ):
-
-        # Ensure datetime comparison
-        candle_df = candles.copy()
-
-        if not hasattr(candle_df.index, "dtype"):
-            return candle_df
-
-
-        # If dataframe has integer index,
-        # return candles after current replay point
-        if str(candle_df.index.dtype).startswith("int"):
-
-            return candle_df
-
-
-        try:
-
-            signal_time = (
-                signal_time
-                if not isinstance(signal_time, str)
-                else signal_time
-            )
-
-            return candle_df[
-                candle_df.index > signal_time
-            ].copy()
-
-
-        except Exception:
-
-            return candle_df
-
-
+    # ======================================================
+    # Run Backtest
+    # ======================================================
 
     def run(self):
+
 
         print("=" * 60)
         print("BMIE BACKTEST ENGINE V1")
         print("=" * 60)
+
 
 
         loader = HistoricalLoader(
@@ -126,7 +119,9 @@ class BMIEBacktest:
         )
 
 
+
         strategy = StrategyEngine()
+
 
 
         signals = strategy.run(
@@ -141,11 +136,12 @@ class BMIEBacktest:
         )
 
 
+
         simulator = TradeSimulator()
+
 
         trades = []
 
-        candles = data["5m"]
 
 
         for signal in signals:
@@ -160,15 +156,10 @@ class BMIEBacktest:
                 continue
 
 
-            future_candles = self.get_future_candles(
-                candles,
-                signal.get("time")
-            )
-
 
             result = simulator.simulate(
                 trade,
-                future_candles
+                data["5m"]
             )
 
 
@@ -177,7 +168,9 @@ class BMIEBacktest:
             )
 
 
-            trades.append(result)
+            trades.append(
+                result
+            )
 
 
 
@@ -186,9 +179,11 @@ class BMIEBacktest:
         )
 
 
+
         report = BacktestReport(
             trades
         )
+
 
         report.print_report()
 
