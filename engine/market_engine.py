@@ -674,7 +674,13 @@ class MarketEngine:
 
             )
 
-
+            print(
+                "TRADE DECISION DEBUG:",
+                trade_decision.signal,
+                getattr(trade_decision, "direction", None),
+                vars(trade_decision)
+            )
+            
 
             risk_decision = risk_manager.analyze(
 
