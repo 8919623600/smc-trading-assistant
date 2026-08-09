@@ -1,17 +1,15 @@
 """
 smc/risk_manager.py
 
-BMIE Risk Manager V5
+BMIE Risk Manager V5.1 Compatibility
 
-Changes
+Purpose
 -------
-- Adds realistic RR control
-- Adds entry zone support
-- Adds safer target validation
-- Keeps compatibility with MarketEngine
-- Keeps RiskDecision API compatible
+- Preserve BMIE V4 working flow
+- Add entry zone support
+- Add RR ceiling
+- Improve validation and debugging
 
-Author: BMIE Project
 """
 
 from dataclasses import dataclass
@@ -58,11 +56,8 @@ class RiskManager:
     ):
 
         self.account_balance = account_balance
-
         self.risk_percent = risk_percent
-
         self.minimum_rr = minimum_rr
-
         self.maximum_rr = maximum_rr
 
 
@@ -70,10 +65,8 @@ class RiskManager:
     def calculate_risk_amount(self):
 
         return (
-            self.account_balance
-            *
-            self.risk_percent
-            /
+            self.account_balance *
+            self.risk_percent /
             100
         )
 
@@ -91,14 +84,10 @@ class RiskManager:
 
 
         if "BUY" in signal:
-
             return "Bullish"
 
-
         if "SELL" in signal:
-
             return "Bearish"
-
 
         return None
 
@@ -114,10 +103,12 @@ class RiskManager:
 
             block = order_blocks[0]
 
-            return (
-                block.high +
-                block.low
-            ) / 2
+            high = getattr(block, "high", None)
+            low = getattr(block, "low", None)
+
+            if high is not None and low is not None:
+
+                return (high + low) / 2
 
 
         return getattr(
@@ -128,22 +119,16 @@ class RiskManager:
 
 
 
-    def calculate_entry_zone(
-        self,
-        order_blocks
-    ):
+    def calculate_entry_zone(self, order_blocks):
 
         if not order_blocks:
-
             return None, None
-
 
         block = order_blocks[0]
 
-
         return (
-            block.low,
-            block.high
+            getattr(block, "low", None),
+            getattr(block, "high", None)
         )
 
 
@@ -155,27 +140,30 @@ class RiskManager:
     ):
 
         if not order_blocks:
-
             return None
 
 
         block = order_blocks[0]
 
+        high = getattr(block, "high", None)
+        low = getattr(block, "low", None)
 
-        buffer = abs(
-            block.high -
-            block.low
-        ) * 0.2
+
+        if high is None or low is None:
+            return None
+
+
+        buffer = abs(high - low) * 0.2
 
 
         if direction == "Bullish":
 
-            return block.low - buffer
+            return low - buffer
 
 
         if direction == "Bearish":
 
-            return block.high + buffer
+            return high + buffer
 
 
         return None
@@ -189,7 +177,6 @@ class RiskManager:
     ):
 
         if not liquidity:
-
             return None
 
 
@@ -208,94 +195,18 @@ class RiskManager:
         stop_loss
     ):
 
-        if not entry or not stop_loss:
-
+        if entry is None or stop_loss is None:
             return 0
 
 
-        distance = abs(
-            entry -
-            stop_loss
-        )
+        distance = abs(entry - stop_loss)
 
 
         if distance == 0:
-
             return 0
 
 
         return risk_amount / distance
-
-
-
-    def calculate_reward(
-        self,
-        entry,
-        target
-    ):
-
-        if not entry or not target:
-
-            return 0
-
-
-        return abs(
-            target -
-            entry
-        )
-
-
-
-    def adjust_target(
-        self,
-        entry,
-        stop_loss,
-        target,
-        direction
-    ):
-
-        if not entry or not stop_loss or not target:
-
-            return target
-
-
-        risk = abs(
-            entry -
-            stop_loss
-        )
-
-
-        reward = abs(
-            target -
-            entry
-        )
-
-
-        rr = reward / risk if risk else 0
-
-
-        if rr <= self.maximum_rr:
-
-            return target
-
-
-        if direction == "Bullish":
-
-            return entry + (
-                risk *
-                self.maximum_rr
-            )
-
-
-        if direction == "Bearish":
-
-            return entry - (
-                risk *
-                self.maximum_rr
-            )
-
-
-        return target
 
 
 
@@ -305,7 +216,6 @@ class RiskManager:
         order_blocks,
         liquidity=None
     ):
-
 
         result = RiskDecision()
 
@@ -318,9 +228,7 @@ class RiskManager:
         if not direction:
 
             result.reason = "Direction unavailable"
-
             return result
-
 
 
         entry = self.calculate_entry(
@@ -341,100 +249,108 @@ class RiskManager:
         )
 
 
-        target = self.adjust_target(
-            entry,
-            stop_loss,
-            target,
-            direction
-        )
-
-
         entry_low, entry_high = self.calculate_entry_zone(
             order_blocks
         )
 
 
-        risk_amount = self.calculate_risk_amount()
+        result.direction = direction
+        result.entry = entry
+        result.entry_low = entry_low
+        result.entry_high = entry_high
+        result.stop_loss = stop_loss
+        result.target = target
 
 
-        reward = self.calculate_reward(
-            entry,
-            target
-        )
+        if entry is None:
+
+            result.reason = "Entry unavailable"
+            return result
+
+
+        if stop_loss is None:
+
+            result.reason = "Stop loss unavailable"
+            return result
+
+
+        if target is None:
+
+            result.reason = "Target unavailable"
+            return result
+
 
 
         risk_distance = abs(
-            entry -
-            stop_loss
-        ) if entry and stop_loss else 0
-
-
-        rr = 0
-
-
-        if risk_distance:
-
-            rr = reward / risk_distance
-
-
-
-        position_size = self.calculate_position_size(
-            risk_amount,
-            entry,
-            stop_loss
+            entry - stop_loss
         )
 
 
-        result.direction = direction
+        reward_distance = abs(
+            target - entry
+        )
 
-        result.entry = entry
 
-        result.entry_low = entry_low
+        if risk_distance == 0:
 
-        result.entry_high = entry_high
+            result.reason = "Invalid risk distance"
+            return result
 
-        result.stop_loss = stop_loss
+
+
+        rr = reward_distance / risk_distance
+
+
+        if rr > self.maximum_rr:
+
+            if direction == "Bullish":
+
+                target = entry + (
+                    risk_distance *
+                    self.maximum_rr
+                )
+
+            else:
+
+                target = entry - (
+                    risk_distance *
+                    self.maximum_rr
+                )
+
+
+            reward_distance = abs(
+                target - entry
+            )
+
+
+            rr = reward_distance / risk_distance
+
+
 
         result.target = target
-
-        result.risk_amount = risk_amount
-
-        result.reward_amount = reward
-
-        result.risk_reward = round(
-            rr,
-            2
-        )
+        result.reward_amount = reward_distance
+        result.risk_amount = self.calculate_risk_amount()
+        result.risk_reward = round(rr, 2)
 
         result.position_size = round(
-            position_size,
+            self.calculate_position_size(
+                result.risk_amount,
+                entry,
+                stop_loss
+            ),
             2
         )
 
 
-        if (
-            rr >= self.minimum_rr
-            and rr <= self.maximum_rr
-        ):
+        if rr >= self.minimum_rr:
 
             result.valid = True
-
             result.reason = "Valid risk reward setup"
-
-
-        elif rr > self.maximum_rr:
-
-            result.valid = False
-
-            result.reason = "RR above maximum limit"
-
 
         else:
 
             result.valid = False
-
             result.reason = "Risk reward below minimum"
-
 
 
         return result
