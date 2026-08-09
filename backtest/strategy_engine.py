@@ -310,12 +310,13 @@ class StrategyEngine:
 
 
         else:
-
-
             print(
-
-                "RISK DEBUG: NO RISK PLAN"
-
+                "RISK DEBUG: NO RISK PLAN",
+                getattr(
+                    risk,
+                    "reason",
+                    "unknown"
+                )
             )
 
 
