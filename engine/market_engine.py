@@ -656,7 +656,8 @@ class MarketEngine:
             or
             confirmation_status in [
                 "WAIT FOR CONFIRMATION",
-                "WAIT FOR RETRACEMENT"
+                "WAIT FOR RETRACEMENT",
+                "ENTRY CONFIRMED"
             ]
         ):
 
@@ -726,8 +727,9 @@ class MarketEngine:
 
         else:
 
+           if not hasattr(entry, "risk_decision"):
 
-            entry.risk_decision = None
+               entry.risk_decision = None
 
 
 
