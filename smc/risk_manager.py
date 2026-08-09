@@ -1,16 +1,16 @@
 """
 smc/risk_manager.py
 
-BMIE Risk Manager V5.2 Compatibility
+BMIE Risk Manager V5.2.1
 
 Purpose
 -------
 - Preserve BMIE V4 working flow
-- Support BMIE entry confirmation flow
+- Support entry confirmation based trading
 - Add entry zone support
 - Add RR ceiling
+- Add fallback target calculation
 - Improve validation
-- Improve direction detection
 
 """
 
@@ -62,7 +62,6 @@ class RiskManager:
         maximum_rr: float = 8
     ):
 
-
         self.account_balance = account_balance
 
         self.risk_percent = risk_percent
@@ -105,10 +104,6 @@ class RiskManager:
     ):
 
 
-        # ------------------------------------------
-        # Signal based detection
-        # ------------------------------------------
-
         signal = str(
 
             getattr(
@@ -138,10 +133,6 @@ class RiskManager:
 
 
 
-
-        # ------------------------------------------
-        # Direct direction field
-        # ------------------------------------------
 
         direction = getattr(
 
@@ -179,10 +170,6 @@ class RiskManager:
 
 
 
-
-        # ------------------------------------------
-        # Analysis direction fallback
-        # ------------------------------------------
 
         analysis = getattr(
 
@@ -243,7 +230,7 @@ class RiskManager:
 
 
     # ======================================================
-    # Entry Calculation
+    # Entry
     # ======================================================
 
     def calculate_entry(
@@ -330,26 +317,9 @@ class RiskManager:
 
         return (
 
-            getattr(
+            getattr(block, "low", None),
 
-                block,
-
-                "low",
-
-                None
-
-            ),
-
-
-            getattr(
-
-                block,
-
-                "high",
-
-                None
-
-            )
+            getattr(block, "high", None)
 
         )
 
@@ -377,26 +347,9 @@ class RiskManager:
         block = order_blocks[0]
 
 
-        high = getattr(
+        high = getattr(block, "high", None)
 
-            block,
-
-            "high",
-
-            None
-
-        )
-
-
-        low = getattr(
-
-            block,
-
-            "low",
-
-            None
-
-        )
+        low = getattr(block, "low", None)
 
 
 
@@ -414,23 +367,15 @@ class RiskManager:
 
 
 
-
-
         if direction == "Bullish":
-
 
             return low - buffer
 
 
 
-
-
         if direction == "Bearish":
 
-
             return high + buffer
-
-
 
 
 
@@ -447,25 +392,99 @@ class RiskManager:
     def calculate_target(
         self,
         direction,
-        liquidity
+        liquidity,
+        entry,
+        stop_loss
     ):
 
 
-        if not liquidity:
+        # Priority 1:
+        # Liquidity target
+
+        if liquidity:
+
+
+            level = getattr(
+
+                liquidity,
+
+                "level",
+
+                None
+
+            )
+
+
+            if level is not None:
+
+                return level
+
+
+
+
+
+        # Priority 2:
+        # RR based target
+
+        if entry is None or stop_loss is None:
 
             return None
 
 
 
-        return getattr(
+        risk_distance = abs(
 
-            liquidity,
-
-            "level",
-
-            None
+            entry - stop_loss
 
         )
+
+
+
+        if risk_distance == 0:
+
+            return None
+
+
+
+        if direction == "Bullish":
+
+
+            return (
+
+                entry +
+
+                (
+
+                    risk_distance *
+
+                    self.minimum_rr
+
+                )
+
+            )
+
+
+
+        if direction == "Bearish":
+
+
+            return (
+
+                entry -
+
+                (
+
+                    risk_distance *
+
+                    self.minimum_rr
+
+                )
+
+            )
+
+
+
+        return None
 
 
 
@@ -510,7 +529,7 @@ class RiskManager:
 
 
     # ======================================================
-    # Analyze Risk
+    # Analyze
     # ======================================================
 
     def analyze(
@@ -519,7 +538,6 @@ class RiskManager:
         order_blocks,
         liquidity=None
     ):
-
 
 
         result = RiskDecision()
@@ -537,12 +555,7 @@ class RiskManager:
         if not direction:
 
 
-            result.reason = (
-
-                "Direction unavailable"
-
-            )
-
+            result.reason = "Direction unavailable"
 
             return result
 
@@ -570,19 +583,23 @@ class RiskManager:
 
 
 
-        target = self.calculate_target(
+        entry_low, entry_high = self.calculate_entry_zone(
 
-            direction,
-
-            liquidity
+            order_blocks
 
         )
 
 
 
-        entry_low, entry_high = self.calculate_entry_zone(
+        target = self.calculate_target(
 
-            order_blocks
+            direction,
+
+            liquidity,
+
+            entry,
+
+            stop_loss
 
         )
 
@@ -608,7 +625,6 @@ class RiskManager:
 
         if entry is None:
 
-
             result.reason = "Entry unavailable"
 
             return result
@@ -619,7 +635,6 @@ class RiskManager:
 
         if stop_loss is None:
 
-
             result.reason = "Stop loss unavailable"
 
             return result
@@ -629,7 +644,6 @@ class RiskManager:
 
 
         if target is None:
-
 
             result.reason = "Target unavailable"
 
@@ -646,7 +660,6 @@ class RiskManager:
         )
 
 
-
         reward_distance = abs(
 
             target - entry
@@ -656,7 +669,6 @@ class RiskManager:
 
 
         if risk_distance == 0:
-
 
             result.reason = "Invalid risk distance"
 
@@ -727,7 +739,6 @@ class RiskManager:
             )
 
 
-
             rr = (
 
                 reward_distance /
@@ -742,12 +753,9 @@ class RiskManager:
 
         result.target = target
 
-
         result.reward_amount = reward_distance
 
-
         result.risk_amount = self.calculate_risk_amount()
-
 
         result.risk_reward = round(
 
@@ -783,11 +791,8 @@ class RiskManager:
 
             result.valid = True
 
-            result.reason = (
+            result.reason = "Valid risk reward setup"
 
-                "Valid risk reward setup"
-
-            )
 
 
         else:
@@ -795,11 +800,7 @@ class RiskManager:
 
             result.valid = False
 
-            result.reason = (
-
-                "Risk reward below minimum"
-
-            )
+            result.reason = "Risk reward below minimum"
 
 
 
