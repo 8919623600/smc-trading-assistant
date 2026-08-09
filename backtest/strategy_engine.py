@@ -1,15 +1,14 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V10
+BMIE Strategy Engine V9.1
 
 Fix:
-- Validates RiskDecision values before creating TRADE READY
-- Prevents fake signals without entry/SL/target
-- Adds direction into signal
-- Uses risk.entry instead of risk.entry_low
-
-Author: BMIE Project
+- Updated RiskDecision fields
+- Uses risk.entry
+- Uses candle time column instead of dataframe index
+- Supports RiskManager V5.1
+- Generates TRADE READY signals
 """
 
 import contextlib
@@ -56,7 +55,7 @@ class StrategyEngine:
 
 
     # ======================================================
-    # Build Historical Snapshot
+    # Build Market Snapshot
     # ======================================================
 
     def build_market_snapshot(
@@ -65,20 +64,25 @@ class StrategyEngine:
         index
     ):
 
+
         snapshot = {}
+
 
         current_time = (
             timeframe_data["5m"]
-            .iloc[index]
-            .name
+            .iloc[index]["time"]
         )
 
 
         for timeframe, df in timeframe_data.items():
 
+
             snapshot[timeframe] = (
 
-                df[df.index <= current_time]
+                df[
+                    df["time"] <= current_time
+                ]
+
                 .copy()
 
             )
@@ -101,41 +105,54 @@ class StrategyEngine:
 
         result = {
 
+
             "symbol":
                 engine.session.symbol,
+
 
             "exchange":
                 engine.session.exchange,
 
+
             "time":
-                str(candle_time),
+                candle_time,
+
 
             "signal":
                 "NO TRADE",
 
-            "direction":
-                None,
 
             "confidence":
                 0,
 
+
             "grade":
                 None,
+
 
             "entry":
                 None,
 
+
             "stop_loss":
                 None,
+
 
             "target":
                 None,
 
+
             "risk_reward":
                 0,
 
+
+            "direction":
+                None,
+
+
             "setup_quality":
                 None,
+
 
             "entry_confirmation":
                 None
@@ -145,6 +162,7 @@ class StrategyEngine:
 
 
         grade = None
+
         confidence = 0
 
 
@@ -156,16 +174,21 @@ class StrategyEngine:
         if engine.setup_quality:
 
 
-            grade = engine.setup_quality.grade
+            grade = (
+                engine.setup_quality.grade
+            )
 
 
             result["grade"] = grade
 
 
+
             result["setup_quality"] = {
+
 
                 "score":
                     engine.setup_quality.score,
+
 
                 "grade":
                     grade
@@ -174,9 +197,13 @@ class StrategyEngine:
 
 
             print(
+
                 "QUALITY:",
+
                 grade,
+
                 engine.setup_quality.score
+
             )
 
 
@@ -189,7 +216,9 @@ class StrategyEngine:
 
 
             result["entry_confirmation"] = (
+
                 engine.entry_confirmation
+
             )
 
 
@@ -225,10 +254,11 @@ class StrategyEngine:
 
 
         # ==================================================
-        # Risk Extraction
+        # Risk Decision
         # ==================================================
 
         risk = None
+
         risk_available = False
 
 
@@ -244,28 +274,34 @@ class StrategyEngine:
         ):
 
 
-            risk = engine.analysis.entry.risk_decision
+            risk = (
+
+                engine.analysis.entry.risk_decision
+
+            )
 
 
 
             if (
 
-                getattr(risk, "entry", None)
+                getattr(risk,"entry",None)
                 is not None
 
                 and
 
-                getattr(risk, "stop_loss", None)
+                getattr(risk,"stop_loss",None)
                 is not None
 
                 and
 
-                getattr(risk, "target", None)
+                getattr(risk,"target",None)
                 is not None
 
             ):
 
+
                 risk_available = True
+
 
 
 
@@ -288,6 +324,7 @@ class StrategyEngine:
             )
 
 
+
             result["entry"] = risk.entry
 
             result["stop_loss"] = risk.stop_loss
@@ -303,52 +340,64 @@ class StrategyEngine:
 
                 "direction",
 
-                "BUY"
+                None
 
             )
 
 
 
         else:
+
+
             print(
+
                 "RISK DEBUG: NO RISK PLAN",
+
                 getattr(
+
                     risk,
+
                     "reason",
+
                     "unknown"
+
                 )
+
             )
 
 
 
         # ==================================================
-        # Final Trade Validation
+        # Final Validation
         # ==================================================
 
         if (
 
-            grade in ["A", "B"]
+            grade in [
 
-            and confidence >= 65
+                "A",
 
-            and risk_available
+                "B"
 
-            and result["entry"] is not None
+            ]
 
-            and getattr(
-                risk,
-                "valid",
-                False
-            )
+            and
 
-            and result["stop_loss"] is not None
+            confidence >= 65
 
-            and result["target"] is not None
+            and
+
+            risk_available
+
 
         ):
 
 
-            result["signal"] = "TRADE READY"
+            result["signal"] = (
+
+                "TRADE READY"
+
+            )
 
 
 
@@ -356,9 +405,11 @@ class StrategyEngine:
 
 
 
+
     # ======================================================
-    # Replay Historical Data
+    # Run Backtest
     # ======================================================
+
 
     def run(
         self,
@@ -404,7 +455,6 @@ class StrategyEngine:
         ):
 
 
-
             print(
 
                 f"Processing candle {index}"
@@ -412,14 +462,12 @@ class StrategyEngine:
             )
 
 
-
             try:
 
 
                 candle_time = (
 
-                    candles.iloc[index]
-                    .name
+                    candles.iloc[index]["time"]
 
                 )
 
@@ -459,10 +507,12 @@ class StrategyEngine:
 
 
 
+
                 if self.verbose:
 
 
                     engine.run()
+
 
 
                 else:
@@ -476,6 +526,7 @@ class StrategyEngine:
 
 
                         engine.run()
+
 
 
 
@@ -500,6 +551,7 @@ class StrategyEngine:
 
 
 
+
             except Exception as error:
 
 
@@ -519,6 +571,7 @@ class StrategyEngine:
 
 
 
+
         print(
 
             "Signals generated:",
@@ -526,7 +579,6 @@ class StrategyEngine:
             len(signals)
 
         )
-
 
 
         return signals

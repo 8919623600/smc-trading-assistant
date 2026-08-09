@@ -157,9 +157,17 @@ class BMIEBacktest:
 
 
 
+            entry_time = signal.get("time")
+
+
+            future_candles = data["5m"][
+                data["5m"]["time"] > entry_time
+            ]
+
+
             result = simulator.simulate(
                 trade,
-                data["5m"]
+                future_candles
             )
 
 
