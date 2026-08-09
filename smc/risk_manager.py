@@ -89,6 +89,18 @@ class RiskManager:
         if "SELL" in signal:
             return "Bearish"
 
+        # BMIE entry confirmation can create a valid setup
+        # while trade_decision remains WAIT FOR CONFIRMATION.
+        # Use order flow direction if available.
+        direction = getattr(
+            trade_decision,
+            "direction",
+            None
+        )
+
+        if direction:
+            return direction
+
         return None
 
 
