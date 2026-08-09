@@ -335,6 +335,12 @@ class StrategyEngine:
 
             and result["entry"] is not None
 
+            and getattr(
+                risk,
+                "valid",
+                False
+            )
+
             and result["stop_loss"] is not None
 
             and result["target"] is not None
