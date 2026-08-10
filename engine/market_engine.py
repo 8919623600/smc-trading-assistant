@@ -62,7 +62,8 @@ class MarketEngine:
     def __init__(
     self,
     session,
-    market_data=None
+    market_data=None,
+    analysis_cache=None
    ):
 
 
