@@ -379,6 +379,14 @@ class RiskManager:
             trade_decision
         )
 
+        print(
+            "RISK INPUT DEBUG:",
+            "signal=", getattr(trade_decision, "signal", None),
+            "direction=", direction,
+            "order_blocks=", len(order_blocks) if order_blocks else 0,
+            "liquidity=", liquidity
+        )
+
 
 
         if not direction:
@@ -406,6 +414,13 @@ class RiskManager:
         target = self.calculate_target(
             direction,
             liquidity
+        )
+
+        print(
+            "RISK CALC DEBUG:",
+            "entry=", entry,
+            "SL=", stop_loss,
+            "TARGET=", target
         )
 
 

@@ -24,7 +24,7 @@ class StrategyEngine:
     def __init__(
         self,
         balance=100000,
-        verbose=False,
+        verbose=True,
         analysis_cache=None
     ):
 
