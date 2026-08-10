@@ -261,9 +261,9 @@ class MarketEngine:
             # Lower timeframes (15m/5m) must refresh for entry timing.
 
             cache_timeframes = [
-                "1d",
-                "4h",
-                "1h"
+                "1D",
+                "4H",
+                "1H"
             ]
 
             result = None
@@ -275,7 +275,7 @@ class MarketEngine:
             ):
 
                 cached = self.analysis_cache.load(
-                    name
+                    name.lower()
                 )
 
                 if cached:
@@ -306,7 +306,7 @@ class MarketEngine:
                     try:
 
                         self.analysis_cache.save(
-                            name,
+                            name.lower(),
                             result
                         )
 
