@@ -642,6 +642,8 @@ class MarketEngine:
 
                 self.entry_confirmation,
 
+                entry.trade_decision,
+
                 entry.risk_decision,
 
             )
