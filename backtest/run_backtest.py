@@ -127,7 +127,7 @@ class BMIEBacktest:
         signals = strategy.run(
             self.symbol,
             self.exchange,
-            data
+            data,
             start_index=100,
             max_candles=5
         )
