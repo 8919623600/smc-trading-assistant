@@ -21,24 +21,20 @@ from backtest.analysis_cache import AnalysisCache
 
 class StrategyEngine:
 
-
     def __init__(
         self,
         balance=100000,
-        verbose=False
+        verbose=False,
+        analysis_cache=None
     ):
 
         self.balance = balance
         self.verbose = verbose
 
         self.htf_cache = {}
-        self.analysis_cache = None
 
+        self.analysis_cache = analysis_cache
 
-
-    # ======================================================
-    # Create Session
-    # ======================================================
 
     def create_session(
         self,
@@ -47,20 +43,11 @@ class StrategyEngine:
     ):
 
         return TradingSession(
-
             symbol=symbol,
-
             exchange=exchange,
-
             balance=self.balance
-
         )
 
-
-
-    # ======================================================
-    # Build Market Snapshot
-    # ======================================================
 
     def build_market_snapshot(
         self,
@@ -76,7 +63,6 @@ class StrategyEngine:
         )
 
 
-        # Cache higher timeframe analysis
         for timeframe in [
             "1d",
             "4h",
@@ -96,8 +82,6 @@ class StrategyEngine:
             )
 
 
-        # Only update lower timeframe data
-
         for timeframe in [
             "15m",
             "5m"
@@ -110,15 +94,10 @@ class StrategyEngine:
                     <= current_time
                 ]
             )
-        
+
 
         return snapshot
 
-
-
-    # ======================================================
-    # Extract Signal
-    # ======================================================
 
     def extract_signal(
         self,
@@ -126,313 +105,136 @@ class StrategyEngine:
         candle_time
     ):
 
-
         result = {
-
-
-            "symbol":
-                engine.session.symbol,
-
-
-            "exchange":
-                engine.session.exchange,
-
-
-            "time":
-                candle_time,
-
-
-            "signal":
-                "NO TRADE",
-
-
-            "confidence":
-                0,
-
-
-            "grade":
-                None,
-
-
-            "entry":
-                None,
-
-
-            "stop_loss":
-                None,
-
-
-            "target":
-                None,
-
-
-            "risk_reward":
-                0,
-
-
-            "direction":
-                None,
-
-
-            "setup_quality":
-                None,
-
-
-            "entry_confirmation":
-                None
-
+            "symbol": engine.session.symbol,
+            "exchange": engine.session.exchange,
+            "time": candle_time,
+            "signal": "NO TRADE",
+            "confidence": 0,
+            "grade": None,
+            "entry": None,
+            "stop_loss": None,
+            "target": None,
+            "risk_reward": 0,
+            "direction": None,
+            "setup_quality": None,
+            "entry_confirmation": None
         }
 
 
-
         grade = None
-
         confidence = 0
 
 
-
-        # ==================================================
-        # Setup Quality
-        # ==================================================
-
         if engine.setup_quality:
 
-
-            grade = (
-                engine.setup_quality.grade
-            )
-
+            grade = engine.setup_quality.grade
 
             result["grade"] = grade
 
-
-
             result["setup_quality"] = {
-
-
-                "score":
-                    engine.setup_quality.score,
-
-
-                "grade":
-                    grade
-
+                "score": engine.setup_quality.score,
+                "grade": grade
             }
 
-
             print(
-
                 "QUALITY:",
-
                 grade,
-
                 engine.setup_quality.score
-
             )
 
-
-
-        # ==================================================
-        # Entry Confirmation
-        # ==================================================
 
         if engine.entry_confirmation:
 
-
             result["entry_confirmation"] = (
-
                 engine.entry_confirmation
-
             )
-
 
             confidence = (
-
                 engine.entry_confirmation.get(
-
                     "confidence",
-
                     0
-
                 )
-
             )
-
 
             result["confidence"] = confidence
 
-
-
             print(
-
                 "ENTRY:",
-
-                engine.entry_confirmation.get(
-                    "status"
-                ),
-
+                engine.entry_confirmation.get("status"),
                 confidence
-
             )
 
 
-
-        # ==================================================
-        # Risk Decision
-        # ==================================================
-
         risk = None
-
         risk_available = False
 
 
-
         if (
-
             engine.analysis.entry
-
             and
-
             engine.analysis.entry.risk_decision
-
         ):
 
-
-            risk = (
-
-                engine.analysis.entry.risk_decision
-
-            )
-
+            risk = engine.analysis.entry.risk_decision
 
 
             if (
-
-                getattr(risk,"entry",None)
-                is not None
-
+                getattr(risk, "entry", None) is not None
                 and
-
-                getattr(risk,"stop_loss",None)
-                is not None
-
+                getattr(risk, "stop_loss", None) is not None
                 and
-
-                getattr(risk,"target",None)
-                is not None
-
+                getattr(risk, "target", None) is not None
             ):
-
 
                 risk_available = True
 
 
-
-
-
         if risk_available:
 
-
             print(
-
                 "RISK DEBUG:",
-
                 risk.entry,
-
                 risk.stop_loss,
-
                 risk.target,
-
                 risk.risk_reward
-
             )
-
-
 
             result["entry"] = risk.entry
-
             result["stop_loss"] = risk.stop_loss
-
             result["target"] = risk.target
-
             result["risk_reward"] = risk.risk_reward
 
-
             result["direction"] = getattr(
-
                 risk,
-
                 "direction",
-
                 None
-
             )
-
-
 
         else:
 
-
             print(
-
                 "RISK DEBUG: NO RISK PLAN",
-
                 getattr(
-
                     risk,
-
                     "reason",
-
                     "unknown"
-
                 )
-
             )
 
-
-
-        # ==================================================
-        # Final Validation
-        # ==================================================
 
         if (
-
-            grade in [
-
-                "A",
-
-                "B"
-
-            ]
-
+            grade in ["A", "B"]
             and
-
             confidence >= 65
-
             and
-
             risk_available
-
-
         ):
 
-
-            result["signal"] = (
-
-                "TRADE READY"
-
-            )
-
+            result["signal"] = "TRADE READY"
 
 
         return result
-
-
-
-
-    # ======================================================
-    # Run Backtest
-    # ======================================================
 
 
     def run(
@@ -444,166 +246,105 @@ class StrategyEngine:
         max_candles=50
     ):
 
-
         signals = []
 
-        self.analysis_cache = AnalysisCache(symbol)
+
+        if self.analysis_cache is None:
+
+            self.analysis_cache = AnalysisCache(symbol)
 
 
         candles = timeframe_data["5m"]
 
 
-
         end_index = min(
-
             len(candles),
-
             start_index + max_candles
-
         )
-
 
 
         print(
-
             f"Backtesting candles: {end_index-start_index}"
-
         )
 
 
-
         for index in range(
-
             start_index,
-
             end_index
-
         ):
 
-
             print(
-
                 f"Processing candle {index}"
-
             )
 
 
             try:
 
-
                 candle_time = (
-
                     candles.iloc[index]["time"]
-
                 )
-
 
 
                 session = self.create_session(
-
                     symbol,
-
                     exchange
-
                 )
-
 
 
                 market_snapshot = (
-
                     self.build_market_snapshot(
-
                         timeframe_data,
-
                         index
-
                     )
-
                 )
-
 
 
                 engine = MarketEngine(
-
                     session,
-
-                    market_data=market_snapshot
-
+                    market_data=market_snapshot,
+                    analysis_cache=self.analysis_cache
                 )
-
-
 
 
                 if self.verbose:
 
-
                     engine.run()
-
-
 
                 else:
 
-
                     with contextlib.redirect_stdout(
-
                         io.StringIO()
-
                     ):
-
 
                         engine.run()
 
 
-
-
                 signal = self.extract_signal(
-
                     engine,
-
                     candle_time
-
                 )
-
 
 
                 if signal["signal"] == "TRADE READY":
 
-
-                    signals.append(
-
-                        signal
-
-                    )
-
-
+                    signals.append(signal)
 
 
             except Exception as error:
 
-
                 import traceback
 
-
                 print(
-
                     "Backtest candle error:",
-
                     error
-
                 )
-
 
                 traceback.print_exc()
 
 
-
-
         print(
-
             "Signals generated:",
-
             len(signals)
-
         )
 
 
