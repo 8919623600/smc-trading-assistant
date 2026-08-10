@@ -30,17 +30,11 @@ class StrategyEngine:
 
         self.balance = balance
         self.verbose = verbose
-
         self.htf_cache = {}
-
         self.analysis_cache = analysis_cache
 
 
-    def create_session(
-        self,
-        symbol,
-        exchange
-    ):
+    def create_session(self, symbol, exchange):
 
         return TradingSession(
             symbol=symbol,
@@ -49,11 +43,7 @@ class StrategyEngine:
         )
 
 
-    def build_market_snapshot(
-        self,
-        timeframe_data,
-        index
-    ):
+    def build_market_snapshot(self, timeframe_data, index):
 
         snapshot = {}
 
@@ -61,7 +51,6 @@ class StrategyEngine:
             timeframe_data["5m"]
             .iloc[index]["time"]
         )
-
 
         for timeframe in [
             "1d",
@@ -72,14 +61,10 @@ class StrategyEngine:
             if timeframe not in self.htf_cache:
 
                 self.htf_cache[timeframe] = (
-                    timeframe_data[timeframe]
-                    .copy()
+                    timeframe_data[timeframe].copy()
                 )
 
-
-            snapshot[timeframe] = (
-                self.htf_cache[timeframe]
-            )
+            snapshot[timeframe] = self.htf_cache[timeframe]
 
 
         for timeframe in [
@@ -95,15 +80,10 @@ class StrategyEngine:
                 ]
             )
 
-
         return snapshot
 
 
-    def extract_signal(
-        self,
-        engine,
-        candle_time
-    ):
+    def extract_signal(self, engine, candle_time):
 
         result = {
             "symbol": engine.session.symbol,
@@ -120,7 +100,6 @@ class StrategyEngine:
             "setup_quality": None,
             "entry_confirmation": None
         }
-
 
         grade = None
         confidence = 0
@@ -146,15 +125,11 @@ class StrategyEngine:
 
         if engine.entry_confirmation:
 
-            result["entry_confirmation"] = (
-                engine.entry_confirmation
-            )
+            result["entry_confirmation"] = engine.entry_confirmation
 
-            confidence = (
-                engine.entry_confirmation.get(
-                    "confidence",
-                    0
-                )
+            confidence = engine.entry_confirmation.get(
+                "confidence",
+                0
             )
 
             result["confidence"] = confidence
@@ -177,7 +152,6 @@ class StrategyEngine:
         ):
 
             risk = engine.analysis.entry.risk_decision
-
 
             if (
                 getattr(risk, "entry", None) is not None
@@ -215,11 +189,7 @@ class StrategyEngine:
 
             print(
                 "RISK DEBUG: NO RISK PLAN",
-                getattr(
-                    risk,
-                    "reason",
-                    "unknown"
-                )
+                getattr(risk, "reason", "unknown")
             )
 
 
@@ -256,7 +226,6 @@ class StrategyEngine:
 
         candles = timeframe_data["5m"]
 
-
         end_index = min(
             len(candles),
             start_index + max_candles
@@ -277,13 +246,9 @@ class StrategyEngine:
                 f"Processing candle {index}"
             )
 
-
             try:
 
-                candle_time = (
-                    candles.iloc[index]["time"]
-                )
-
+                candle_time = candles.iloc[index]["time"]
 
                 session = self.create_session(
                     symbol,
@@ -291,11 +256,9 @@ class StrategyEngine:
                 )
 
 
-                market_snapshot = (
-                    self.build_market_snapshot(
-                        timeframe_data,
-                        index
-                    )
+                market_snapshot = self.build_market_snapshot(
+                    timeframe_data,
+                    index
                 )
 
 
@@ -306,17 +269,9 @@ class StrategyEngine:
                 )
 
 
-                if self.verbose:
-
-                    engine.run()
-
-                else:
-
-                    with contextlib.redirect_stdout(
-                        io.StringIO()
-                    ):
-
-                        engine.run()
+                # TEMP DEBUG MODE
+                # Keep MarketEngine output visible for cache validation
+                engine.run()
 
 
                 signal = self.extract_signal(
@@ -346,6 +301,5 @@ class StrategyEngine:
             "Signals generated:",
             len(signals)
         )
-
 
         return signals
