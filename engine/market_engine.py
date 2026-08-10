@@ -61,13 +61,16 @@ class MarketEngine:
     def __init__(
     self,
     session,
-    market_data=None
+    market_data=None,
+    backtest=False
    ):
 
 
         self.session = session
 
         self.market_data = market_data
+
+        self.backtest = backtest
 
         self.analysis = MarketAnalysis()
 
@@ -83,7 +86,7 @@ class MarketEngine:
 
         self.entry_confirmation = None
 
-        self.trade_journal = TradeJournal()
+        self.trade_journal = None if backtest else TradeJournal()
 
 
 
@@ -607,11 +610,13 @@ class MarketEngine:
             )
 
 
-            self.trade_journal.save_trade(
+            if self.trade_journal:
 
-                journal_entry
+                self.trade_journal.save_trade(
 
-            )
+                    journal_entry
+
+                )
 
 
 
@@ -675,7 +680,9 @@ class MarketEngine:
 
             )
 
-            print(
+            if not self.backtest:
+
+                print(
                 "TRADE DECISION DEBUG:",
                 trade_decision.signal,
                 getattr(trade_decision, "direction", None),
@@ -717,11 +724,13 @@ class MarketEngine:
             )
 
 
-            self.trade_journal.save_trade(
+            if self.trade_journal:
 
-                journal_entry
+                self.trade_journal.save_trade(
 
-            )
+                    journal_entry
+
+                )
 
 
 
