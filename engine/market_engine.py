@@ -306,9 +306,10 @@ class MarketEngine:
                             result
                         )
 
-                    except Exception:
+                    except Exception as e:
 
-                        pass
+
+                        print("CACHE SAVE ERROR:", e)
 
 
             setattr(
