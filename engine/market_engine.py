@@ -49,6 +49,7 @@ from smc.liquidity import LiquidityEngine
 from smc.setup_quality import SetupQualityEngine
 
 from journal.trade_journal import TradeJournal
+from backtest.analysis_cache import AnalysisCache
 
 
 
@@ -68,6 +69,8 @@ class MarketEngine:
         self.session = session
 
         self.market_data = market_data
+
+        self.analysis_cache = analysis_cache
 
         self.analysis = MarketAnalysis()
 
@@ -739,6 +742,7 @@ class MarketEngine:
                 self.analysis,
                 self.setup_quality,
                 self.entry_confirmation,
+                entry.trade_decision,
                 entry.risk_decision,
 
             )
