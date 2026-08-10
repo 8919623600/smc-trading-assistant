@@ -13,7 +13,7 @@ Features:
 import os
 import pandas as pd
 
-from data.tv_datafeed import TVDataFeed
+from tvDatafeed import TvDatafeed, Interval
 
 
 class HistoricalLoader:
@@ -35,7 +35,7 @@ class HistoricalLoader:
             exist_ok=True
         )
 
-        self.tv = TVDataFeed()
+        self.tv = TvDatafeed()
 
 
 
@@ -109,7 +109,7 @@ class HistoricalLoader:
 
             exchange=self.exchange,
 
-            interval=timeframe,
+            interval=self.get_interval(timeframe),
 
             n_bars=5000
 
