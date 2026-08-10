@@ -261,9 +261,9 @@ class MarketEngine:
             # Lower timeframes (15m/5m) must refresh for entry timing.
 
             cache_timeframes = [
-                "1D",
-                "4H",
-                "1H"
+                "1d",
+                "4h",
+                "1h"
             ]
 
             result = None
