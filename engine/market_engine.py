@@ -270,6 +270,12 @@ class MarketEngine:
 
             result = None
 
+            print(
+                "CACHE DEBUG:",
+                name,
+                self.analysis_cache
+            )
+
 
             if (
                 name in cache_timeframes
@@ -307,6 +313,7 @@ class MarketEngine:
 
                     try:
 
+                        print("SAVING CACHE:", name)
                         self.analysis_cache.save(
                             name.lower(),
                             result
