@@ -307,7 +307,7 @@ class MarketEngine:
 
 
                 if (
-                    name in cache_timeframes
+                    name in cache_analysis
                     and self.analysis_cache
                 ):
 
