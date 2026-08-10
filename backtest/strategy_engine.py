@@ -30,6 +30,8 @@ class StrategyEngine:
         self.balance = balance
         self.verbose = verbose
 
+        self.htf_cache = {}
+
 
 
     # ======================================================
@@ -64,9 +66,7 @@ class StrategyEngine:
         index
     ):
 
-
         snapshot = {}
-
 
         current_time = (
             timeframe_data["5m"]
@@ -74,19 +74,41 @@ class StrategyEngine:
         )
 
 
-        for timeframe, df in timeframe_data.items():
+        # Cache higher timeframe analysis
+        for timeframe in [
+            "1d",
+            "4h",
+            "1h"
+        ]:
+
+            if timeframe not in self.htf_cache:
+
+                self.htf_cache[timeframe] = (
+                    timeframe_data[timeframe]
+                    .copy()
+                )
 
 
             snapshot[timeframe] = (
-
-                df[
-                    df["time"] <= current_time
-                ]
-
-                .copy()
-
+                self.htf_cache[timeframe]
             )
 
+
+        # Only update lower timeframe data
+
+        for timeframe in [
+            "15m",
+            "5m"
+        ]:
+
+            snapshot[timeframe] = (
+                timeframe_data[timeframe]
+                [
+                    timeframe_data[timeframe]["time"]
+                    <= current_time
+                ]
+            )
+        
 
         return snapshot
 
