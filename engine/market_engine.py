@@ -695,11 +695,6 @@ class MarketEngine:
 
         if (
             trade_decision.signal in allowed_signals
-            or
-            confirmation_status in [
-                "WAIT FOR CONFIRMATION",
-                "WAIT FOR RETRACEMENT"
-            ]
         ):
 
             
