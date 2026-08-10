@@ -49,7 +49,6 @@ from smc.liquidity import LiquidityEngine
 from smc.setup_quality import SetupQualityEngine
 
 from journal.trade_journal import TradeJournal
-from backtest.analysis_cache import AnalysisCache
 
 
 
@@ -62,19 +61,13 @@ class MarketEngine:
     def __init__(
     self,
     session,
-    market_data=None,
-    backtest=False,
-    analysis_cache=None
+    market_data=None
    ):
 
 
         self.session = session
 
         self.market_data = market_data
-
-        self.analysis_cache = analysis_cache
-
-        self.backtest = backtest
 
         self.analysis = MarketAnalysis()
 
@@ -90,7 +83,7 @@ class MarketEngine:
 
         self.entry_confirmation = None
 
-        self.trade_journal = None if backtest else TradeJournal()
+        self.trade_journal = TradeJournal()
 
 
 
@@ -261,8 +254,7 @@ class MarketEngine:
 
             )
             # Cache only higher timeframe analysis.
-            # 1D, 4H and 1H use cache.
-            # 15M and 5M recalculate every candle.
+            # Lower timeframes (15m/5m) must refresh for entry timing.
 
             cache_timeframes = [
                 "1d",
@@ -272,14 +264,20 @@ class MarketEngine:
 
             result = None
 
+
             if (
                 name in cache_timeframes
                 and self.analysis_cache
             ):
 
-                result = self.analysis_cache.load(
+                cached = self.analysis_cache.load(
                     name
                 )
+
+                if cached:
+
+                    result = cached
+
 
             if result is None:
 
@@ -295,15 +293,23 @@ class MarketEngine:
 
                 )
 
+
                 if (
                     name in cache_timeframes
                     and self.analysis_cache
                 ):
 
-                    self.analysis_cache.save(
-                        name,
-                        result
-                    )
+                    try:
+
+                        self.analysis_cache.save(
+                            name,
+                            result
+                        )
+
+                    except Exception:
+
+                        pass
+
 
             setattr(
 
@@ -404,8 +410,7 @@ class MarketEngine:
 
             direction = "Bearish"
 
-        # Attach direction for RiskManager
-        trade_decision.direction = direction
+
 
 
 
@@ -635,20 +640,17 @@ class MarketEngine:
                 self.setup_quality,
 
                 self.entry_confirmation,
-                entry.trade_decision,
 
                 entry.risk_decision,
 
             )
 
 
-            if self.trade_journal:
+            self.trade_journal.save_trade(
 
-                self.trade_journal.save_trade(
+                journal_entry
 
-                    journal_entry
-
-                )
+            )
 
 
 
@@ -671,10 +673,6 @@ class MarketEngine:
 
             "STRONG SELL",
 
-            "WAIT FOR CONFIRMATION",
-
-            "WAIT FOR RETRACEMENT",
-
         ]
 
 
@@ -693,8 +691,7 @@ class MarketEngine:
             or
             confirmation_status in [
                 "WAIT FOR CONFIRMATION",
-                "WAIT FOR RETRACEMENT",
-                "ENTRY CONFIRMED"
+                "WAIT FOR RETRACEMENT"
             ]
         ):
 
@@ -712,15 +709,7 @@ class MarketEngine:
 
             )
 
-            if not self.backtest:
 
-                print(
-                "TRADE DECISION DEBUG:",
-                trade_decision.signal,
-                getattr(trade_decision, "direction", None),
-                vars(trade_decision)
-            )
-            
 
             risk_decision = risk_manager.analyze(
 
@@ -736,9 +725,6 @@ class MarketEngine:
 
             entry.risk_decision = risk_decision
 
-            # Sync risk decision with analysis object
-            self.analysis.entry.risk_decision = risk_decision
-
 
             # ==================================================
             # Trade Journal Save
@@ -750,27 +736,23 @@ class MarketEngine:
                 self.analysis,
                 self.setup_quality,
                 self.entry_confirmation,
-                entry.trade_decision,
                 entry.risk_decision,
 
             )
 
 
-            if self.trade_journal:
+            self.trade_journal.save_trade(
 
-                self.trade_journal.save_trade(
+                journal_entry
 
-                    journal_entry
-
-                )
+            )
 
 
 
         else:
 
-           if not hasattr(entry, "risk_decision"):
 
-               entry.risk_decision = None
+            entry.risk_decision = None
 
 
 
@@ -1456,7 +1438,9 @@ class MarketEngine:
 
                 f"Entry Zone : "
 
-                f"{risk.entry:.2f}"
+                f"{risk.entry_low:.2f} - "
+
+                f"{risk.entry_high:.2f}"
 
             )
 
