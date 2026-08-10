@@ -16,6 +16,7 @@ import io
 
 from core.session import TradingSession
 from engine.market_engine import MarketEngine
+from backtest.analysis_cache import AnalysisCache
 
 
 class StrategyEngine:
@@ -31,6 +32,7 @@ class StrategyEngine:
         self.verbose = verbose
 
         self.htf_cache = {}
+        self.analysis_cache = None
 
 
 
@@ -444,6 +446,8 @@ class StrategyEngine:
 
 
         signals = []
+
+        self.analysis_cache = AnalysisCache(symbol)
 
 
         candles = timeframe_data["5m"]
