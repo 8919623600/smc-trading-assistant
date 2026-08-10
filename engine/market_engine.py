@@ -394,6 +394,25 @@ class MarketEngine:
 
         )
 
+        # ==================================================
+        # Attach Direction To Trade Decision
+        # ==================================================
+
+        if self.analysis.entry:
+
+            entry_direction = EntryValidator(
+                current_price=self.analysis.entry.current_price,
+                trade_decision=trade_decision,
+                order_blocks=[],
+                fair_value_gaps=self.analysis.entry.fair_value_gaps,
+                liquidity=[],
+                entry_context=self.analysis.entry,
+                setup_context=self.analysis.setup,
+                trend_context=self.analysis.trend,
+            ).get_direction()
+
+            trade_decision.direction = entry_direction
+
 
 
 
@@ -402,7 +421,14 @@ class MarketEngine:
         # Select Best Liquidity
         # ==================================================
 
-        direction = "Bullish"
+        direction = getattr(
+            trade_decision,
+            "direction",
+            None
+        )
+
+        if not direction:
+            direction = "Bullish"
 
 
 
