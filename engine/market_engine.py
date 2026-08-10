@@ -73,6 +73,8 @@ class MarketEngine:
 
         self.analysis_cache = analysis_cache
 
+        print("CACHE OBJECT:", self.analysis_cache)
+
         self.analysis = MarketAnalysis()
 
 
