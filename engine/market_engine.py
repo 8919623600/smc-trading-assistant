@@ -63,7 +63,7 @@ class MarketEngine:
     self,
     session,
     market_data=None,
-    backtest=False
+    backtest=False,
     analysis_cache=None
    ):
 
