@@ -115,11 +115,11 @@ class MarketEngine:
 
         priority = [
 
-            self.analysis.trend,
+            self.analysis.entry,
 
             self.analysis.setup,
 
-            self.analysis.entry,
+            self.analysis.trend,
 
         ]
 
@@ -133,15 +133,19 @@ class MarketEngine:
 
 
 
-                return sorted(
+                valid_blocks = [
+                    ob for ob in result.order_blocks
+                    if not getattr(ob, "mitigated", False)
+                ]
 
-                    result.order_blocks,
 
-                    key=lambda x: x.created_at,
+                if valid_blocks:
 
-                    reverse=True
-
-                )[0]
+                    return sorted(
+                        valid_blocks,
+                        key=lambda x: x.created_at,
+                        reverse=True
+                    )[0]
 
 
 
