@@ -1,19 +1,24 @@
 """
 backtest/historical_loader.py
 
-BMIE Historical Loader V2
+BMIE Historical Data Loader V2
 
 Features:
-- Loads TradingView historical data
+
+- Load historical market candles
+- Support multi timeframe backtesting
 - Persistent parquet cache
-- Avoids repeated downloads
-- Faster backtesting
+- Avoid repeated TradingView downloads
+
+Author: BMIE Project
 """
+
 
 import os
 import pandas as pd
 
 from tvDatafeed import TvDatafeed, Interval
+
 
 
 class HistoricalLoader:
@@ -26,28 +31,90 @@ class HistoricalLoader:
 
         self.exchange = exchange
 
+        self.tv = TvDatafeed()
+
+
+        # Persistent cache location
+
         self.cache_dir = (
             "backtest/cache"
         )
+
 
         os.makedirs(
             self.cache_dir,
             exist_ok=True
         )
 
-        self.tv = TvDatafeed()
+
+
+    # ======================================================
+    # Timeframe Mapping
+    # ======================================================
+
+    def get_interval(
+        self,
+        timeframe
+    ):
+
+
+        mapping = {
+
+
+            "1m":
+                Interval.in_1_minute,
+
+
+            "5m":
+                Interval.in_5_minute,
+
+
+            "15m":
+                Interval.in_15_minute,
+
+
+            "30m":
+                Interval.in_30_minute,
+
+
+            "1h":
+                Interval.in_1_hour,
+
+
+            "4h":
+                Interval.in_4_hour,
+
+
+            "1d":
+                Interval.in_daily
+
+        }
 
 
 
-    # ==================================================
-    # Cache File
-    # ==================================================
+        if timeframe not in mapping:
+
+            raise ValueError(
+
+                f"Unsupported timeframe: {timeframe}"
+
+            )
+
+
+        return mapping[timeframe]
+
+
+
+    # ======================================================
+    # Cache File Path
+    # ======================================================
 
     def cache_file(
         self,
         symbol,
         timeframe
     ):
+
 
         return os.path.join(
 
@@ -59,48 +126,66 @@ class HistoricalLoader:
 
 
 
-    # ==================================================
-    # Load One Timeframe
-    # ==================================================
+    # ======================================================
+    # Load Historical Data
+    # ======================================================
 
-    def load_timeframe(
+    def load_data(
         self,
         symbol,
-        timeframe
+        timeframe,
+        bars=5000
     ):
 
 
-        file = self.cache_file(
+        cache = self.cache_file(
+
             symbol,
+
             timeframe
+
         )
 
 
-        # ------------------------------
-        # Load Cache
-        # ------------------------------
+        # ==================================================
+        # Load From Cache
+        # ==================================================
 
-        if os.path.exists(file):
+        if os.path.exists(cache):
+
 
             print(
-                f"Loading cache {timeframe}"
+
+                f"Loading cache {symbol} {timeframe}"
+
             )
 
-            df = pd.read_parquet(
-                file
+
+            return pd.read_parquet(
+
+                cache
+
             )
 
-            return df
 
 
+        # ==================================================
+        # Download From TradingView
+        # ==================================================
 
-        # ------------------------------
-        # Download
-        # ------------------------------
+        interval = self.get_interval(
+
+            timeframe
+
+        )
+
 
         print(
-            f"Downloading {symbol} {timeframe} data..."
+
+            f"Loading {symbol} {timeframe} data..."
+
         )
+
 
 
         df = self.tv.get_hist(
@@ -109,23 +194,27 @@ class HistoricalLoader:
 
             exchange=self.exchange,
 
-            interval=self.get_interval(timeframe),
+            interval=interval,
 
-            n_bars=5000
+            n_bars=bars
 
         )
+
 
 
         if df is None:
 
-            raise Exception(
-                f"No data received {timeframe}"
+
+            raise RuntimeError(
+
+                f"No historical data found for {symbol}"
+
             )
 
 
-        df.reset_index(
-            inplace=True
-        )
+
+        df = df.reset_index()
+
 
 
         df.rename(
@@ -133,7 +222,8 @@ class HistoricalLoader:
             columns={
 
                 "datetime":
-                "time"
+
+                    "time"
 
             },
 
@@ -142,33 +232,35 @@ class HistoricalLoader:
         )
 
 
-        df["symbol"] = (
 
-            f"{self.exchange}:{symbol}"
-
-        )
-
-
-        # Save cache
+        # ==================================================
+        # Save Cache
+        # ==================================================
 
         df.to_parquet(
-            file,
+
+            cache,
+
             index=False
+
         )
 
 
         print(
-            f"Saved cache {file}"
+
+            f"Saved cache {cache}"
+
         )
+
 
 
         return df
 
 
 
-    # ==================================================
-    # Multi Timeframe Loader
-    # ==================================================
+    # ======================================================
+    # Load Multi Timeframe Data
+    # ======================================================
 
     def load_multi_timeframe(
         self,
@@ -176,44 +268,36 @@ class HistoricalLoader:
     ):
 
 
-        timeframes = {
+        timeframes = [
 
-            "1d":
-            "1D",
+            "1d",
 
-            "4h":
-            "4H",
+            "4h",
 
-            "1h":
-            "60",
+            "1h",
 
-            "15m":
-            "15",
+            "15m",
 
-            "5m":
-            "5"
+            "5m"
 
-        }
+        ]
 
 
         data = {}
 
 
-        for name, interval in timeframes.items():
+
+        for timeframe in timeframes:
 
 
-            print(
-                f"Loading {symbol} {name} data..."
-            )
-
-
-            data[name] = self.load_timeframe(
+            data[timeframe] = self.load_data(
 
                 symbol,
 
-                interval
+                timeframe
 
             )
+
 
 
         return data
