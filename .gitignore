@@ -8,3 +8,11 @@ venv/
 .idea/
 .vscode/
 charts/output/
+# BMIE runtime cache
+backtest/cache/
+
+# Backup files
+*.bak
+
+# Runtime trade journal
+journal/trades.json
