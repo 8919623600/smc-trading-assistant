@@ -260,22 +260,50 @@ class MarketEngine:
                 f"Analyzing {name.upper()} ({timeframe})..."
 
             )
+            # Cache only higher timeframe analysis.
+            # 1D, 4H and 1H use cache.
+            # 15M and 5M recalculate every candle.
 
+            cache_timeframes = [
+                "1d",
+                "4h",
+                "1h"
+            ]
 
+            result = None
 
-            result = analyze_market(
+            if (
+                name in cache_timeframes
+                and self.analysis_cache
+            ):
 
-                self.session,
+                result = self.analysis_cache.load(
+                    name
+                )
 
-                timeframe,
+            if result is None:
 
-                df=self.market_data.get(timeframe)
-                if self.market_data
-                else None,
+                result = analyze_market(
 
-            )
+                    self.session,
 
+                    timeframe,
 
+                    df=self.market_data.get(timeframe)
+                    if self.market_data
+                    else None,
+
+                )
+
+                if (
+                    name in cache_timeframes
+                    and self.analysis_cache
+                ):
+
+                    self.analysis_cache.save(
+                        name,
+                        result
+                    )
 
             setattr(
 
