@@ -262,10 +262,10 @@ class MarketEngine:
             # Cache only higher timeframe analysis.
             # Lower timeframes (15m/5m) must refresh for entry timing.
 
-            cache_timeframes = [
-                "1d",
-                "4h",
-                "1h"
+            cache_analysis = [
+                "bias",
+                "structure",
+                "trend"
             ]
 
             result = None
@@ -278,12 +278,12 @@ class MarketEngine:
 
 
             if (
-                name in cache_timeframes
+                name in cache_analysis
                 and self.analysis_cache
             ):
 
                 cached = self.analysis_cache.load(
-                    name.lower()
+                    name
                 )
 
                 if cached:
@@ -315,7 +315,7 @@ class MarketEngine:
 
                         print("SAVING CACHE:", name)
                         self.analysis_cache.save(
-                            name.lower(),
+                            name,
                             result
                         )
 
