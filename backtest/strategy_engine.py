@@ -1,14 +1,15 @@
 """
 backtest/strategy_engine.py
 
-BMIE Strategy Engine V9.1
+BMIE Strategy Engine V9.2
 
 Fix:
 - Updated RiskDecision fields
 - Uses risk.entry
 - Uses candle time column instead of dataframe index
-- Supports RiskManager V5.1
+- Supports RiskManager V5.2
 - Generates TRADE READY signals
+- Prevents duplicate trades from same Order Block
 """
 
 import contextlib
@@ -33,6 +34,9 @@ class StrategyEngine:
         self.htf_cache = {}
         self.analysis_cache = analysis_cache
 
+        # Track already used institutional order blocks
+        self.used_order_blocks = set()
+
 
     def create_session(self, symbol, exchange):
 
@@ -52,11 +56,7 @@ class StrategyEngine:
             .iloc[index]["time"]
         )
 
-        for timeframe in [
-            "1d",
-            "4h",
-            "1h"
-        ]:
+        for timeframe in ["1d", "4h", "1h"]:
 
             if timeframe not in self.htf_cache:
 
@@ -67,10 +67,7 @@ class StrategyEngine:
             snapshot[timeframe] = self.htf_cache[timeframe]
 
 
-        for timeframe in [
-            "15m",
-            "5m"
-        ]:
+        for timeframe in ["15m", "5m"]:
 
             snapshot[timeframe] = (
                 timeframe_data[timeframe]
@@ -100,6 +97,7 @@ class StrategyEngine:
             "setup_quality": None,
             "entry_confirmation": None
         }
+
 
         grade = None
         confidence = 0
@@ -201,6 +199,29 @@ class StrategyEngine:
             risk_available
         ):
 
+            ob = engine.selected_order_block
+
+            if ob:
+
+                ob_id = getattr(
+                    ob,
+                    "created_at",
+                    None
+                )
+
+                if ob_id in self.used_order_blocks:
+
+                    print(
+                        "DUPLICATE OB SKIPPED:",
+                        ob_id
+                    )
+
+                    return result
+
+
+                self.used_order_blocks.add(ob_id)
+
+
             result["signal"] = "TRADE READY"
 
 
@@ -255,12 +276,10 @@ class StrategyEngine:
                     exchange
                 )
 
-
                 market_snapshot = self.build_market_snapshot(
                     timeframe_data,
                     index
                 )
-
 
                 engine = MarketEngine(
                     session,
