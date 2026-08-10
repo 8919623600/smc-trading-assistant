@@ -269,9 +269,17 @@ class StrategyEngine:
                 )
 
 
-                # TEMP DEBUG MODE
-                # Keep MarketEngine output visible for cache validation
-                engine.run()
+                if self.verbose:
+
+                    engine.run()
+
+                else:
+
+                    with contextlib.redirect_stdout(
+                        io.StringIO()
+                    ):
+
+                        engine.run()
 
 
                 signal = self.extract_signal(

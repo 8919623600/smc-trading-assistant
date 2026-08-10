@@ -270,12 +270,6 @@ class MarketEngine:
 
             result = None
 
-            print(
-                "CACHE DEBUG:",
-                name,
-                self.analysis_cache
-            )
-
 
             if (
                 name in cache_analysis
@@ -313,7 +307,6 @@ class MarketEngine:
 
                     try:
 
-                        print("SAVING CACHE:", name)
                         self.analysis_cache.save(
                             name,
                             result
