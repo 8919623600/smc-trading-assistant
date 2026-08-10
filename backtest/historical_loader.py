@@ -1,23 +1,19 @@
 """
 backtest/historical_loader.py
 
-BMIE Historical Data Loader V1
+BMIE Historical Loader V2
 
-Responsibilities
-----------------
-- Load historical market candles
-- Support multi timeframe backtesting
-- Provide data for BMIE analyzer
-
-Author: BMIE Project
+Features:
+- Loads TradingView historical data
+- Persistent parquet cache
+- Avoids repeated downloads
+- Faster backtesting
 """
 
-
-from tvDatafeed import TvDatafeed, Interval
+import os
 import pandas as pd
 
-
-
+from data.tv_datafeed import TVDataFeed
 
 
 class HistoricalLoader:
@@ -30,96 +26,81 @@ class HistoricalLoader:
 
         self.exchange = exchange
 
+        self.cache_dir = (
+            "backtest/cache"
+        )
 
-        self.tv = TvDatafeed()
+        os.makedirs(
+            self.cache_dir,
+            exist_ok=True
+        )
+
+        self.tv = TVDataFeed()
 
 
 
+    # ==================================================
+    # Cache File
+    # ==================================================
 
-
-    # ======================================================
-    # Timeframe Mapping
-    # ======================================================
-
-    def get_interval(
+    def cache_file(
         self,
+        symbol,
+        timeframe
+    ):
+
+        return os.path.join(
+
+            self.cache_dir,
+
+            f"{symbol}_{timeframe}.parquet"
+
+        )
+
+
+
+    # ==================================================
+    # Load One Timeframe
+    # ==================================================
+
+    def load_timeframe(
+        self,
+        symbol,
         timeframe
     ):
 
 
-        mapping = {
+        file = self.cache_file(
+            symbol,
+            timeframe
+        )
 
 
-            "1m":
-                Interval.in_1_minute,
+        # ------------------------------
+        # Load Cache
+        # ------------------------------
 
+        if os.path.exists(file):
 
-            "5m":
-                Interval.in_5_minute,
-
-
-            "15m":
-                Interval.in_15_minute,
-
-
-            "30m":
-                Interval.in_30_minute,
-
-
-            "1h":
-                Interval.in_1_hour,
-
-
-            "4h":
-                Interval.in_4_hour,
-
-
-            "1d":
-                Interval.in_daily
-
-        }
-
-
-        if timeframe not in mapping:
-
-            raise ValueError(
-
-                f"Unsupported timeframe: {timeframe}"
-
+            print(
+                f"Loading cache {timeframe}"
             )
 
+            df = pd.read_parquet(
+                file
+            )
 
-        return mapping[timeframe]
-
-
-
-
-
-    # ======================================================
-    # Load Historical Data
-    # ======================================================
-
-    def load_data(
-        self,
-        symbol,
-        timeframe,
-        bars=5000
-    ):
+            return df
 
 
-        interval = self.get_interval(
 
-            timeframe
-
-        )
-
+        # ------------------------------
+        # Download
+        # ------------------------------
 
         print(
-
-            f"Loading {symbol} {timeframe} data..."
-
+            f"Downloading {symbol} {timeframe} data..."
         )
-
 
 
         df = self.tv.get_hist(
@@ -128,29 +109,23 @@ class HistoricalLoader:
 
             exchange=self.exchange,
 
-            interval=interval,
+            interval=timeframe,
 
-            n_bars=bars
+            n_bars=5000
 
         )
 
 
-
         if df is None:
 
-
-            raise RuntimeError(
-
-                f"No historical data found for {symbol}"
-
+            raise Exception(
+                f"No data received {timeframe}"
             )
 
 
-
-
-
-        df = df.reset_index()
-
+        df.reset_index(
+            inplace=True
+        )
 
 
         df.rename(
@@ -158,7 +133,7 @@ class HistoricalLoader:
             columns={
 
                 "datetime":
-                    "time"
+                "time"
 
             },
 
@@ -167,16 +142,33 @@ class HistoricalLoader:
         )
 
 
+        df["symbol"] = (
+
+            f"{self.exchange}:{symbol}"
+
+        )
+
+
+        # Save cache
+
+        df.to_parquet(
+            file,
+            index=False
+        )
+
+
+        print(
+            f"Saved cache {file}"
+        )
+
 
         return df
 
 
 
-
-
-    # ======================================================
-    # Load Multi Timeframe Data
-    # ======================================================
+    # ==================================================
+    # Multi Timeframe Loader
+    # ==================================================
 
     def load_multi_timeframe(
         self,
@@ -184,117 +176,44 @@ class HistoricalLoader:
     ):
 
 
+        timeframes = {
+
+            "1d":
+            "1D",
+
+            "4h":
+            "4H",
+
+            "1h":
+            "60",
+
+            "15m":
+            "15",
+
+            "5m":
+            "5"
+
+        }
+
+
         data = {}
 
 
-
-        timeframes = [
-
-            "1d",
-
-            "4h",
-
-            "1h",
-
-            "15m",
-
-            "5m"
-
-        ]
+        for name, interval in timeframes.items():
 
 
+            print(
+                f"Loading {symbol} {name} data..."
+            )
 
-        for tf in timeframes:
 
-
-            data[tf] = self.load_data(
+            data[name] = self.load_timeframe(
 
                 symbol,
 
-                tf
+                interval
 
             )
 
 
-
         return data
-
-
-
-
-
-    # ======================================================
-    # Validate Data
-    # ======================================================
-
-    def validate(
-        self,
-        df
-    ):
-
-
-        required = [
-
-            "open",
-
-            "high",
-
-            "low",
-
-            "close",
-
-            "volume"
-
-        ]
-
-
-
-        for column in required:
-
-
-            if column not in df.columns:
-
-
-                raise ValueError(
-
-                    f"Missing column: {column}"
-
-                )
-
-
-
-        return True
-
-
-
-
-
-if __name__ == "__main__":
-
-
-    loader = HistoricalLoader(
-
-        exchange="OANDA"
-
-    )
-
-
-    data = loader.load_multi_timeframe(
-
-        "XAUUSD"
-
-    )
-
-
-    for tf, df in data.items():
-
-
-        print(
-
-            tf,
-
-            len(df),
-
-            "candles"
-
-        )
