@@ -463,6 +463,16 @@ class RiskManager:
 
             return result
 
+
+        if target is None:
+
+            result.reason = (
+                "Target unavailable"
+            )
+
+            return result
+
+
         # ======================================================
         # Direction Validation
         # ======================================================
@@ -506,16 +516,6 @@ class RiskManager:
                 )
 
                 return result
-
-
-
-        if target is None:
-
-            result.reason = (
-                "Target unavailable"
-            )
-
-            return result
 
 
 
