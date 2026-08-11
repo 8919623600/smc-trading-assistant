@@ -694,6 +694,17 @@ class MarketEngine:
 
             entry.entry_confirmation = confirmation
 
+            # ==================================================
+            # Attach Direction To Trade Decision
+            # ==================================================
+
+            entry_direction = entry_validator.get_direction()
+
+
+            if entry_direction:
+
+                trade_decision.direction = entry_direction
+
 
 
 
