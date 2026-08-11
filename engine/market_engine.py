@@ -814,6 +814,7 @@ class MarketEngine:
                 self.analysis,
                 self.setup_quality,
                 self.entry_confirmation,
+                trade_decision,
                 entry.risk_decision,
 
             )
