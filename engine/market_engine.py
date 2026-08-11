@@ -186,14 +186,15 @@ class MarketEngine:
 
         return liquidity_engine.get_best_liquidity(
             all_liquidity,
-            entry.current_price,
+            entry_price,
             direction
         )
 
 
     def select_target_liquidity(
         self,
-        direction
+        direction,
+        entry_price
     ):
 
         entry = self.analysis.entry
@@ -235,7 +236,7 @@ class MarketEngine:
                     continue
 
 
-                if zone.level <= entry.current_price:
+                if zone.level <= entry_price:
                     continue
 
 
@@ -248,7 +249,7 @@ class MarketEngine:
                     continue
 
 
-                if zone.level >= entry.current_price:
+                if zone.level >= entry_price:
                     continue
 
 
@@ -265,7 +266,7 @@ class MarketEngine:
 
                 key=lambda x:
                 abs(
-                    entry.current_price - x.level
+                    entry_price - x.level
                 )
 
             )[0]
@@ -285,21 +286,16 @@ class MarketEngine:
 
                 for x in entry.swing_highs
 
-                if x.price > entry.current_price
+                if x.price > entry_price
 
             ]
 
 
             if highs:
 
-                target = min(highs)
-
-
-                if target > entry.current_price:
-
-                    return SimpleNamespace(
-                        level=target
-                    )
+                return SimpleNamespace(
+                    level=min(highs)
+                )
 
 
 
@@ -312,21 +308,16 @@ class MarketEngine:
 
                 for x in entry.swing_lows
 
-                if x.price < entry.current_price
+                if x.price < entry_price
 
             ]
 
 
             if lows:
 
-                target = max(lows)
-
-
-                if target < entry.current_price:
-
-                    return SimpleNamespace(
-                        level=target
-                    )
+                return SimpleNamespace(
+                    level=max(lows)
+                )
 
 
 
@@ -547,10 +538,28 @@ class MarketEngine:
 
         )
 
+        entry_price = None
+
+
+        if order_blocks:
+
+            block = order_blocks[0]
+
+            entry_price = (
+
+                block.high +
+
+                block.low
+
+            ) / 2
+
+
+
         self.target_liquidity = (
 
             self.select_target_liquidity(
-                direction
+                direction,
+                entry_price
             )
 
         )
@@ -615,14 +624,6 @@ class MarketEngine:
 
         entry = self.analysis.entry
 
-        print(
-            "TARGET DEBUG PRICE:",
-            "current_price=",
-            entry.current_price,
-            "direction=",
-            direction
-        )
-
 
 
         if entry:
@@ -657,7 +658,7 @@ class MarketEngine:
 
             entry_validator = EntryValidator(
 
-                current_price=entry.current_price,
+                current_price=entry_price,
 
                 trade_decision=trade_decision,
 
@@ -699,7 +700,7 @@ class MarketEngine:
 
             confirmation_engine = EntryConfirmationEngine(
 
-                current_price=entry.current_price,
+                current_price=entry_price,
 
                 direction=entry_validator.get_direction(),
 
@@ -1001,7 +1002,7 @@ class MarketEngine:
 
             print(
 
-                f"Price  : {entry.current_price:.2f}"
+                f"Price  : {entry_price:.2f}"
 
             )
 
