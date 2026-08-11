@@ -101,55 +101,127 @@ class MarketEngine:
 
     def select_order_block(self):
 
-
         """
-        Select OB using SMC priority.
+        Select valid institutional order block.
 
         Priority:
 
         1H Trend
         15M Setup
         5M Entry
-        """
 
+        Filters:
+        - Remove mitigated OB
+        - Remove broken OB
+        - Prefer stronger OB
+        - Prefer latest OB
+        """
 
         priority = [
 
-            self.analysis.entry,
+            self.analysis.trend,
 
             self.analysis.setup,
 
-            self.analysis.trend,
+            self.analysis.entry,
 
         ]
 
 
+        valid_blocks = []
+
 
         for result in priority:
 
+            if not result:
+
+                continue
 
 
-            if result and result.order_blocks:
+            if not result.order_blocks:
 
-
-
-                valid_blocks = [
-                    ob for ob in result.order_blocks
-                    if not getattr(ob, "mitigated", False)
-                ]
-
-
-                if valid_blocks:
-
-                    return sorted(
-                        valid_blocks,
-                        key=lambda x: x.created_at,
-                        reverse=True
-                    )[0]
+                continue
 
 
 
-        return None
+            for block in result.order_blocks:
+
+
+                # Ignore invalid OB
+
+                if block.mitigated:
+
+                    continue
+
+
+                if block.broken:
+
+                    continue
+
+
+
+                valid_blocks.append(
+                    block
+                )
+
+
+
+        if not valid_blocks:
+
+            return None
+
+
+
+        # Highest priority:
+        # 1. Strength
+        # 2. Latest creation time
+
+        valid_blocks = sorted(
+
+            valid_blocks,
+
+            key=lambda x: (
+
+                x.strength,
+
+                x.created_at
+
+            ),
+
+            reverse=True
+
+        )
+
+
+        selected = valid_blocks[0]
+
+
+        print(
+
+            "SELECTED OB:",
+
+            selected.direction,
+
+            "HIGH=",
+
+            selected.high,
+
+            "LOW=",
+
+            selected.low,
+
+            "STRENGTH=",
+
+            selected.strength,
+
+            "STATUS=",
+
+            selected.status
+
+        )
+
+
+        return selected
 
 
 
