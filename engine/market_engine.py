@@ -415,6 +415,34 @@ class MarketEngine:
 
         )
 
+        # ==================================================
+        # Attach SMC Direction
+        # ==================================================
+
+        if self.analysis.entry:
+
+            entry_validator = EntryValidator(
+                current_price=self.analysis.entry.current_price,
+                trade_decision=trade_decision,
+                order_blocks=[],
+                fair_value_gaps=self.analysis.entry.fair_value_gaps,
+                liquidity=[],
+                entry_context=self.analysis.entry,
+                setup_context=self.analysis.setup,
+                trend_context=self.analysis.trend,
+            )
+
+            smc_direction = entry_validator.get_direction()
+
+            if smc_direction:
+
+                trade_decision.direction = smc_direction
+
+                print(
+                    "FINAL DIRECTION:",
+                    trade_decision.direction
+                )
+
 
 
 
@@ -621,6 +649,12 @@ class MarketEngine:
                 entry_validator.analyze()
 
             )
+
+            smc_direction = entry_validator.get_direction()
+
+            if smc_direction:
+
+                trade_decision.direction = smc_direction
 
 
 

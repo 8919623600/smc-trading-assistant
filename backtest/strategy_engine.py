@@ -234,7 +234,7 @@ class StrategyEngine:
         exchange,
         timeframe_data,
         start_index=100,
-        max_candles=50
+        max_candles=10
     ):
 
         signals = []
