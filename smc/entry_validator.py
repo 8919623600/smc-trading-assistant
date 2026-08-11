@@ -138,7 +138,43 @@ class EntryValidator:
         4. 1H Trend
         5. Trade Signal
         """
+        print(
+            "DIRECTION DEBUG:",
+            "entry_choch=",
+            getattr(
+                self.entry_context,
+                "choch",
+                None
+            ),
 
+            "entry_bos=",
+            getattr(
+                self.entry_context,
+                "bos",
+                None
+            ),
+
+            "setup_bos=",
+            getattr(
+                self.setup_context,
+                "bos",
+                None
+            ),
+
+            "trend=",
+            getattr(
+                self.trend_context,
+                "trend",
+                None
+            ),
+
+            "signal=",
+            getattr(
+                self.trade_decision,
+                "signal",
+                None
+            ),
+        )
 
 
         if self.entry_context:
