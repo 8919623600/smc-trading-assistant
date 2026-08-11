@@ -292,9 +292,14 @@ class MarketEngine:
 
             if highs:
 
-                return SimpleNamespace(
-                    level=min(highs)
-                )
+                target = min(highs)
+
+
+                if target > entry.current_price:
+
+                    return SimpleNamespace(
+                        level=target
+                    )
 
 
 
@@ -314,9 +319,14 @@ class MarketEngine:
 
             if lows:
 
-                return SimpleNamespace(
-                    level=max(lows)
-                )
+                target = max(lows)
+
+
+                if target < entry.current_price:
+
+                    return SimpleNamespace(
+                        level=target
+                    )
 
 
 
