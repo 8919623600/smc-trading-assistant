@@ -538,6 +538,26 @@ class MarketEngine:
 
         )
 
+
+        # ==================================================
+        # Calculate Entry Price From Selected Order Block
+        # ==================================================
+
+        entry_price = None
+
+
+        if self.selected_order_block:
+
+            entry_price = (
+
+                self.selected_order_block.high +
+
+                self.selected_order_block.low
+
+            ) / 2
+
+
+
         self.target_liquidity = (
 
             self.select_target_liquidity(
