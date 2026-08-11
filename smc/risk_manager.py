@@ -415,12 +415,6 @@ class RiskManager:
             liquidity
         )
 
-        print(
-            "entry=", entry,
-            "SL=", stop_loss,
-            "TARGET=", target
-        )
-
 
 
         entry_low, entry_high = (
@@ -545,37 +539,67 @@ class RiskManager:
             risk_distance
         )
 
+        print(
+            "RISK DEBUG:",
+            "ENTRY=", entry,
+            "SL=", stop_loss,
+            "TARGET=", target,
+            "RR=", round(rr,2)
+        )
+
+
+
+        # ======================================================
+        # RR Validation
+        # ======================================================
+
+        if rr < self.minimum_rr:
+
+            result.target = target
+
+            result.reward_amount = reward_distance
+
+            result.risk_amount = (
+                self.calculate_risk_amount()
+            )
+
+            result.risk_reward = round(
+                rr,
+                2
+            )
+
+            result.valid = False
+
+            result.reason = (
+                "Risk reward below minimum"
+            )
+
+            return result
+
 
 
         if rr > self.maximum_rr:
 
-            if direction == "Bullish":
+            result.target = target
 
-                target = (
-                    entry +
-                    risk_distance *
-                    self.maximum_rr
-                )
+            result.reward_amount = reward_distance
 
-            else:
-
-                target = (
-                    entry -
-                    risk_distance *
-                    self.maximum_rr
-                )
-
-
-
-            reward_distance = abs(
-                target - entry
+            result.risk_amount = (
+                self.calculate_risk_amount()
             )
 
-
-            rr = (
-                reward_distance /
-                risk_distance
+            result.risk_reward = round(
+                rr,
+                2
             )
+
+            result.valid = False
+
+            result.reason = (
+                "Risk reward above maximum"
+            )
+
+            return result
 
 
 
@@ -604,21 +628,11 @@ class RiskManager:
 
 
 
-        if rr >= self.minimum_rr:
+        result.valid = True
 
-            result.valid = True
-
-            result.reason = (
-                "Valid risk reward setup"
-            )
-
-        else:
-
-            result.valid = False
-
-            result.reason = (
-                "Risk reward below minimum"
-            )
+        result.reason = (
+            "Valid risk reward setup"
+        )
 
 
         return result

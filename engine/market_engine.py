@@ -385,68 +385,6 @@ class MarketEngine:
 
 
 
-        # ==================================================
-        # RR Based Target Fallback
-        # ==================================================
-
-        if direction == "Bullish":
-
-            if self.selected_order_block:
-
-                risk = abs(
-
-                    entry_price -
-
-                    self.selected_order_block.low
-
-                )
-
-
-                if risk > 0:
-
-                    return SimpleNamespace(
-
-                        level=(
-
-                            entry_price +
-
-                            (risk * 2)
-
-                        )
-
-                    )
-
-
-
-        if direction == "Bearish":
-
-            if self.selected_order_block:
-
-                risk = abs(
-
-                    self.selected_order_block.high -
-
-                    entry_price
-
-                )
-
-
-                if risk > 0:
-
-                    return SimpleNamespace(
-
-                        level=(
-
-                            entry_price -
-
-                            (risk * 2)
-
-                        )
-
-                    )
-
-
-
         # No valid directional target
 
         return None
