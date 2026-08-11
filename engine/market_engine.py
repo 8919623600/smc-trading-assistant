@@ -156,6 +156,41 @@ class MarketEngine:
     # Select Best Liquidity
     # ======================================================
 
+    # ==================================================
+    # Select Best Liquidity
+    # ==================================================
+
+    def select_liquidity(
+        self,
+        direction
+    ):
+
+        entry = self.analysis.entry
+
+        if not entry:
+            return None
+
+        if not hasattr(entry, "swing_highs"):
+            return None
+
+        if not hasattr(entry, "swing_lows"):
+            return None
+
+        liquidity_engine = LiquidityEngine(
+            entry.swing_highs,
+            entry.swing_lows,
+            entry.df
+        )
+
+        all_liquidity = liquidity_engine.analyze()
+
+        return liquidity_engine.get_best_liquidity(
+            all_liquidity,
+            entry.current_price,
+            direction
+        )
+
+
     def select_target_liquidity(
         self,
         direction
