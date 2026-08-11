@@ -621,19 +621,19 @@ class MarketEngine:
 
 
             # ==================================================
-        # Attach Direction To Trade Decision
-        # ==================================================
+            # Attach Direction To Trade Decision
+            # ==================================================
 
-        entry_direction = entry_validator.get_direction()
-
-
-        if entry_direction:
-
-            trade_decision.direction = entry_direction
+            entry_direction = entry_validator.get_direction()
 
 
+            if entry_direction:
 
-        entry.trade_decision = trade_decision
+                trade_decision.direction = entry_direction
+
+
+
+            entry.trade_decision = trade_decision
 
             # ==================================================
             # Trade Journal Save
