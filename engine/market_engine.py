@@ -61,13 +61,16 @@ class MarketEngine:
     def __init__(
     self,
     session,
-    market_data=None
+    market_data=None,
+    analysis_cache=None
    ):
 
 
         self.session = session
 
-        self.market_data = market_data
+        self.market_data = market_data  
+
+        self.analysis_cache = analysis_cache
 
         self.analysis = MarketAnalysis()
 
