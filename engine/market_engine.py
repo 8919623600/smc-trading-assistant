@@ -186,7 +186,7 @@ class MarketEngine:
 
         return liquidity_engine.get_best_liquidity(
             all_liquidity,
-            entry_price,
+            entry.current_price,
             direction
         )
 
