@@ -818,7 +818,7 @@ class MarketEngine:
 
                 order_blocks,
 
-                liquidity=self.selected_liquidity,
+                liquidity=self.target_liquidity,
 
             )
 
