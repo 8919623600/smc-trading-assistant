@@ -417,14 +417,27 @@ class MarketEngine:
 
 
         # ==================================================
-        # Select Best Liquidity
+        # Determine Trade Direction
         # ==================================================
 
-        direction = "Bullish"
+        direction = getattr(
+            trade_decision,
+            "direction",
+            None
+        )
+
+
+        signal = str(
+            getattr(
+                trade_decision,
+                "signal",
+                ""
+            )
+        ).upper()
 
 
 
-        if trade_decision.signal in [
+        if signal in [
 
             "SELL",
 
@@ -432,8 +445,27 @@ class MarketEngine:
 
         ]:
 
-
             direction = "Bearish"
+
+
+
+        elif signal in [
+
+            "BUY",
+
+            "STRONG BUY"
+
+        ]:
+
+            direction = "Bullish"
+
+
+
+        if not direction:
+
+            print(
+                "WARNING: Direction unavailable"
+            )
 
 
 
