@@ -238,7 +238,8 @@ class MarketEngine:
 
     def select_target_liquidity(
         self,
-        direction
+        direction,
+        entry_price
     ):
 
         entry = self.analysis.entry
@@ -247,7 +248,8 @@ class MarketEngine:
             return None
 
 
-        entry_price = entry.current_price
+        if entry_price is None:
+            return None
 
         print(
             "TARGET DEBUG:",
@@ -580,15 +582,39 @@ class MarketEngine:
         )
 
 
+        # ==================================================
+        # Calculate Trade Entry Price From Order Block
+        # ==================================================
+
+        entry_price = None
+
+
+        if self.selected_order_block:
+
+            entry_price = (
+
+                self.selected_order_block.high +
+
+                self.selected_order_block.low
+
+            ) / 2
+
+
 
         self.target_liquidity = (
 
             self.select_target_liquidity(
 
-                direction
+                direction,
+                entry_price
 
             )
 
+        )
+
+        print(
+            "AFTER TARGET SELECTION:",
+            self.target_liquidity
         )
 
 
