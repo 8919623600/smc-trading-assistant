@@ -20,6 +20,8 @@ Author: BMIE Project
 """
 
 
+from types import SimpleNamespace
+
 from analyzer import analyze_market
 
 
@@ -154,76 +156,6 @@ class MarketEngine:
     # Select Best Liquidity
     # ======================================================
 
-    def select_liquidity(
-        self,
-        direction
-    ):
-
-
-        entry = self.analysis.entry
-
-
-
-        if not entry:
-
-            return None
-
-
-
-        if not hasattr(
-
-            entry,
-
-            "swing_highs"
-
-        ):
-
-            return None
-
-
-
-        if not hasattr(
-
-            entry,
-
-            "swing_lows"
-
-        ):
-
-            return None
-
-
-
-        liquidity_engine = LiquidityEngine(
-
-            entry.swing_highs,
-
-            entry.swing_lows,
-
-            entry.df
-
-        )
-
-
-
-        all_liquidity = liquidity_engine.analyze()
-
-
-
-        return liquidity_engine.get_best_liquidity(
-
-            all_liquidity,
-
-            entry.current_price,
-
-            direction
-
-        )
-
-    # ======================================================
-    # Select Target Liquidity
-    # ======================================================
-
     def select_target_liquidity(
         self,
         direction
@@ -235,6 +167,10 @@ class MarketEngine:
         if not entry:
             return None
 
+
+        # ==================================================
+        # 1. Try Opposing Liquidity Target
+        # ==================================================
 
         liquidity_engine = LiquidityEngine(
 
@@ -249,19 +185,6 @@ class MarketEngine:
 
         zones = liquidity_engine.analyze()
 
-        print(
-            "TARGET LIQUIDITY ZONES:",
-            [
-                (
-                    z.side,
-                    z.level,
-                    z.swept,
-                    z.sweep_valid
-                )
-                for z in zones
-            ]
-        )
-
 
         candidates = []
 
@@ -270,7 +193,6 @@ class MarketEngine:
 
 
             if direction == "Bullish":
-
 
                 # Bullish target = Buy-side liquidity above price
 
@@ -284,7 +206,6 @@ class MarketEngine:
 
 
             if direction == "Bearish":
-
 
                 # Bearish target = Sell-side liquidity below price
 
@@ -301,23 +222,75 @@ class MarketEngine:
 
 
 
-        if not candidates:
+        if candidates:
 
-            return None
+            return sorted(
+
+                candidates,
+
+                key=lambda x:
+                abs(
+                    entry.current_price - x.level
+                )
+
+            )[0]
 
 
 
-        return sorted(
+        # ==================================================
+        # 2. Swing High / Swing Low Fallback
+        # ==================================================
 
-            candidates,
+        if direction == "Bullish":
 
-            key=lambda x:
 
-            abs(
-                entry.current_price - x.level
-            )
+            highs = [
 
-        )[0]
+                x.price
+
+                for x in entry.swing_highs
+
+                if x.price > entry.current_price
+
+            ]
+
+
+            if highs:
+
+                return SimpleNamespace(
+                    level=min(highs)
+                )
+
+
+
+        if direction == "Bearish":
+
+
+            lows = [
+
+                x.price
+
+                for x in entry.swing_lows
+
+                if x.price < entry.current_price
+
+            ]
+
+
+            if lows:
+
+                return SimpleNamespace(
+                    level=max(lows)
+                )
+
+
+
+        # ==================================================
+        # 3. No target found
+        # Let RiskManager handle RR fallback later
+        # ==================================================
+
+        return None
 
 
 # ================= PART 1 END =================
