@@ -49,6 +49,7 @@ from smc.liquidity import LiquidityEngine
 from smc.setup_quality import SetupQualityEngine
 
 from journal.trade_journal import TradeJournal
+from backtest.analysis_cache import AnalysisCache
 
 
 
@@ -61,14 +62,13 @@ class MarketEngine:
     def __init__(
     self,
     session,
-    market_data=None,
-    analysis_cache=None
+    market_data=None
    ):
 
 
         self.session = session
 
-        self.market_data = market_data  
+        self.market_data = market_data
 
         self.analysis_cache = analysis_cache
 
@@ -96,20 +96,17 @@ class MarketEngine:
     # Select Best Order Block
     # ======================================================
 
-    def select_order_block(
-        self,
-        trade_direction=None
-    ):
+    def select_order_block(self):
 
 
         """
         Select OB using SMC priority.
 
-        Filters:
-        - Match trade direction
-        - Ignore mitigated blocks
-        - Ignore broken blocks
-        - Prefer stronger and latest OB
+        Priority:
+
+        1H Trend
+        15M Setup
+        5M Entry
         """
 
 
@@ -124,97 +121,29 @@ class MarketEngine:
         ]
 
 
-        valid_blocks = []
-
 
         for result in priority:
 
 
-            if not result:
 
-                continue
-
-
-            if not result.order_blocks:
-
-                continue
-
-
-            for block in result.order_blocks:
-
-
-                if trade_direction:
-
-                    if block.direction != trade_direction:
-
-                        continue
-
-
-                if getattr(block, "mitigated", False):
-
-                    continue
-
-
-                if getattr(block, "broken", False):
-
-                    continue
-
-
-                valid_blocks.append(block)
+            if result and result.order_blocks:
 
 
 
-        if not valid_blocks:
+                return sorted(
 
-            print("NO VALID ORDER BLOCK FOUND")
+                    result.order_blocks,
 
-            return None
+                    key=lambda x: x.created_at,
 
+                    reverse=True
 
-
-        selected = sorted(
-
-            valid_blocks,
-
-            key=lambda x: (
-
-                x.strength,
-
-                x.created_at
-
-            ),
-
-            reverse=True
-
-        )[0]
+                )[0]
 
 
-        print(
 
-            "SELECTED OB:",
+        return None
 
-            selected.direction,
-
-            "HIGH=",
-
-            selected.high,
-
-            "LOW=",
-
-            selected.low,
-
-            "STRENGTH=",
-
-            selected.strength,
-
-            "STATUS=",
-
-            selected.status
-
-        )
-
-
-        return selected
 
 
 
@@ -327,21 +256,63 @@ class MarketEngine:
                 f"Analyzing {name.upper()} ({timeframe})..."
 
             )
+            # Cache only higher timeframe analysis.
+            # Lower timeframes (15m/5m) must refresh for entry timing.
+
+            cache_timeframes = [
+                "1d",
+                "4h",
+                "1h"
+            ]
+
+            result = None
 
 
+            if (
+                name in cache_timeframes
+                and self.analysis_cache
+            ):
 
-            result = analyze_market(
+                cached = self.analysis_cache.load(
+                    name
+                )
 
-                self.session,
+                if cached:
 
-                timeframe,
+                    result = cached
 
-                df=self.market_data.get(timeframe)
-                if self.market_data
-                else None,
 
-            )
+            if result is None:
 
+                result = analyze_market(
+
+                    self.session,
+
+                    timeframe,
+
+                    df=self.market_data.get(timeframe)
+                    if self.market_data
+                    else None,
+
+                )
+
+
+                if (
+                    name in cache_timeframes
+                    and self.analysis_cache
+                ):
+
+                    try:
+
+                        self.analysis_cache.save(
+                            name,
+                            result
+                        )
+
+                    except Exception as e:
+
+
+                        print("CACHE SAVE ERROR:", e)
 
 
             setattr(
@@ -370,6 +341,11 @@ class MarketEngine:
         # Select Institutional Order Block
         # ==================================================
 
+        self.selected_order_block = (
+
+            self.select_order_block()
+
+        )
 
 
 
@@ -415,60 +391,19 @@ class MarketEngine:
 
         )
 
-        # ==================================================
-        # Attach SMC Direction
-        # ==================================================
-
-        if self.analysis.entry:
-
-            entry_validator = EntryValidator(
-                current_price=self.analysis.entry.current_price,
-                trade_decision=trade_decision,
-                order_blocks=[],
-                fair_value_gaps=self.analysis.entry.fair_value_gaps,
-                liquidity=[],
-                entry_context=self.analysis.entry,
-                setup_context=self.analysis.setup,
-                trend_context=self.analysis.trend,
-            )
-
-            smc_direction = entry_validator.get_direction()
-
-            if smc_direction:
-
-                trade_decision.direction = smc_direction
-
-                print(
-                    "FINAL DIRECTION:",
-                    trade_decision.direction
-                )
-
 
 
 
 
         # ==================================================
-        # Determine Trade Direction
+        # Select Best Liquidity
         # ==================================================
 
-        direction = getattr(
-            trade_decision,
-            "direction",
-            None
-        )
-
-
-        signal = str(
-            getattr(
-                trade_decision,
-                "signal",
-                ""
-            )
-        ).upper()
+        direction = "Bullish"
 
 
 
-        if signal in [
+        if trade_decision.signal in [
 
             "SELL",
 
@@ -476,39 +411,8 @@ class MarketEngine:
 
         ]:
 
+
             direction = "Bearish"
-
-
-
-        elif signal in [
-
-            "BUY",
-
-            "STRONG BUY"
-
-        ]:
-
-            direction = "Bullish"
-
-
-
-        if not direction:
-
-            print(
-                "WARNING: Direction unavailable"
-            )
-
-
-
-        self.selected_order_block = (
-
-            self.select_order_block(
-
-                direction
-
-            )
-
-        )
 
 
 
@@ -650,12 +554,6 @@ class MarketEngine:
 
             )
 
-            smc_direction = entry_validator.get_direction()
-
-            if smc_direction:
-
-                trade_decision.direction = smc_direction
-
 
 
 
@@ -747,7 +645,7 @@ class MarketEngine:
 
                 self.entry_confirmation,
 
-                trade_decision,
+                entry.trade_decision,
 
                 entry.risk_decision,
 
@@ -780,10 +678,6 @@ class MarketEngine:
             "STRONG BUY",
 
             "STRONG SELL",
-
-            "WAIT FOR CONFIRMATION",
-
-            "WAIT FOR RETRACEMENT",
 
         ]
 
@@ -848,7 +742,7 @@ class MarketEngine:
                 self.analysis,
                 self.setup_quality,
                 self.entry_confirmation,
-                trade_decision,
+                entry.trade_decision,
                 entry.risk_decision,
 
             )
@@ -1551,7 +1445,9 @@ class MarketEngine:
 
                 f"Entry Zone : "
 
-                f"{risk.entry:.2f}"
+                f"{risk.entry_low:.2f} - "
+
+                f"{risk.entry_high:.2f}"
 
             )
 
