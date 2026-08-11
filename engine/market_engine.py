@@ -84,6 +84,8 @@ class MarketEngine:
 
         self.selected_liquidity = None
 
+        self.target_liquidity = None
+
 
         self.setup_quality = None
 
