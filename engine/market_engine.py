@@ -80,6 +80,7 @@ class MarketEngine:
 
         self.selected_liquidity = None
 
+        self.target_liquidity = None
 
         self.setup_quality = None
 
@@ -217,6 +218,92 @@ class MarketEngine:
             direction
 
         )
+
+    # ======================================================
+    # Select Target Liquidity
+    # ======================================================
+
+    def select_target_liquidity(
+        self,
+        direction
+    ):
+
+        entry = self.analysis.entry
+
+
+        if not entry:
+            return None
+
+
+        liquidity_engine = LiquidityEngine(
+
+            entry.swing_highs,
+
+            entry.swing_lows,
+
+            entry.df
+
+        )
+
+
+        zones = liquidity_engine.analyze()
+
+
+        candidates = []
+
+
+        for zone in zones:
+
+
+            if direction == "Bullish":
+
+
+                # Bullish target = Buy-side liquidity above price
+
+                if zone.side != "Buy-side":
+                    continue
+
+
+                if zone.level <= entry.current_price:
+                    continue
+
+
+
+            if direction == "Bearish":
+
+
+                # Bearish target = Sell-side liquidity below price
+
+                if zone.side != "Sell-side":
+                    continue
+
+
+                if zone.level >= entry.current_price:
+                    continue
+
+
+
+            candidates.append(zone)
+
+
+
+        if not candidates:
+
+            return None
+
+
+
+        return sorted(
+
+            candidates,
+
+            key=lambda x:
+
+            abs(
+                entry.current_price - x.level
+            )
+
+        )[0]
 
 
 # ================= PART 1 END =================
@@ -424,6 +511,14 @@ class MarketEngine:
 
                 direction
 
+            )
+
+        )
+
+        self.target_liquidity = (
+
+            self.select_target_liquidity(
+                direction
             )
 
         )
