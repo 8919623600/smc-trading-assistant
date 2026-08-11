@@ -615,6 +615,14 @@ class MarketEngine:
 
         entry = self.analysis.entry
 
+        print(
+            "TARGET DEBUG PRICE:",
+            "current_price=",
+            entry.current_price,
+            "direction=",
+            direction
+        )
+
 
 
         if entry:
