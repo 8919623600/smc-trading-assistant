@@ -538,23 +538,6 @@ class MarketEngine:
 
         )
 
-        entry_price = None
-
-
-        if order_blocks:
-
-            block = order_blocks[0]
-
-            entry_price = (
-
-                block.high +
-
-                block.low
-
-            ) / 2
-
-
-
         self.target_liquidity = (
 
             self.select_target_liquidity(
