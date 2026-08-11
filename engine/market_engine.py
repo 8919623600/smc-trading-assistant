@@ -251,9 +251,13 @@ class MarketEngine:
 
 
         liquidity_engine = LiquidityEngine(
+
             entry.swing_highs,
+
             entry.swing_lows,
+
             entry.df
+
         )
 
 
@@ -265,64 +269,104 @@ class MarketEngine:
 
         for zone in zones:
 
+
             if direction == "Bullish":
+
+
+                # Bullish target must be above entry
 
                 if zone.side != "Buy-side":
                     continue
+
 
                 if zone.level <= entry_price:
                     continue
 
 
-            if direction == "Bearish":
+
+            elif direction == "Bearish":
+
+
+                # Bearish target must be below entry
 
                 if zone.side != "Sell-side":
                     continue
+
 
                 if zone.level >= entry_price:
                     continue
 
 
+
             candidates.append(zone)
+
 
 
         if candidates:
 
             return sorted(
+
                 candidates,
+
                 key=lambda x: abs(entry_price - x.level)
+
             )[0]
 
 
+
+        # ==================================================
         # Swing fallback
+        # ==================================================
 
         if direction == "Bullish":
 
+
             highs = [
+
                 x.price
+
                 for x in entry.swing_highs
+
                 if x.price > entry_price
+
             ]
 
+
             if highs:
+
                 return SimpleNamespace(
+
                     level=min(highs)
+
                 )
+
 
 
         if direction == "Bearish":
 
+
             lows = [
+
                 x.price
+
                 for x in entry.swing_lows
+
                 if x.price < entry_price
+
             ]
 
+
             if lows:
+
                 return SimpleNamespace(
+
                     level=max(lows)
+
                 )
 
+
+
+        # No valid directional target
 
         return None
 
