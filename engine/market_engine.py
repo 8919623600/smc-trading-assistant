@@ -249,6 +249,19 @@ class MarketEngine:
 
         zones = liquidity_engine.analyze()
 
+        print(
+            "TARGET LIQUIDITY ZONES:",
+            [
+                (
+                    z.side,
+                    z.level,
+                    z.swept,
+                    z.sweep_valid
+                )
+                for z in zones
+            ]
+        )
+
 
         candidates = []
 
