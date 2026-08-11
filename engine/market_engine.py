@@ -20,6 +20,8 @@ Author: BMIE Project
 """
 
 
+from types import SimpleNamespace
+
 from analyzer import analyze_market
 
 
@@ -231,6 +233,101 @@ class MarketEngine:
 
 
     # ======================================================
+    # Select Target Liquidity
+    # ======================================================
+
+    def select_target_liquidity(
+        self,
+        direction
+    ):
+
+        entry = self.analysis.entry
+
+        if not entry:
+            return None
+
+
+        entry_price = entry.current_price
+
+
+        liquidity_engine = LiquidityEngine(
+            entry.swing_highs,
+            entry.swing_lows,
+            entry.df
+        )
+
+
+        zones = liquidity_engine.analyze()
+
+
+        candidates = []
+
+
+        for zone in zones:
+
+            if direction == "Bullish":
+
+                if zone.side != "Buy-side":
+                    continue
+
+                if zone.level <= entry_price:
+                    continue
+
+
+            if direction == "Bearish":
+
+                if zone.side != "Sell-side":
+                    continue
+
+                if zone.level >= entry_price:
+                    continue
+
+
+            candidates.append(zone)
+
+
+        if candidates:
+
+            return sorted(
+                candidates,
+                key=lambda x: abs(entry_price - x.level)
+            )[0]
+
+
+        # Swing fallback
+
+        if direction == "Bullish":
+
+            highs = [
+                x.price
+                for x in entry.swing_highs
+                if x.price > entry_price
+            ]
+
+            if highs:
+                return SimpleNamespace(
+                    level=min(highs)
+                )
+
+
+        if direction == "Bearish":
+
+            lows = [
+                x.price
+                for x in entry.swing_lows
+                if x.price < entry_price
+            ]
+
+            if lows:
+                return SimpleNamespace(
+                    level=max(lows)
+                )
+
+
+        return None
+
+
+    # ======================================================
     # Run Analysis
     # ======================================================
 
@@ -414,6 +511,18 @@ class MarketEngine:
         self.selected_liquidity = (
 
             self.select_liquidity(
+
+                direction
+
+            )
+
+        )
+
+
+
+        self.target_liquidity = (
+
+            self.select_target_liquidity(
 
                 direction
 
