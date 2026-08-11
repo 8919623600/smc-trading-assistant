@@ -713,6 +713,8 @@ class MarketEngine:
 
                 self.entry_confirmation,
 
+                trade_decision,
+
                 entry.risk_decision,
 
             )
