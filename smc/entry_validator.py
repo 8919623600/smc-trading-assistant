@@ -132,49 +132,33 @@ class EntryValidator:
         """
         Priority:
 
-        1. 5M CHoCH
-        2. 5M BOS
-        3. 15M BOS
+        1. 15M Setup BOS
+        2. 5M Entry BOS
+        3. 5M CHoCH
         4. 1H Trend
         5. Trade Signal
         """
-        print(
-            "DIRECTION DEBUG:",
-            "entry_choch=",
-            getattr(
-                self.entry_context,
-                "choch",
-                None
-            ),
 
-            "entry_bos=",
-            getattr(
-                self.entry_context,
-                "bos",
-                None
-            ),
 
-            "setup_bos=",
-            getattr(
-                self.setup_context,
-                "bos",
-                None
-            ),
 
-            "trend=",
-            getattr(
-                self.trend_context,
-                "trend",
-                None
-            ),
+        if self.setup_context:
 
-            "signal=",
-            getattr(
-                self.trade_decision,
-                "signal",
-                None
-            ),
-        )
+
+            direction = self.extract_direction(
+
+                getattr(
+                    self.setup_context,
+                    "bos",
+                    None
+                )
+
+            )
+
+
+            if direction:
+
+                return direction
+
 
 
         if self.entry_context:
@@ -183,13 +167,29 @@ class EntryValidator:
             direction = self.extract_direction(
 
                 getattr(
-
                     self.entry_context,
-
-                    "choch",
-
+                    "bos",
                     None
+                )
 
+            )
+
+
+            if direction:
+
+                return direction
+
+
+
+        if self.entry_context:
+
+
+            direction = self.extract_direction(
+
+                getattr(
+                    self.entry_context,
+                    "choch",
+                    None
                 )
 
             )
