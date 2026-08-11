@@ -249,6 +249,14 @@ class MarketEngine:
 
         entry_price = entry.current_price
 
+        print(
+            "TARGET DEBUG:",
+            "direction=",
+            direction,
+            "entry_price=",
+            entry_price
+        )
+
 
         liquidity_engine = LiquidityEngine(
 
@@ -268,6 +276,15 @@ class MarketEngine:
 
 
         for zone in zones:
+
+            print(
+                "ZONE DEBUG:",
+                "side=",
+                zone.side,
+                "level=",
+                zone.level
+            )
+
 
 
             if direction == "Bullish":
