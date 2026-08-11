@@ -463,6 +463,50 @@ class RiskManager:
 
             return result
 
+        # ======================================================
+        # Direction Validation
+        # ======================================================
+
+        if direction == "Bullish":
+
+            if target <= entry:
+
+                result.reason = (
+                    "Invalid bullish target below entry"
+                )
+
+                return result
+
+
+            if stop_loss >= entry:
+
+                result.reason = (
+                    "Invalid bullish stop loss above entry"
+                )
+
+                return result
+
+
+
+        if direction == "Bearish":
+
+            if target >= entry:
+
+                result.reason = (
+                    "Invalid bearish target above entry"
+                )
+
+                return result
+
+
+            if stop_loss <= entry:
+
+                result.reason = (
+                    "Invalid bearish stop loss below entry"
+                )
+
+                return result
+
 
 
         if target is None:
