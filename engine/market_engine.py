@@ -20,8 +20,6 @@ Author: BMIE Project
 """
 
 
-from types import SimpleNamespace
-
 from analyzer import analyze_market
 
 
@@ -65,6 +63,7 @@ class MarketEngine:
     self,
     session,
     market_data=None,
+    backtest=False,
     analysis_cache=None
    ):
 
@@ -75,6 +74,8 @@ class MarketEngine:
 
         self.analysis_cache = analysis_cache
 
+        self.backtest = backtest
+
         self.analysis = MarketAnalysis()
 
 
@@ -83,14 +84,13 @@ class MarketEngine:
 
         self.selected_liquidity = None
 
-        self.target_liquidity = None
 
         self.setup_quality = None
 
 
         self.entry_confirmation = None
 
-        self.trade_journal = TradeJournal()
+        self.trade_journal = None if backtest else TradeJournal()
 
 
 
@@ -156,177 +156,71 @@ class MarketEngine:
     # Select Best Liquidity
     # ======================================================
 
-    # ==================================================
-    # Select Best Liquidity
-    # ==================================================
-
     def select_liquidity(
         self,
         direction
     ):
 
+
         entry = self.analysis.entry
 
+
+
         if not entry:
+
             return None
 
-        if not hasattr(entry, "swing_highs"):
+
+
+        if not hasattr(
+
+            entry,
+
+            "swing_highs"
+
+        ):
+
             return None
 
-        if not hasattr(entry, "swing_lows"):
+
+
+        if not hasattr(
+
+            entry,
+
+            "swing_lows"
+
+        ):
+
             return None
+
+
 
         liquidity_engine = LiquidityEngine(
+
             entry.swing_highs,
+
             entry.swing_lows,
+
             entry.df
+
         )
+
+
 
         all_liquidity = liquidity_engine.analyze()
 
+
+
         return liquidity_engine.get_best_liquidity(
+
             all_liquidity,
+
             entry.current_price,
+
             direction
-        )
-
-
-    def select_target_liquidity(
-        self,
-        direction,
-        entry_price
-    ):
-
-        entry = self.analysis.entry
-
-
-        if not entry:
-            return None
-
-
-        # ==================================================
-        # 1. Try Opposing Liquidity Target
-        # ==================================================
-
-        liquidity_engine = LiquidityEngine(
-
-            entry.swing_highs,
-
-            entry.swing_lows,
-
-            entry.df
 
         )
-
-
-        zones = liquidity_engine.analyze()
-
-
-        candidates = []
-
-
-        for zone in zones:
-
-
-            if direction == "Bullish":
-
-                # Bullish target = Buy-side liquidity above price
-
-                if zone.side != "Buy-side":
-                    continue
-
-
-                if zone.level <= entry_price:
-                    continue
-
-
-
-            if direction == "Bearish":
-
-                # Bearish target = Sell-side liquidity below price
-
-                if zone.side != "Sell-side":
-                    continue
-
-
-                if zone.level >= entry_price:
-                    continue
-
-
-
-            candidates.append(zone)
-
-
-
-        if candidates:
-
-            return sorted(
-
-                candidates,
-
-                key=lambda x:
-                abs(
-                    entry_price - x.level
-                )
-
-            )[0]
-
-
-
-        # ==================================================
-        # 2. Swing High / Swing Low Fallback
-        # ==================================================
-
-        if direction == "Bullish":
-
-
-            highs = [
-
-                x.price
-
-                for x in entry.swing_highs
-
-                if x.price > entry_price
-
-            ]
-
-
-            if highs:
-
-                return SimpleNamespace(
-                    level=min(highs)
-                )
-
-
-
-        if direction == "Bearish":
-
-
-            lows = [
-
-                x.price
-
-                for x in entry.swing_lows
-
-                if x.price < entry_price
-
-            ]
-
-
-            if lows:
-
-                return SimpleNamespace(
-                    level=max(lows)
-                )
-
-
-
-        # ==================================================
-        # 3. No target found
-        # Let RiskManager handle RR fallback later
-        # ==================================================
-
-        return None
 
 
 # ================= PART 1 END =================
@@ -367,7 +261,8 @@ class MarketEngine:
 
             )
             # Cache only higher timeframe analysis.
-            # Lower timeframes (15m/5m) must refresh for entry timing.
+            # 1D, 4H and 1H use cache.
+            # 15M and 5M recalculate every candle.
 
             cache_timeframes = [
                 "1d",
@@ -377,20 +272,14 @@ class MarketEngine:
 
             result = None
 
-
             if (
                 name in cache_timeframes
                 and self.analysis_cache
             ):
 
-                cached = self.analysis_cache.load(
+                result = self.analysis_cache.load(
                     name
                 )
-
-                if cached:
-
-                    result = cached
-
 
             if result is None:
 
@@ -406,24 +295,15 @@ class MarketEngine:
 
                 )
 
-
                 if (
                     name in cache_timeframes
                     and self.analysis_cache
                 ):
 
-                    try:
-
-                        self.analysis_cache.save(
-                            name,
-                            result
-                        )
-
-                    except Exception as e:
-
-
-                        print("CACHE SAVE ERROR:", e)
-
+                    self.analysis_cache.save(
+                        name,
+                        result
+                    )
 
             setattr(
 
@@ -524,7 +404,8 @@ class MarketEngine:
 
             direction = "Bearish"
 
-
+        # Attach direction for RiskManager
+        trade_decision.direction = direction
 
 
 
@@ -534,35 +415,6 @@ class MarketEngine:
 
                 direction
 
-            )
-
-        )
-
-
-        # ==================================================
-        # Calculate Entry Price From Selected Order Block
-        # ==================================================
-
-        entry_price = None
-
-
-        if self.selected_order_block:
-
-            entry_price = (
-
-                self.selected_order_block.high +
-
-                self.selected_order_block.low
-
-            ) / 2
-
-
-
-        self.target_liquidity = (
-
-            self.select_target_liquidity(
-                direction,
-                entry_price
             )
 
         )
@@ -661,7 +513,7 @@ class MarketEngine:
 
             entry_validator = EntryValidator(
 
-                current_price=entry_price,
+                current_price=entry.current_price,
 
                 trade_decision=trade_decision,
 
@@ -703,7 +555,7 @@ class MarketEngine:
 
             confirmation_engine = EntryConfirmationEngine(
 
-                current_price=entry_price,
+                current_price=entry.current_price,
 
                 direction=entry_validator.get_direction(),
 
@@ -737,17 +589,6 @@ class MarketEngine:
 
             entry.entry_confirmation = confirmation
 
-            # ==================================================
-            # Attach Direction To Trade Decision
-            # ==================================================
-
-            entry_direction = entry_validator.get_direction()
-
-
-            if entry_direction:
-
-                trade_decision.direction = entry_direction
-
 
 
 
@@ -779,7 +620,20 @@ class MarketEngine:
 
 
 
-            entry.trade_decision = trade_decision
+            # ==================================================
+        # Attach Direction To Trade Decision
+        # ==================================================
+
+        entry_direction = entry_validator.get_direction()
+
+
+        if entry_direction:
+
+            trade_decision.direction = entry_direction
+
+
+
+        entry.trade_decision = trade_decision
 
             # ==================================================
             # Trade Journal Save
@@ -794,7 +648,6 @@ class MarketEngine:
                 self.setup_quality,
 
                 self.entry_confirmation,
-
                 entry.trade_decision,
 
                 entry.risk_decision,
@@ -802,11 +655,13 @@ class MarketEngine:
             )
 
 
-            self.trade_journal.save_trade(
+            if self.trade_journal:
 
-                journal_entry
+                self.trade_journal.save_trade(
 
-            )
+                    journal_entry
+
+                )
 
 
 
@@ -829,6 +684,10 @@ class MarketEngine:
 
             "STRONG SELL",
 
+            "WAIT FOR CONFIRMATION",
+
+            "WAIT FOR RETRACEMENT",
+
         ]
 
 
@@ -847,7 +706,8 @@ class MarketEngine:
             or
             confirmation_status in [
                 "WAIT FOR CONFIRMATION",
-                "WAIT FOR RETRACEMENT"
+                "WAIT FOR RETRACEMENT",
+                "ENTRY CONFIRMED"
             ]
         ):
 
@@ -865,7 +725,15 @@ class MarketEngine:
 
             )
 
+            if not self.backtest:
 
+                print(
+                "TRADE DECISION DEBUG:",
+                trade_decision.signal,
+                getattr(trade_decision, "direction", None),
+                vars(trade_decision)
+            )
+            
 
             risk_decision = risk_manager.analyze(
 
@@ -873,13 +741,16 @@ class MarketEngine:
 
                 order_blocks,
 
-                liquidity=self.target_liquidity,
+                liquidity=self.selected_liquidity,
 
             )
 
 
 
             entry.risk_decision = risk_decision
+
+            # Sync risk decision with analysis object
+            self.analysis.entry.risk_decision = risk_decision
 
 
             # ==================================================
@@ -898,18 +769,21 @@ class MarketEngine:
             )
 
 
-            self.trade_journal.save_trade(
+            if self.trade_journal:
 
-                journal_entry
+                self.trade_journal.save_trade(
 
-            )
+                    journal_entry
+
+                )
 
 
 
         else:
 
+           if not hasattr(entry, "risk_decision"):
 
-            entry.risk_decision = None
+               entry.risk_decision = None
 
 
 
@@ -1005,7 +879,7 @@ class MarketEngine:
 
             print(
 
-                f"Price  : {entry_price:.2f}"
+                f"Price  : {entry.current_price:.2f}"
 
             )
 
@@ -1595,9 +1469,7 @@ class MarketEngine:
 
                 f"Entry Zone : "
 
-                f"{risk.entry_low:.2f} - "
-
-                f"{risk.entry_high:.2f}"
+                f"{risk.entry:.2f}"
 
             )
 
