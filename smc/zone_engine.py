@@ -303,7 +303,10 @@ class ZoneEngine:
                     zone_type="Demand"
                 )
 
-                zone.fresh = True
+                zone.fresh = self.check_freshness(
+                    zone,
+                    index
+                )
 
                 zone.strength = self.calculate_strength(
                     displacement,
