@@ -104,13 +104,12 @@ class MarketEngine:
 
 
         """
-        Select OB using SMC priority.
+        Select relevant Order Block using SMC priority.
 
-        Priority:
-
-        1H Trend
-        15M Setup
-        5M Entry
+        Rules:
+        - Higher timeframe priority first
+        - Ignore broken/mitigated blocks
+        - Prefer blocks relevant to current price
         """
 
 
@@ -125,28 +124,99 @@ class MarketEngine:
         ]
 
 
+        current_price = getattr(
+            self.analysis.entry,
+            "current_price",
+            None
+        )
+
+
+        candidates = []
+
 
         for result in priority:
 
 
-
-            if result and result.order_blocks:
-
-
-
-                return sorted(
-
-                    result.order_blocks,
-
-                    key=lambda x: x.created_at,
-
-                    reverse=True
-
-                )[0]
+            if not result:
+                continue
 
 
+            blocks = getattr(
+                result,
+                "order_blocks",
+                []
+            )
 
-        return None
+
+            for block in blocks:
+
+
+                if getattr(block, "broken", False):
+                    continue
+
+
+                if getattr(block, "mitigated", False):
+                    continue
+
+
+                if current_price is not None:
+
+                    distance = abs(
+                        current_price -
+                        (
+                            block.low +
+                            block.high
+                        ) / 2
+                    )
+
+                else:
+
+                    distance = 999999
+
+
+                strength = getattr(
+                    block,
+                    "strength",
+                    0
+                )
+
+
+                created = getattr(
+                    block,
+                    "created_at",
+                    0
+                )
+
+
+                candidates.append(
+                    (
+                        strength,
+                        -distance,
+                        created,
+                        block
+                    )
+                )
+
+
+            if candidates:
+                break
+
+
+        if not candidates:
+            return None
+
+
+        candidates.sort(
+            key=lambda x: (
+                x[0],
+                x[1],
+                x[2]
+            ),
+            reverse=True
+        )
+
+
+        return candidates[0][3]
 
 
 
