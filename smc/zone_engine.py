@@ -221,7 +221,7 @@ class ZoneEngine:
             100
         )
 
-        def check_freshness(
+    def check_freshness(
             self,
             zone,
             start
@@ -297,7 +297,7 @@ class ZoneEngine:
 
 
 
-        def merge_zones(
+    def merge_zones(
             self,
             zones
         ):
@@ -365,7 +365,7 @@ class ZoneEngine:
 
 
 
-        def detect_zones(
+    def detect_zones(
             self
         ):
 
@@ -573,7 +573,7 @@ class ZoneEngine:
 
 
 
-        def analyze(
+    def analyze(
             self
         ):
 
