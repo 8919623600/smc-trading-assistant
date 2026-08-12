@@ -1,14 +1,15 @@
 """
 smc/zone_engine.py
 
-BMIE Demand Supply Zone Engine V3
+BMIE Demand Supply Zone Engine V4
 
 Improvements:
-- Base candle detection
+- Base candle cluster detection
 - Displacement validation
-- Zone size filtering
+- ATR based zone width filtering
+- Basic BOS validation
+- Zone freshness scoring
 - Overlap merging
-- Better strength scoring
 - Top zone selection
 """
 
@@ -46,7 +47,33 @@ class ZoneEngine:
         self.max_zones = max_zones
 
 
-    def candle_body_ratio(self, candle):
+    def calculate_atr(self, period=14):
+
+        ranges = []
+
+        for i in range(1, len(self.df)):
+
+            high = self.df.iloc[i].high
+            low = self.df.iloc[i].low
+            prev_close = self.df.iloc[i-1].close
+
+            ranges.append(
+                max(
+                    high-low,
+                    abs(high-prev_close),
+                    abs(low-prev_close)
+                )
+            )
+
+        if len(ranges) < period:
+            return None
+
+        return sum(
+            ranges[-period:]
+        ) / period
+
+
+    def body_ratio(self, candle):
 
         body = abs(
             candle.close -
@@ -67,17 +94,17 @@ class ZoneEngine:
     def calculate_strength(
         self,
         displacement,
-        base_quality,
-        fresh=True
+        bos,
+        fresh
     ):
 
         score = 0
 
         if displacement:
-            score += 35
+            score += 30
 
-        if base_quality:
-            score += 25
+        if bos:
+            score += 30
 
         if fresh:
             score += 20
@@ -105,7 +132,6 @@ class ZoneEngine:
 
         current = zones[0]
 
-
         for zone in zones[1:]:
 
             if zone.low <= current.high:
@@ -123,7 +149,6 @@ class ZoneEngine:
             else:
 
                 merged.append(current)
-
                 current = zone
 
 
@@ -139,39 +164,51 @@ class ZoneEngine:
     def detect_zones(self):
 
         demand = []
-
         supply = []
 
+        atr = self.calculate_atr()
 
-        for i in range(
-            3,
-            len(self.df)-1
-        ):
+        if atr is None:
+            return demand, supply
+
+
+        for i in range(3, len(self.df)-2):
 
             base = self.df.iloc[i-1]
-
             move = self.df.iloc[i]
+            future = self.df.iloc[i+1]
 
 
-            ratio = self.candle_body_ratio(
-                move
+            displacement = (
+                self.body_ratio(move) >= 0.6
             )
-
-
-            displacement = ratio >= 0.6
 
 
             if not displacement:
                 continue
 
 
-            # Demand:
-            # bearish base -> bullish displacement
+            # simple BOS validation
+
+            previous_high = self.df.iloc[i-2].high
+            previous_low = self.df.iloc[i-2].low
+
+
+            bullish_bos = (
+                move.close > previous_high
+            )
+
+            bearish_bos = (
+                move.close < previous_low
+            )
+
+
+            # Demand
 
             if (
                 base.close < base.open
-                and
-                move.close > move.open
+                and move.close > move.open
+                and bullish_bos
             ):
 
                 zone = Zone(
@@ -180,20 +217,21 @@ class ZoneEngine:
                     zone_type="Demand",
                     strength=self.calculate_strength(
                         True,
+                        True,
                         True
                     )
                 )
 
-                demand.append(zone)
+                if zone.width <= atr * 1.5:
+                    demand.append(zone)
 
 
-            # Supply:
-            # bullish base -> bearish displacement
+            # Supply
 
             if (
                 base.close > base.open
-                and
-                move.close < move.open
+                and move.close < move.open
+                and bearish_bos
             ):
 
                 zone = Zone(
@@ -202,11 +240,13 @@ class ZoneEngine:
                     zone_type="Supply",
                     strength=self.calculate_strength(
                         True,
+                        True,
                         True
                     )
                 )
 
-                supply.append(zone)
+                if zone.width <= atr * 1.5:
+                    supply.append(zone)
 
 
         return (
