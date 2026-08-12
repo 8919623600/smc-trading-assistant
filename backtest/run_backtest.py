@@ -161,6 +161,11 @@ class BMIEBacktest:
 
             entry_time = signal.get("time")
 
+            print(
+                "SIGNAL TIME:",
+                entry_time
+            )
+
 
             future_candles = data["5m"][
                 data["5m"]["time"] > entry_time
