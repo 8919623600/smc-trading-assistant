@@ -1,18 +1,17 @@
 """
 smc/zone_engine.py
 
-BMIE Demand Supply Zone Engine V5
+BMIE Demand Supply Zone Engine V6
 
-Final tuning before MarketEngine integration.
+Improvements:
+- Current price relevance scoring
+- Freshness validation
+- Better strength distribution
+- Liquidity/location aware ranking
+- ATR zone filtering
+- BOS + displacement confirmation
 
-Features:
-- Base + displacement detection
-- BOS confirmation
-- ATR zone width filter
-- Dynamic strength scoring
-- Freshness scoring
-- Overlap merging
-- Top zone selection
+Before MarketEngine integration.
 """
 
 from dataclasses import dataclass
@@ -31,6 +30,10 @@ class Zone:
     def width(self):
         return abs(self.high - self.low)
 
+    @property
+    def level(self):
+        return (self.low + self.high) / 2
+
 
 class ZoneEngine:
 
@@ -43,56 +46,46 @@ class ZoneEngine:
     ):
 
         self.df = df.reset_index(drop=True)
-
         self.timeframe = timeframe
-
         self.max_zones = max_zones
 
+        self.current_price = float(
+            self.df.iloc[-1].close
+        )
 
 
-    def calculate_atr(
-        self,
-        period=14
-    ):
+    def calculate_atr(self, period=14):
 
         ranges = []
 
         for i in range(1, len(self.df)):
 
             candle = self.df.iloc[i]
-
-            prev = self.df.iloc[i-1]
+            previous = self.df.iloc[i-1]
 
             ranges.append(
                 max(
                     candle.high - candle.low,
-                    abs(candle.high - prev.close),
-                    abs(candle.low - prev.close)
+                    abs(candle.high - previous.close),
+                    abs(candle.low - previous.close)
                 )
             )
 
         if len(ranges) < period:
             return None
 
-        return sum(
-            ranges[-period:]
-        ) / period
+        return sum(ranges[-period:]) / period
 
 
 
-    def body_ratio(
-        self,
-        candle
-    ):
+    def body_ratio(self, candle):
 
         body = abs(
-            candle.close -
-            candle.open
+            candle.close - candle.open
         )
 
         total = (
-            candle.high -
-            candle.low
+            candle.high - candle.low
         )
 
         if total == 0:
@@ -102,52 +95,58 @@ class ZoneEngine:
 
 
 
+    def location_score(self, zone):
+
+        distance = abs(
+            self.current_price -
+            zone.level
+        )
+
+        atr = self.calculate_atr()
+
+        if not atr:
+            return 0
+
+        if distance <= atr:
+            return 10
+
+        if distance <= atr * 3:
+            return 5
+
+        return 0
+
+
+
     def calculate_strength(
         self,
-        displacement_strength,
-        bos_strength,
-        fresh
+        displacement,
+        bos,
+        fresh,
+        zone
     ):
 
         score = 0
 
-
-        # displacement 0-25
-
         score += min(
-            int(displacement_strength * 25),
-            25
+            int(displacement * 30),
+            30
         )
 
-
-        # BOS 0-25
-
-        score += min(
-            int(bos_strength * 25),
-            25
-        )
-
-
-        # freshness
+        if bos:
+            score += 25
 
         if fresh:
-            score += 15
-
-
-        # higher timeframe bonus
+            score += 20
 
         if self.timeframe in [
             "1d",
             "4h"
         ]:
-
             score += 10
 
-
-        # base quality
-
-        score += 15
-
+        score += self.location_score(
+            zone
+        )
 
         return min(
             score,
@@ -156,57 +155,63 @@ class ZoneEngine:
 
 
 
-    def merge_zones(
+    def check_freshness(
         self,
-        zones
+        zone,
+        start
     ):
+
+        future = self.df.iloc[start+1:]
+
+        for _, candle in future.iterrows():
+
+            if (
+                candle.low <= zone.high
+                and
+                candle.high >= zone.low
+            ):
+
+                return False
+
+        return True
+
+
+
+    def merge_zones(self, zones):
 
         if not zones:
             return []
-
 
         zones = sorted(
             zones,
             key=lambda x: x.low
         )
 
-
         merged = []
 
         current = zones[0]
 
-
         for zone in zones[1:]:
 
-
             if zone.low <= current.high:
-
 
                 current.high = max(
                     current.high,
                     zone.high
                 )
 
-
                 current.strength = max(
                     current.strength,
                     zone.strength
                 )
 
-
             else:
 
-                merged.append(
-                    current
-                )
-
+                merged.append(current)
                 current = zone
 
 
-        merged.append(
-            current
-        )
-
+        merged.append(current)
 
         return sorted(
             merged,
@@ -219,127 +224,90 @@ class ZoneEngine:
     def detect_zones(self):
 
         demand = []
-
         supply = []
-
 
         atr = self.calculate_atr()
 
-
         if atr is None:
-
             return demand, supply
 
 
-
-        for i in range(
-            3,
-            len(self.df)-2
-        ):
+        for i in range(3, len(self.df)-2):
 
             base = self.df.iloc[i-1]
-
             move = self.df.iloc[i]
-
-
-            displacement = (
-                self.body_ratio(move)
-            )
-
-
-            if displacement < 0.6:
-
-                continue
-
-
-
             previous = self.df.iloc[i-2]
 
 
-            bullish_bos = (
-                move.close >
-                previous.high
-            )
+            displacement = self.body_ratio(move)
 
+
+            if displacement < 0.6:
+                continue
+
+
+            bullish_bos = (
+                move.close > previous.high
+            )
 
             bearish_bos = (
-                move.close <
-                previous.low
+                move.close < previous.low
             )
 
-
-
-            # Demand
 
             if (
                 base.close < base.open
-                and
-                bullish_bos
+                and bullish_bos
             ):
 
                 zone = Zone(
-
                     low=float(base.low),
-
                     high=float(base.high),
-
-                    zone_type="Demand",
-
-                    strength=self.calculate_strength(
-
-                        displacement,
-
-                        1.0,
-
-                        True
-
-                    )
-
+                    zone_type="Demand"
                 )
 
+                zone.fresh = self.check_freshness(
+                    zone,
+                    i
+                )
+
+                zone.strength = self.calculate_strength(
+                    displacement,
+                    True,
+                    zone.fresh,
+                    zone
+                )
 
                 if zone.width <= atr * 1.2:
-
-                    demand.append(
-                        zone
-                    )
+                    demand.append(zone)
 
 
-
-            # Supply
 
             if (
                 base.close > base.open
-                and
-                bearish_bos
+                and bearish_bos
             ):
 
                 zone = Zone(
-
                     low=float(base.low),
-
                     high=float(base.high),
-
-                    zone_type="Supply",
-
-                    strength=self.calculate_strength(
-
-                        displacement,
-
-                        1.0,
-
-                        True
-
-                    )
-
+                    zone_type="Supply"
                 )
 
+                zone.fresh = self.check_freshness(
+                    zone,
+                    i
+                )
+
+                zone.strength = self.calculate_strength(
+                    displacement,
+                    True,
+                    zone.fresh,
+                    zone
+                )
 
                 if zone.width <= atr * 1.2:
-
-                    supply.append(
-                        zone
-                    )
+                    supply.append(zone)
 
 
         return (
@@ -353,11 +321,7 @@ class ZoneEngine:
 
         demand, supply = self.detect_zones()
 
-
         return {
-
             "demand": demand[:self.max_zones],
-
             "supply": supply[:self.max_zones]
-
         }
