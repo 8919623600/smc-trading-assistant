@@ -1,16 +1,17 @@
 """
 smc/zone_selector.py
 
-BMIE Zone Selector V1
+BMIE Zone Selector V2
 
 Purpose:
+
 - Select relevant cached demand/supply zones
+- Filter invalidated zones
 - Filter zones by current price
 - Rank zones by strength and distance
-- Provide logical targets for MarketEngine
+- Provide logical targets and entries for MarketEngine
 """
 
-from dataclasses import dataclass
 
 
 class ZoneSelector:
@@ -28,6 +29,41 @@ class ZoneSelector:
 
 
 
+    # ======================================================
+    # Zone Invalidation
+    # ======================================================
+
+    def is_invalidated(
+        self,
+        zone
+    ):
+
+        # Supply broken by bullish move
+        if zone.zone_type == "Supply":
+
+            if self.current_price > zone.high:
+
+                return True
+
+
+
+        # Demand broken by bearish move
+        if zone.zone_type == "Demand":
+
+            if self.current_price < zone.low:
+
+                return True
+
+
+
+        return False
+
+
+
+    # ======================================================
+    # Distance From Current Price
+    # ======================================================
+
     def distance_from_price(
         self,
         zone
@@ -38,14 +74,20 @@ class ZoneSelector:
             return 0
 
 
+
         if self.current_price < zone.low:
 
             return zone.low - self.current_price
 
 
+
         return self.current_price - zone.high
 
 
+
+    # ======================================================
+    # Zone Relevance Score
+    # ======================================================
 
     def relevance_score(
         self,
@@ -60,24 +102,34 @@ class ZoneSelector:
         score = zone.strength
 
 
+
         if distance == 0:
 
             score += 30
 
+
+
         elif self.max_distance:
+
 
             if distance <= self.max_distance:
 
                 score += 20
+
 
             else:
 
                 score -= 20
 
 
+
         return score
 
 
+
+    # ======================================================
+    # Select Target Zone
+    # ======================================================
 
     def select_target(
         self,
@@ -90,19 +142,35 @@ class ZoneSelector:
             return None
 
 
+
         candidates = []
+
 
 
         for zone in zones:
 
 
-            # Bullish trade targets supply above price
+
+            # Ignore already broken zones
+
+            if self.is_invalidated(zone):
+
+                continue
+
+
+
+            # ==========================
+            # Bullish Target
+            # Supply above price
+            # ==========================
 
             if direction == "Bullish":
+
 
                 if zone.zone_type != "Supply":
 
                     continue
+
 
 
                 if zone.low <= self.current_price:
@@ -111,13 +179,18 @@ class ZoneSelector:
 
 
 
-            # Bearish trade targets demand below price
+            # ==========================
+            # Bearish Target
+            # Demand below price
+            # ==========================
 
             if direction == "Bearish":
+
 
                 if zone.zone_type != "Demand":
 
                     continue
+
 
 
                 if zone.high >= self.current_price:
@@ -131,6 +204,7 @@ class ZoneSelector:
             )
 
 
+
             candidates.append(
                 (
                     score,
@@ -139,9 +213,11 @@ class ZoneSelector:
             )
 
 
+
         if not candidates:
 
             return None
+
 
 
         candidates.sort(
@@ -150,9 +226,14 @@ class ZoneSelector:
         )
 
 
+
         return candidates[0][1]
 
 
+
+    # ======================================================
+    # Select Entry Zone
+    # ======================================================
 
     def select_entry_zone(
         self,
@@ -165,29 +246,49 @@ class ZoneSelector:
             return None
 
 
+
         candidates = []
+
 
 
         for zone in zones:
 
 
+
+            # Ignore invalidated zones
+
+            if self.is_invalidated(zone):
+
+                continue
+
+
+
+            # Bullish entry = Demand
+
             if direction == "Bullish":
+
 
                 if zone.zone_type != "Demand":
 
                     continue
 
 
+
+            # Bearish entry = Supply
+
             if direction == "Bearish":
+
 
                 if zone.zone_type != "Supply":
 
                     continue
 
 
+
             score = self.relevance_score(
                 zone
             )
+
 
 
             candidates.append(
@@ -198,15 +299,18 @@ class ZoneSelector:
             )
 
 
+
         if not candidates:
 
             return None
+
 
 
         candidates.sort(
             key=lambda x: x[0],
             reverse=True
         )
+
 
 
         return candidates[0][1]
