@@ -572,13 +572,13 @@ class RiskManager:
                 risk_distance
             )
 
-                print(
+            print(
                     "RISK DEBUG:",
                     "ENTRY=", entry,
                     "SL=", stop_loss,
                     "TARGET=", target,
                     "RR=", round(rr,2)
-                )
+            )
 
 
 
