@@ -161,11 +161,10 @@ class ZoneEngine:
         start
     ):
 
-        future = self.df.iloc[
-            start+1:
-        ]
+        future = self.df.iloc[start+1:]
 
 
+        # Zone touched
         touched = (
             (future["low"] <= zone.high)
             &
@@ -176,6 +175,33 @@ class ZoneEngine:
         if touched.any():
 
             return False
+
+
+
+        # Supply invalidated by bullish breakout
+        if zone.zone_type == "Supply":
+
+            broken = (
+                future["close"] > zone.high
+            )
+
+            if broken.any():
+
+                return False
+
+
+
+        # Demand invalidated by bearish breakdown
+        if zone.zone_type == "Demand":
+
+            broken = (
+                future["close"] < zone.low
+            )
+
+            if broken.any():
+
+                return False
+
 
 
         return True
