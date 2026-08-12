@@ -1,11 +1,13 @@
 """
-BMIE Zone Selector Test
+BMIE Zone Selector Test V2
 
 Purpose:
 - Load cached zones
-- Test bullish target selection
-- Test bearish target selection
+- Use real latest market price from parquet
+- Test bullish and bearish selection
 """
+
+import pandas as pd
 
 from smc.zone_cache_manager import ZoneCacheManager
 from smc.zone_selector import ZoneSelector
@@ -46,14 +48,31 @@ def print_zone(title, zone):
 
     else:
 
-        print("No zone selected")
+        print("No valid zone selected")
+
 
 
 def main():
 
     print("==============================")
-    print("BMIE ZONE SELECTOR TEST")
+    print("BMIE ZONE SELECTOR TEST V2")
     print("==============================")
+
+
+    df = pd.read_parquet(
+        f"backtest/cache/{SYMBOL}_{TIMEFRAME}.parquet"
+    )
+
+
+    current_price = float(
+        df.iloc[-1].close
+    )
+
+
+    print(
+        "Current Price:",
+        current_price
+    )
 
 
     cache = ZoneCacheManager()
@@ -74,65 +93,44 @@ def main():
         return
 
 
-    current_price = 4265.01
-
-
-    print(
-        "Current Price:",
-        current_price
-    )
-
-
     selector = ZoneSelector(
         current_price=current_price
     )
 
 
-    bullish_target = selector.select_target(
-        zones,
-        "Bullish"
-    )
-
-
-    bearish_target = selector.select_target(
-        zones,
-        "Bearish"
-    )
-
-
-    bullish_entry = selector.select_entry_zone(
-        zones,
-        "Bullish"
-    )
-
-
-    bearish_entry = selector.select_entry_zone(
-        zones,
-        "Bearish"
-    )
-
-
     print_zone(
         "BULLISH TARGET",
-        bullish_target
+        selector.select_target(
+            zones,
+            "Bullish"
+        )
     )
 
 
     print_zone(
         "BULLISH ENTRY ZONE",
-        bullish_entry
+        selector.select_entry_zone(
+            zones,
+            "Bullish"
+        )
     )
 
 
     print_zone(
         "BEARISH TARGET",
-        bearish_target
+        selector.select_target(
+            zones,
+            "Bearish"
+        )
     )
 
 
     print_zone(
         "BEARISH ENTRY ZONE",
-        bearish_entry
+        selector.select_entry_zone(
+            zones,
+            "Bearish"
+        )
     )
 
 
