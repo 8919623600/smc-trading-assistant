@@ -1,233 +1,226 @@
 """
 smc/zone_engine.py
 
-BMIE Demand Supply Zone Engine V1
+BMIE Zone Engine V2
 
 Purpose:
-- Detect institutional Demand and Supply zones
-- Designed for BMIE multi timeframe architecture
-- Initial standalone version
-- No MarketEngine integration yet
+- Detect cleaner SMC demand and supply zones
+- Avoid hundreds of weak zones
+- Require displacement
+- Merge overlapping zones
+- Rank zones by strength
 
-Flow:
-1D + 4H  -> Major zones
-1H + 15M -> Refinement
-5M        -> Entry confirmation only
+V2 Logic:
+1. Find base candles
+2. Confirm displacement move
+3. Create demand/supply zone
+4. Calculate strength
+5. Merge overlapping zones
+6. Return strongest zones
 """
 
 from dataclasses import dataclass
 
 
 @dataclass
-class DemandSupplyZone:
-
-    zone_type: str
-
-    high: float
-
+class Zone:
     low: float
-
-    timeframe: str
-
+    high: float
+    zone_type: str
     strength: int = 0
-
     fresh: bool = True
 
-    mitigated: bool = False
-
-    created_index: int = None
+    @property
+    def level(self):
+        return (self.low + self.high) / 2
 
 
 class ZoneEngine:
 
-
     def __init__(
         self,
         df,
-        timeframe
+        max_zones=3,
+        min_strength=70
     ):
-
         self.df = df
-
-        self.timeframe = timeframe
-
-        self.zones = []
+        self.max_zones = max_zones
+        self.min_strength = min_strength
 
 
-    # ======================================================
-    # Displacement Detection
-    # ======================================================
-
-    def is_bullish_displacement(
+    def calculate_strength(
         self,
-        candle
+        displacement=False,
+        fresh=True,
+        bos=False
     ):
 
-        body = abs(
-            candle["close"] -
-            candle["open"]
-        )
+        score = 0
 
-        candle_range = (
-            candle["high"] -
-            candle["low"]
-        )
+        if displacement:
+            score += 30
 
+        if fresh:
+            score += 20
 
-        if candle_range == 0:
+        if bos:
+            score += 30
 
-            return False
+        score += 20
 
-
-        return (
-            candle["close"] > candle["open"]
-            and
-            body / candle_range >= 0.6
-        )
+        return min(score, 100)
 
 
-    def is_bearish_displacement(
-        self,
-        candle
-    ):
+    def detect_zones(self):
 
-        body = abs(
-            candle["close"] -
-            candle["open"]
-        )
+        demand = []
+        supply = []
 
-        candle_range = (
-            candle["high"] -
-            candle["low"]
-        )
+        candles = self.df.reset_index(drop=True)
 
+        for i in range(2, len(candles)-2):
 
-        if candle_range == 0:
+            current = candles.iloc[i]
 
-            return False
+            previous = candles.iloc[i-1]
+
+            next_candle = candles.iloc[i+1]
 
 
-        return (
-            candle["open"] > candle["close"]
-            and
-            body / candle_range >= 0.6
-        )
+            body = abs(
+                current.close -
+                current.open
+            )
 
 
-    # ======================================================
-    # Demand Zone Detection
-    # ======================================================
-
-    def detect_demand_zones(self):
-
-        zones = []
+            candle_range = (
+                current.high -
+                current.low
+            )
 
 
-        for i in range(
-            2,
-            len(self.df) - 1
-        ):
+            if candle_range == 0:
+                continue
 
-            previous = self.df.iloc[i-1]
 
-            current = self.df.iloc[i]
+            strength_move = (
+                body / candle_range
+            )
 
+
+            displacement = strength_move > 0.6
+
+
+            # Demand:
+            # bearish candle followed by strong bullish move
 
             if (
-                previous["close"] < previous["open"]
-                and
-                self.is_bullish_displacement(current)
+                previous.close < previous.open
+                and current.close > current.open
+                and displacement
             ):
 
-                zone = DemandSupplyZone(
-
+                zone = Zone(
+                    low=previous.low,
+                    high=previous.high,
                     zone_type="Demand",
-
-                    high=float(previous["high"]),
-
-                    low=float(previous["low"]),
-
-                    timeframe=self.timeframe,
-
-                    strength=60,
-
-                    created_index=i
-
+                    strength=self.calculate_strength(
+                        displacement=True,
+                        fresh=True,
+                        bos=True
+                    )
                 )
 
-                zones.append(zone)
+                if zone.strength >= self.min_strength:
+                    demand.append(zone)
 
 
-        return zones
-
-
-    # ======================================================
-    # Supply Zone Detection
-    # ======================================================
-
-    def detect_supply_zones(self):
-
-        zones = []
-
-
-        for i in range(
-            2,
-            len(self.df) - 1
-        ):
-
-            previous = self.df.iloc[i-1]
-
-            current = self.df.iloc[i]
-
+            # Supply:
+            # bullish candle followed by strong bearish move
 
             if (
-                previous["close"] > previous["open"]
-                and
-                self.is_bearish_displacement(current)
+                previous.close > previous.open
+                and current.close < current.open
+                and displacement
             ):
 
-                zone = DemandSupplyZone(
-
+                zone = Zone(
+                    low=previous.low,
+                    high=previous.high,
                     zone_type="Supply",
-
-                    high=float(previous["high"]),
-
-                    low=float(previous["low"]),
-
-                    timeframe=self.timeframe,
-
-                    strength=60,
-
-                    created_index=i
-
+                    strength=self.calculate_strength(
+                        displacement=True,
+                        fresh=True,
+                        bos=True
+                    )
                 )
 
-                zones.append(zone)
+                if zone.strength >= self.min_strength:
+                    supply.append(zone)
 
 
-        return zones
+        return (
+            self.merge_zones(demand)[:self.max_zones],
+            self.merge_zones(supply)[:self.max_zones]
+        )
 
 
-    # ======================================================
-    # Analyze Zones
-    # ======================================================
+    def merge_zones(
+        self,
+        zones
+    ):
+
+        if not zones:
+            return []
+
+
+        zones = sorted(
+            zones,
+            key=lambda x: x.low
+        )
+
+
+        merged = []
+
+
+        current = zones[0]
+
+
+        for zone in zones[1:]:
+
+            if zone.low <= current.high:
+
+                current.high = max(
+                    current.high,
+                    zone.high
+                )
+
+                current.strength = max(
+                    current.strength,
+                    zone.strength
+                )
+
+            else:
+
+                merged.append(current)
+                current = zone
+
+
+        merged.append(current)
+
+
+        return sorted(
+            merged,
+            key=lambda x: x.strength,
+            reverse=True
+        )
+
 
     def analyze(self):
 
-        demand_zones = (
-            self.detect_demand_zones()
-        )
+        demand, supply = self.detect_zones()
 
-
-        supply_zones = (
-            self.detect_supply_zones()
-        )
-
-
-        self.zones = (
-            demand_zones +
-            supply_zones
-        )
-
-
-        return self.zones
+        return {
+            "demand": demand,
+            "supply": supply
+        }
