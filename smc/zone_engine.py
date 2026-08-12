@@ -161,17 +161,22 @@ class ZoneEngine:
         start
     ):
 
-        future = self.df.iloc[start+1:]
+        future = self.df.iloc[
+            start+1:
+        ]
 
-        for _, candle in future.iterrows():
 
-            if (
-                candle.low <= zone.high
-                and
-                candle.high >= zone.low
-            ):
+        touched = (
+            (future["low"] <= zone.high)
+            &
+            (future["high"] >= zone.low)
+        )
 
-                return False
+
+        if touched.any():
+
+            return False
+
 
         return True
 
@@ -233,6 +238,12 @@ class ZoneEngine:
 
 
         for i in range(3, len(self.df)-2):
+
+            if i % 500 == 0:
+                print(
+                    "Processing zone candle:",
+                    i
+                )
 
             base = self.df.iloc[i-1]
             move = self.df.iloc[i]
