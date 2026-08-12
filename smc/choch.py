@@ -44,10 +44,12 @@ class CHoCHEngine:
 
         df = self.context.df
 
+        closes = df["close"].values
+
         latest_event = self._empty_event()
 
 
-        for swing in self.context.swing_highs:
+        for swing in self.context.swing_highs[-5:]:
 
             if swing.time not in df.index:
                 continue
@@ -60,8 +62,9 @@ class CHoCHEngine:
 
             for i in range(start_index + 1, len(df)):
 
+                closes = df["close"].values
                 close = float(
-                    df.iloc[i]["close"]
+                    closes[i]
                 )
 
 
@@ -97,10 +100,12 @@ class CHoCHEngine:
 
         df = self.context.df
 
+        closes = df["close"].values
+
         latest_event = self._empty_event()
 
 
-        for swing in self.context.swing_lows:
+        for swing in self.context.swing_lows[-5:]:
 
             if swing.time not in df.index:
                 continue
@@ -114,7 +119,7 @@ class CHoCHEngine:
             for i in range(start_index + 1, len(df)):
 
                 close = float(
-                    df.iloc[i]["close"]
+                    closes[i]
                 )
 
 
