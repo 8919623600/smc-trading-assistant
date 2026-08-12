@@ -20,8 +20,6 @@ Author: BMIE Project
 """
 
 
-from types import SimpleNamespace
-
 from analyzer import analyze_market
 
 
@@ -47,8 +45,6 @@ from smc.entry_confirmation import EntryConfirmationEngine
 from smc.risk_manager import RiskManager
 
 from smc.liquidity import LiquidityEngine
-from smc.zone_cache_manager import ZoneCacheManager
-from smc.zone_selector import ZoneSelector
 
 from smc.setup_quality import SetupQualityEngine
 
@@ -79,7 +75,6 @@ class MarketEngine:
         self.analysis_cache = analysis_cache
 
         self.backtest = backtest
-        self.zone_cache = ZoneCacheManager()
 
         self.analysis = MarketAnalysis()
 
@@ -88,8 +83,6 @@ class MarketEngine:
 
 
         self.selected_liquidity = None
-
-        self.target_liquidity = None
 
 
         self.setup_quality = None
@@ -233,228 +226,6 @@ class MarketEngine:
 # ================= PART 1 END =================
 
 # ================= PART 2 START =================
-
-
-    # ======================================================
-    # Select Target Liquidity
-    # ======================================================
-
-    def select_target_zone(
-        self,
-        direction,
-        symbol,
-        timeframe,
-        current_price
-    ):
-
-        zones = self.zone_cache.get_zones(
-            symbol,
-            timeframe
-        )
-
-
-        if not zones:
-
-            return None
-
-
-        selector = ZoneSelector(
-            current_price=current_price
-        )
-
-
-        return selector.select_target(
-            zones,
-            direction
-        )
-
-
-
-
-    # ADD NEW FUNCTION HERE 👇
-
-    def convert_zone_to_target(
-        self,
-        zone,
-        direction
-    ):
-
-        if not zone:
-            return None
-
-
-        if direction == "Bullish":
-
-            return SimpleNamespace(
-                level=zone.low,
-                zone=zone
-            )
-
-
-        if direction == "Bearish":
-
-            return SimpleNamespace(
-                level=zone.high,
-                zone=zone
-            )
-
-
-        return None
-
-
-
-    def select_target_liquidity(
-        self,
-        direction,
-        entry_price
-    ):
-
-        entry = self.analysis.entry
-
-        if not entry:
-            return None
-
-
-        if entry_price is None:
-            return None
-
-        print(
-            "TARGET DEBUG:",
-            "direction=",
-            direction,
-            "entry_price=",
-            entry_price
-        )
-
-
-        liquidity_engine = LiquidityEngine(
-
-            entry.swing_highs,
-
-            entry.swing_lows,
-
-            entry.df
-
-        )
-
-
-        zones = liquidity_engine.analyze()
-
-
-        candidates = []
-
-
-        for zone in zones:
-
-            print(
-                "ZONE DEBUG:",
-                "side=",
-                zone.side,
-                "level=",
-                zone.level
-            )
-
-
-
-            if direction == "Bullish":
-
-
-                # Bullish target must be above entry
-
-                if zone.side != "Buy-side":
-                    continue
-
-
-                if zone.level <= entry_price:
-                    continue
-
-
-
-            elif direction == "Bearish":
-
-
-                # Bearish target must be below entry
-
-                if zone.side != "Sell-side":
-                    continue
-
-
-                if zone.level >= entry_price:
-                    continue
-
-
-
-            candidates.append(zone)
-
-
-
-        if candidates:
-
-            return sorted(
-
-                candidates,
-
-                key=lambda x: abs(entry_price - x.level)
-
-            )[0]
-
-
-
-        # ==================================================
-        # Swing fallback
-        # ==================================================
-
-        if direction == "Bullish":
-
-
-            highs = [
-
-                x.price
-
-                for x in entry.swing_highs
-
-                if x.price > entry_price
-
-            ]
-
-
-            if highs:
-
-                return SimpleNamespace(
-
-                    level=min(highs)
-
-                )
-
-
-
-        if direction == "Bearish":
-
-
-            lows = [
-
-                x.price
-
-                for x in entry.swing_lows
-
-                if x.price < entry_price
-
-            ]
-
-
-            if lows:
-
-                return SimpleNamespace(
-
-                    level=max(lows)
-
-                )
-
-
-
-        # No valid directional target
-
-        return None
 
 
     # ======================================================
@@ -646,43 +417,6 @@ class MarketEngine:
 
             )
 
-        )
-
-
-        # ==================================================
-        # Calculate Trade Entry Price From Order Block
-        # ==================================================
-
-        entry_price = None
-
-
-        if self.selected_order_block:
-
-            entry_price = (
-
-                self.selected_order_block.high +
-
-                self.selected_order_block.low
-
-            ) / 2
-
-
-
-        zone_target = self.select_target_zone(
-            direction,
-            self.session.symbol,
-            "4h",
-            self.analysis.entry.current_price
-        )
-
-        self.target_liquidity = self.convert_zone_to_target(
-            zone_target,
-            direction
-        )
-
-        print(
-            "AFTER TARGET SELECTION:",
-            self.target_liquidity
         )
 
 
@@ -886,19 +620,6 @@ class MarketEngine:
 
 
 
-            # ==================================================
-            # Attach Direction To Trade Decision
-            # ==================================================
-
-            entry_direction = entry_validator.get_direction()
-
-
-            if entry_direction:
-
-                trade_decision.direction = entry_direction
-
-
-
             entry.trade_decision = trade_decision
 
             # ==================================================
@@ -1007,7 +728,7 @@ class MarketEngine:
 
                 order_blocks,
 
-                liquidity=self.target_liquidity,
+                liquidity=self.selected_liquidity,
 
             )
 

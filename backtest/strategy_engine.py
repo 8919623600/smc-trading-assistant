@@ -56,18 +56,16 @@ class StrategyEngine:
             .iloc[index]["time"]
         )
 
-        for timeframe in ["1d", "4h", "1h"]:
-
-            if timeframe not in self.htf_cache:
-
-                self.htf_cache[timeframe] = (
-                    timeframe_data[timeframe].copy()
-                )
-
-            snapshot[timeframe] = self.htf_cache[timeframe]
-
-
-        for timeframe in ["15m", "5m"]:
+        # IMPORTANT: In backtesting, every timeframe must contain
+        # only candles available at the current 5M candle time.
+        # This prevents future-data leakage.
+        for timeframe in [
+            "1d",
+            "4h",
+            "1h",
+            "15m",
+            "5m"
+        ]:
 
             snapshot[timeframe] = (
                 timeframe_data[timeframe]
@@ -75,7 +73,7 @@ class StrategyEngine:
                     timeframe_data[timeframe]["time"]
                     <= current_time
                 ]
-            )
+            ).copy()
 
         return snapshot
 
@@ -191,12 +189,30 @@ class StrategyEngine:
             )
 
 
+        confirmation_status = ""
+
+        if engine.entry_confirmation:
+
+            confirmation_status = engine.entry_confirmation.get(
+                "status",
+                ""
+            )
+
+        risk_valid = bool(
+            risk_available
+            and
+            getattr(risk, "valid", False)
+        )
+
+
         if (
             grade in ["A", "B"]
             and
             confidence >= 65
             and
-            risk_available
+            confirmation_status == "ENTRY CONFIRMED"
+            and
+            risk_valid
         ):
 
             ob = engine.selected_order_block
@@ -240,11 +256,6 @@ class StrategyEngine:
         signals = []
 
 
-        if self.analysis_cache is None:
-
-            self.analysis_cache = AnalysisCache(symbol)
-
-
         candles = timeframe_data["5m"]
 
         end_index = min(
@@ -284,6 +295,7 @@ class StrategyEngine:
                 engine = MarketEngine(
                     session,
                     market_data=market_snapshot,
+                    backtest=True,
                     analysis_cache=self.analysis_cache
                 )
 

@@ -31,11 +31,34 @@ class BMIEBacktest:
 
     def map_signal_to_trade(self, signal):
 
-        if signal.get("signal") not in [
-            "TRADE READY"
-        ]:
-
+        if signal.get("signal") != "TRADE READY":
             return None
+
+
+        confirmation = signal.get(
+            "confirmation_status"
+        )
+
+
+        if confirmation not in [
+            "ENTRY CONFIRMED"
+        ]:
+            return None
+
+
+        risk = signal.get(
+            "risk_decision"
+        )
+
+
+        if risk:
+
+            if not getattr(
+                risk,
+                "valid",
+                False
+            ):
+                return None
 
 
         entry = signal.get("entry")
@@ -170,6 +193,11 @@ class BMIEBacktest:
             future_candles = data["5m"][
                 data["5m"]["time"] > entry_time
             ]
+
+            print(
+                "SIMULATING TRADE:",
+                trade
+            )
 
 
             result = simulator.simulate(

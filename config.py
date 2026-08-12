@@ -71,7 +71,7 @@ MAX_DAILY_LOSS_PERCENT = 3.0
 TARGET_DAILY_PROFIT_PERCENT = 6.0
 
 # Minimum acceptable Risk : Reward
-MINIMUM_RISK_REWARD = 3.0
+MINIMUM_RISK_REWARD = 2.0
 
 # Minimum confidence score required
 MINIMUM_CONFIDENCE = 85
