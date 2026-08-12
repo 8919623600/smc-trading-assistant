@@ -1,13 +1,9 @@
 """
-BMIE Zone Engine Test Runner
+BMIE Zone Engine Compact Test Runner
 
 Purpose:
-- Test Demand/Supply Zone detection independently
-- Does NOT connect with MarketEngine
-- Reads existing BMIE parquet cache
-
-Run:
-python test_zone_engine.py
+- Display only top Demand/Supply zones
+- Easy TradingView comparison
 """
 
 import pandas as pd
@@ -25,6 +21,10 @@ TIMEFRAMES = [
 ]
 
 
+MAX_DISPLAY = 3
+
+
+
 def load_cache(timeframe):
 
     path = (
@@ -32,89 +32,78 @@ def load_cache(timeframe):
         f"{SYMBOL}_{timeframe}.parquet"
     )
 
-    print(
-        f"Loading {path}"
-    )
-
     return pd.read_parquet(path)
 
 
 
-def print_zones(
+def print_compact(
     timeframe,
-    zones
+    result
 ):
 
     print()
-    print("=" * 60)
+    print("=" * 35)
+    print(timeframe.upper())
+    print("=" * 35)
+
+
+    demand = result.get(
+        "demand",
+        []
+    )[:MAX_DISPLAY]
+
+
+    supply = result.get(
+        "supply",
+        []
+    )[:MAX_DISPLAY]
+
+
+    print()
     print(
-        f"TIMEFRAME: {timeframe}"
+        f"DEMAND ({len(demand)})"
     )
-    print("=" * 60)
 
 
-    demand = [
-        z for z in zones
-        if z.zone_type == "Demand"
-    ]
+    for i, zone in enumerate(
+        demand,
+        1
+    ):
 
-
-    supply = [
-        z for z in zones
-        if z.zone_type == "Supply"
-    ]
-
-
-    print()
-    print("DEMAND ZONES")
-    print("-" * 30)
-
-
-    if demand:
-
-        for zone in demand:
-
-            print(
-                f"{zone.low} - {zone.high} | "
-                f"Strength={zone.strength} | "
-                f"Fresh={zone.fresh}"
-            )
-
-    else:
-
-        print("No demand zones found")
+        print(
+            f"{i}) {zone.low:.2f} - {zone.high:.2f} "
+            f"({zone.strength})"
+        )
 
 
     print()
-    print("SUPPLY ZONES")
-    print("-" * 30)
+
+    print(
+        f"SUPPLY ({len(supply)})"
+    )
 
 
-    if supply:
+    for i, zone in enumerate(
+        supply,
+        1
+    ):
 
-        for zone in supply:
-
-            print(
-                f"{zone.low} - {zone.high} | "
-                f"Strength={zone.strength} | "
-                f"Fresh={zone.fresh}"
-            )
-
-    else:
-
-        print("No supply zones found")
+        print(
+            f"{i}) {zone.low:.2f} - {zone.high:.2f} "
+            f"({zone.strength})"
+        )
 
 
 
 def main():
 
-
     print(
-        "BMIE DEMAND SUPPLY ZONE TEST"
+        "BMIE DEMAND SUPPLY ZONE SUMMARY"
     )
 
 
     for timeframe in TIMEFRAMES:
+
 
         df = load_cache(
             timeframe
@@ -122,17 +111,16 @@ def main():
 
 
         engine = ZoneEngine(
-            df,
-            timeframe
+            df
         )
 
 
-        zones = engine.analyze()
+        result = engine.analyze()
 
 
-        print_zones(
+        print_compact(
             timeframe,
-            zones
+            result
         )
 
 
