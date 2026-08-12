@@ -47,6 +47,8 @@ from smc.entry_confirmation import EntryConfirmationEngine
 from smc.risk_manager import RiskManager
 
 from smc.liquidity import LiquidityEngine
+from smc.zone_cache_manager import ZoneCacheManager
+from smc.zone_selector import ZoneSelector
 
 from smc.setup_quality import SetupQualityEngine
 
@@ -77,6 +79,7 @@ class MarketEngine:
         self.analysis_cache = analysis_cache
 
         self.backtest = backtest
+        self.zone_cache = ZoneCacheManager()
 
         self.analysis = MarketAnalysis()
 
@@ -235,6 +238,94 @@ class MarketEngine:
     # ======================================================
     # Select Target Liquidity
     # ======================================================
+
+    def select_target_zone(
+        self,
+        direction,
+        symbol,
+        timeframe,
+        current_price
+    ):
+
+        zones = self.zone_cache.get_zones(
+            symbol,
+            timeframe
+        )
+
+
+        if not zones:
+
+            return None
+
+
+        selector = ZoneSelector(
+            current_price=current_price
+        )
+
+
+        return selector.select_target(
+            zones,
+            direction
+        )
+
+
+    def select_target_zone(
+        self,
+        direction,
+        symbol,
+        timeframe,
+        current_price
+    ):
+
+        zones = self.zone_cache.get_zones(
+            symbol,
+            timeframe
+        )
+
+        if not zones:
+            return None
+
+        selector = ZoneSelector(
+            current_price=current_price
+        )
+
+        return selector.select_target(
+            zones,
+            direction
+        )
+
+
+    # ADD NEW FUNCTION HERE 👇
+
+    def convert_zone_to_target(
+        self,
+        zone,
+        direction
+    ):
+
+        if not zone:
+            return None
+
+
+        if direction == "Bullish":
+
+            return SimpleNamespace(
+                level=zone.low,
+                zone=zone
+            )
+
+
+        if direction == "Bearish":
+
+            return SimpleNamespace(
+                level=zone.high,
+                zone=zone
+            )
+
+
+        return None
+
+
 
     def select_target_liquidity(
         self,
@@ -601,15 +692,16 @@ class MarketEngine:
 
 
 
-        self.target_liquidity = (
+        zone_target = self.select_target_zone(
+            direction,
+            self.session.symbol,
+            "4h",
+            self.analysis.entry.current_price
+        )
 
-            self.select_target_liquidity(
-
-                direction,
-                entry_price
-
-            )
-
+        self.target_liquidity = self.convert_zone_to_target(
+            zone_target,
+            direction
         )
 
         print(
