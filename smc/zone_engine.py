@@ -1,14 +1,16 @@
 """
 smc/zone_engine.py
 
-BMIE Demand Supply Zone Engine V4
+BMIE Demand Supply Zone Engine V5
 
-Improvements:
-- Base candle cluster detection
-- Displacement validation
-- ATR based zone width filtering
-- Basic BOS validation
-- Zone freshness scoring
+Final tuning before MarketEngine integration.
+
+Features:
+- Base + displacement detection
+- BOS confirmation
+- ATR zone width filter
+- Dynamic strength scoring
+- Freshness scoring
 - Overlap merging
 - Top zone selection
 """
@@ -47,21 +49,25 @@ class ZoneEngine:
         self.max_zones = max_zones
 
 
-    def calculate_atr(self, period=14):
+
+    def calculate_atr(
+        self,
+        period=14
+    ):
 
         ranges = []
 
         for i in range(1, len(self.df)):
 
-            high = self.df.iloc[i].high
-            low = self.df.iloc[i].low
-            prev_close = self.df.iloc[i-1].close
+            candle = self.df.iloc[i]
+
+            prev = self.df.iloc[i-1]
 
             ranges.append(
                 max(
-                    high-low,
-                    abs(high-prev_close),
-                    abs(low-prev_close)
+                    candle.high - candle.low,
+                    abs(candle.high - prev.close),
+                    abs(candle.low - prev.close)
                 )
             )
 
@@ -73,86 +79,134 @@ class ZoneEngine:
         ) / period
 
 
-    def body_ratio(self, candle):
+
+    def body_ratio(
+        self,
+        candle
+    ):
 
         body = abs(
             candle.close -
             candle.open
         )
 
-        rng = (
+        total = (
             candle.high -
             candle.low
         )
 
-        if rng == 0:
+        if total == 0:
             return 0
 
-        return body / rng
+        return body / total
+
 
 
     def calculate_strength(
         self,
-        displacement,
-        bos,
+        displacement_strength,
+        bos_strength,
         fresh
     ):
 
         score = 0
 
-        if displacement:
-            score += 30
 
-        if bos:
-            score += 30
+        # displacement 0-25
+
+        score += min(
+            int(displacement_strength * 25),
+            25
+        )
+
+
+        # BOS 0-25
+
+        score += min(
+            int(bos_strength * 25),
+            25
+        )
+
+
+        # freshness
 
         if fresh:
-            score += 20
+            score += 15
+
+
+        # higher timeframe bonus
 
         if self.timeframe in [
             "1d",
             "4h"
         ]:
-            score += 20
 
-        return min(score, 100)
+            score += 10
 
 
-    def merge_zones(self, zones):
+        # base quality
+
+        score += 15
+
+
+        return min(
+            score,
+            100
+        )
+
+
+
+    def merge_zones(
+        self,
+        zones
+    ):
 
         if not zones:
             return []
+
 
         zones = sorted(
             zones,
             key=lambda x: x.low
         )
 
+
         merged = []
 
         current = zones[0]
 
+
         for zone in zones[1:]:
 
+
             if zone.low <= current.high:
+
 
                 current.high = max(
                     current.high,
                     zone.high
                 )
 
+
                 current.strength = max(
                     current.strength,
                     zone.strength
                 )
 
+
             else:
 
-                merged.append(current)
+                merged.append(
+                    current
+                )
+
                 current = zone
 
 
-        merged.append(current)
+        merged.append(
+            current
+        )
+
 
         return sorted(
             merged,
@@ -161,92 +215,131 @@ class ZoneEngine:
         )
 
 
+
     def detect_zones(self):
 
         demand = []
+
         supply = []
+
 
         atr = self.calculate_atr()
 
+
         if atr is None:
+
             return demand, supply
 
 
-        for i in range(3, len(self.df)-2):
+
+        for i in range(
+            3,
+            len(self.df)-2
+        ):
 
             base = self.df.iloc[i-1]
+
             move = self.df.iloc[i]
-            future = self.df.iloc[i+1]
 
 
             displacement = (
-                self.body_ratio(move) >= 0.6
+                self.body_ratio(move)
             )
 
 
-            if not displacement:
+            if displacement < 0.6:
+
                 continue
 
 
-            # simple BOS validation
 
-            previous_high = self.df.iloc[i-2].high
-            previous_low = self.df.iloc[i-2].low
+            previous = self.df.iloc[i-2]
 
 
             bullish_bos = (
-                move.close > previous_high
+                move.close >
+                previous.high
             )
 
+
             bearish_bos = (
-                move.close < previous_low
+                move.close <
+                previous.low
             )
+
 
 
             # Demand
 
             if (
                 base.close < base.open
-                and move.close > move.open
-                and bullish_bos
+                and
+                bullish_bos
             ):
 
                 zone = Zone(
+
                     low=float(base.low),
+
                     high=float(base.high),
+
                     zone_type="Demand",
+
                     strength=self.calculate_strength(
-                        True,
-                        True,
+
+                        displacement,
+
+                        1.0,
+
                         True
+
                     )
+
                 )
 
-                if zone.width <= atr * 1.5:
-                    demand.append(zone)
+
+                if zone.width <= atr * 1.2:
+
+                    demand.append(
+                        zone
+                    )
+
 
 
             # Supply
 
             if (
                 base.close > base.open
-                and move.close < move.open
-                and bearish_bos
+                and
+                bearish_bos
             ):
 
                 zone = Zone(
+
                     low=float(base.low),
+
                     high=float(base.high),
+
                     zone_type="Supply",
+
                     strength=self.calculate_strength(
-                        True,
-                        True,
+
+                        displacement,
+
+                        1.0,
+
                         True
+
                     )
+
                 )
 
-                if zone.width <= atr * 1.5:
-                    supply.append(zone)
+
+                if zone.width <= atr * 1.2:
+
+                    supply.append(
+                        zone
+                    )
 
 
         return (
@@ -255,11 +348,16 @@ class ZoneEngine:
         )
 
 
+
     def analyze(self):
 
         demand, supply = self.detect_zones()
 
+
         return {
+
             "demand": demand[:self.max_zones],
+
             "supply": supply[:self.max_zones]
+
         }
