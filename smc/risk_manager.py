@@ -539,13 +539,46 @@ class RiskManager:
             risk_distance
         )
 
-        print(
-            "RISK DEBUG:",
-            "ENTRY=", entry,
-            "SL=", stop_loss,
-            "TARGET=", target,
-            "RR=", round(rr,2)
-        )
+        # ======================================================
+        # Maximum RR Cap
+        # ======================================================
+
+        if rr > self.maximum_rr:
+
+            if direction == "Bullish":
+
+                target = (
+                    entry +
+                    risk_distance *
+                    self.maximum_rr
+                )
+
+            else:
+
+                target = (
+                    entry -
+                    risk_distance *
+                    self.maximum_rr
+                )
+
+
+            reward_distance = abs(
+                target - entry
+            )
+
+
+            rr = (
+                reward_distance /
+                risk_distance
+            )
+
+                print(
+                    "RISK DEBUG:",
+                    "ENTRY=", entry,
+                    "SL=", stop_loss,
+                    "TARGET=", target,
+                    "RR=", round(rr,2)
+                )
 
 
 
