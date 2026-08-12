@@ -269,30 +269,6 @@ class MarketEngine:
         )
 
 
-    def select_target_zone(
-        self,
-        direction,
-        symbol,
-        timeframe,
-        current_price
-    ):
-
-        zones = self.zone_cache.get_zones(
-            symbol,
-            timeframe
-        )
-
-        if not zones:
-            return None
-
-        selector = ZoneSelector(
-            current_price=current_price
-        )
-
-        return selector.select_target(
-            zones,
-            direction
-        )
 
 
     # ADD NEW FUNCTION HERE 👇
