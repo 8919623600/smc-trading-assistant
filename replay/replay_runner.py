@@ -11,7 +11,7 @@ from backtest.historical_loader import HistoricalLoader
 from backtest.strategy_engine import StrategyEngine
 from engine.market_engine import MarketEngine
 from core.session import TradingSession
-from datetime import timezone, timedelta
+from datetime import datetime, timezone, timedelta
 
 
 import json
@@ -107,19 +107,22 @@ class ReplayRunner:
         )
 
 
-        if target_time.tzinfo is None:
+        # Convert string to datetime
+        if isinstance(target_time, str):
 
-            target_time_ist = (
-                target_time
-                .replace(
-                    tzinfo=timezone.utc
-                )
-                .astimezone(IST)
+            target_time = datetime.strptime(
+                target_time,
+                "%Y-%m-%d %H:%M:%S"
             )
 
-        else:
 
-            target_time_ist = target_time.astimezone(IST)
+        target_time_ist = (
+            target_time
+            .replace(
+                tzinfo=timezone.utc
+            )
+            .astimezone(IST)
+        )
 
 
         print(
