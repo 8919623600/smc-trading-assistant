@@ -190,6 +190,12 @@ class MarketEngine:
                     block.low
                 )
 
+                block_direction = getattr(
+                    block,
+                    "direction",
+                    None
+                )
+
 
                 # ==================================================
                 # Prevent Future Order Block Leakage
