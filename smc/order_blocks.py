@@ -489,6 +489,17 @@ class OrderBlockEngine:
             ):
 
                 # Ignore break if this is the BOS created by this OB
+                print(
+                    "MITIGATION BOS DEBUG:",
+                    "confirmed=",
+                    getattr(self.bos, "confirmed", None),
+                    "direction=",
+                    getattr(self.bos, "direction", None),
+                    "bos_time=",
+                    getattr(self.bos, "time", None),
+                    "block_created=",
+                    block.created_at
+                )
 
                 if (
                     self.bos
