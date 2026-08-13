@@ -498,20 +498,12 @@ class OrderBlockEngine:
                 ):
 
                     block.broken = False
-
                     block.status = "Fresh"
-
 
                 else:
 
                     block.broken = True
-
                     block.status = "Broken"
-
-
-                block.broken = True
-
-                block.status = "Broken"
 
 
 
