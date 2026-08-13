@@ -151,8 +151,8 @@ class BMIEBacktest:
             self.symbol,
             self.exchange,
             data,
-            start_index=100,
-            max_candles=100
+            start_index=4000,
+            max_candles=20
         )
 
 
