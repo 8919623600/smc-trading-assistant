@@ -1138,10 +1138,14 @@ class MarketEngine:
             entry_direction = entry_validator.get_direction()
 
 
-
             if entry_direction:
 
-                trade_decision.direction = entry_direction
+                print(
+                    "ENTRY VALIDATOR DIRECTION:",
+                    entry_direction,
+                    "IGNORED - KEEPING:",
+                    direction
+                )
 
 
             # ==================================================
