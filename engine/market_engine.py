@@ -1140,12 +1140,26 @@ class MarketEngine:
 
             if entry_direction:
 
-                print(
-                    "ENTRY VALIDATOR DIRECTION:",
-                    entry_direction,
-                    "IGNORED - KEEPING:",
-                    direction
-                )
+                if (
+                    entry_direction.lower()
+                    !=
+                    direction.lower()
+                ):
+
+                    print(
+                        "DIRECTION CONFLICT:",
+                        "CONFLUENCE=",
+                        direction,
+                        "ENTRY=",
+                        entry_direction
+                    )
+
+                    trade_decision.signal = "NO TRADE"
+
+
+                else:
+
+                    trade_decision.direction = direction
 
 
             # ==================================================
