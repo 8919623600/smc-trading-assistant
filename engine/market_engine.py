@@ -760,51 +760,6 @@ class MarketEngine:
 
 
         # ==================================================
-        # Select Target Liquidity After Final Direction
-        # ==================================================
-
-        entry_price = self.analysis.entry.current_price
-
-
-        liquidity_target = self.select_target_liquidity(
-            direction,
-            entry_price
-        )
-
-
-        if liquidity_target:
-
-            self.target_liquidity = liquidity_target
-
-
-        else:
-
-            # Fallback to Supply/Demand zone target
-
-            zone_target = self.select_target_zone(
-                direction,
-                self.session.symbol,
-                "4h",
-                entry_price
-            )
-
-
-            self.target_liquidity = self.convert_zone_to_target(
-                zone_target,
-                direction
-            )
-
-
-        print(
-            "AFTER TARGET SELECTION:",
-            self.target_liquidity
-        )
-
-
-
-
-
-        # ==================================================
         # Setup Quality Evaluation
         # ==================================================
 
@@ -1008,10 +963,57 @@ class MarketEngine:
             entry_direction = entry_validator.get_direction()
 
 
+
             if entry_direction:
 
                 trade_decision.direction = entry_direction
 
+
+            # ==================================================
+            # Select Target Liquidity After Final Entry Direction
+            # ==================================================
+
+            final_direction = getattr(
+                trade_decision,
+                "direction",
+                direction
+            )
+
+
+            entry_price = entry.current_price
+
+
+            liquidity_target = self.select_target_liquidity(
+                final_direction,
+                entry_price
+            )
+
+
+            if liquidity_target:
+
+                self.target_liquidity = liquidity_target
+
+
+            else:
+
+                zone_target = self.select_target_zone(
+                    final_direction,
+                    self.session.symbol,
+                    "4h",
+                    entry_price
+                )
+
+
+                self.target_liquidity = self.convert_zone_to_target(
+                    zone_target,
+                    final_direction
+                )
+
+
+            print(
+                "AFTER TARGET SELECTION:",
+                self.target_liquidity
+            )
 
 
             entry.trade_decision = trade_decision
