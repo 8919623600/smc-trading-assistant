@@ -178,6 +178,18 @@ class MarketEngine:
 
             for block in result.order_blocks:
 
+                print(
+                    "OB DEBUG:",
+                    "wanted=",
+                    direction,
+                    "found=",
+                    getattr(block,"direction",None),
+                    "high=",
+                    block.high,
+                    "low=",
+                    block.low
+                )
+
                 # Direction validation
 
                 block_direction = getattr(
