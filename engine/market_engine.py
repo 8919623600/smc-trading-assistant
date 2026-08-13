@@ -241,21 +241,20 @@ class MarketEngine:
                 # SMC OB Direction Validation
                 # ==================================================
 
-                # Bullish trade requires bearish order block candle
-                # Bearish trade requires bullish order block candle
+                if block_direction:
 
-                if direction == "Bullish":
+                    if block_direction.lower() != direction.lower():
 
-                    if block_direction != "Bearish":
-
-                        continue
-
-
-                if direction == "Bearish":
-
-                    if block_direction != "Bullish":
+                        print(
+                            "OB DIRECTION SKIPPED:",
+                            "trade=",
+                            direction,
+                            "ob=",
+                            block_direction
+                        )
 
                         continue
+
 
                 print(
                     "OB AFTER DIRECTION CHECK:",
