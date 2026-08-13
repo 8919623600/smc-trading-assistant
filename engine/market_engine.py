@@ -1156,6 +1156,12 @@ class MarketEngine:
 
                     trade_decision.signal = "NO TRADE"
 
+                    trade_decision.direction = direction
+
+                    self.selected_order_block = None
+
+                    self.selected_liquidity = None
+
 
                 else:
 
@@ -1198,37 +1204,54 @@ class MarketEngine:
 
 
 
-            liquidity_target = self.select_target_liquidity(
-                final_direction,
-                entry_price
-            )
+            # ==================================================
+            # Stop processing invalid trade direction
+            # ==================================================
 
+            if trade_decision.signal == "NO TRADE":
 
-            if liquidity_target:
+                print(
+                    "SKIPPING TARGET - NO TRADE"
+                )
 
-                self.target_liquidity = liquidity_target
+                self.target_liquidity = None
 
 
             else:
 
-                zone_target = self.select_target_zone(
+                liquidity_target = self.select_target_liquidity(
                     final_direction,
-                    self.session.symbol,
-                    "4h",
                     entry_price
                 )
 
 
-                self.target_liquidity = self.convert_zone_to_target(
-                    zone_target,
-                    final_direction
+                if liquidity_target:
+
+                    self.target_liquidity = liquidity_target
+
+
+                else:
+
+                    zone_target = self.select_target_zone(
+                        final_direction,
+                        self.session.symbol,
+                        "4h",
+                        entry_price
+                    )
+
+
+                    self.target_liquidity = self.convert_zone_to_target(
+                        zone_target,
+                        final_direction
+                    )
+
+
+            
+
+                print(
+                    "AFTER TARGET SELECTION:",
+                    self.target_liquidity
                 )
-
-
-            print(
-                "AFTER TARGET SELECTION:",
-                self.target_liquidity
-            )
 
 
             entry.trade_decision = trade_decision
