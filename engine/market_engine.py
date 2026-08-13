@@ -190,6 +190,47 @@ class MarketEngine:
                     block.low
                 )
 
+
+                # ==================================================
+                # Prevent Future Order Block Leakage
+                # ==================================================
+
+                block_created_at = getattr(
+                    block,
+                    "created_at",
+                    None
+                )
+
+
+                current_index = None
+
+
+                if self.analysis.entry:
+
+                    current_index = (
+                        self.analysis.entry.df.index[-1]
+                    )
+
+
+                if (
+                    block_created_at is not None
+                    and
+                    current_index is not None
+                    and
+                    block_created_at > current_index
+                ):
+
+                    print(
+                        "FUTURE OB SKIPPED:",
+                        block_created_at,
+                        "CURRENT:",
+                        current_index
+                    )
+
+                    continue
+
+
+
                 # Direction validation
 
                 block_direction = getattr(
