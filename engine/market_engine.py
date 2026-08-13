@@ -889,6 +889,13 @@ class MarketEngine:
         # Attach direction for RiskManager
         trade_decision.direction = direction
 
+        print(
+            "FINAL DIRECTION BEFORE OB:",
+            direction,
+            "SIGNAL:",
+            trade_decision.signal
+        )
+
         self.selected_order_block = (
             self.select_order_block(
                 direction
