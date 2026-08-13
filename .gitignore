@@ -16,3 +16,4 @@ backtest/cache/
 
 # Runtime trade journal
 journal/trades.json
+journal/trades.json
