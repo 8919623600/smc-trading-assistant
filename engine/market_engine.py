@@ -274,13 +274,29 @@ class MarketEngine:
 
                 # Skip invalid blocks
 
-                if getattr(
-                    block,
-                    "broken",
-                    False
-                ):
+                # ==================================================
+                # Ignore OB break caused by BOS displacement
+                # ==================================================
 
-                    continue
+                if getattr(block, "broken", False):
+
+                    bos_time = getattr(
+                        self.analysis.entry.bos,
+                        "time",
+                        None
+                    )
+
+                    if (
+                        bos_time
+                        and
+                        block.created_at < bos_time
+                    ):
+
+                        pass
+
+                    else:
+
+                        continue
 
 
 

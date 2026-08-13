@@ -488,6 +488,26 @@ class OrderBlockEngine:
 
             ):
 
+                # Ignore break if this is the BOS created by this OB
+
+                if (
+                    self.bos
+                    and self.bos.confirmed
+                    and self.bos.direction == "Bullish"
+                    and self.bos.time >= block.created_at
+                ):
+
+                    block.broken = False
+
+                    block.status = "Fresh"
+
+
+                else:
+
+                    block.broken = True
+
+                    block.status = "Broken"
+
 
                 block.broken = True
 
