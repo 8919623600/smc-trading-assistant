@@ -54,13 +54,15 @@ class RiskManager:
         account_balance: float,
         risk_percent: float = 1,
         minimum_rr: float = 2,
-        maximum_rr: float = 8
+        maximum_rr: float = 8,
+        current_price=None
     ):
 
         self.account_balance = account_balance
         self.risk_percent = risk_percent
         self.minimum_rr = minimum_rr
         self.maximum_rr = maximum_rr
+        self.current_price = current_price
 
 
 
@@ -183,11 +185,16 @@ class RiskManager:
     ):
 
 
-        current_price = getattr(
-            trade_decision,
-            "current_price",
-            None
-        )
+        current_price = self.current_price
+
+
+        if current_price is None:
+
+            current_price = getattr(
+                self,
+                "current_price",
+                None
+            )
 
 
         direction = self.get_direction(

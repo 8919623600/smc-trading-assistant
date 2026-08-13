@@ -1102,6 +1102,8 @@ class MarketEngine:
 
                 minimum_rr=MINIMUM_RISK_REWARD,
 
+                current_price=self.analysis.entry.current_price
+
             )
 
             if not self.backtest:
