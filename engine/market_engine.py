@@ -805,16 +805,45 @@ class MarketEngine:
 
 
 
-        zone_target = self.select_target_zone(
+        # ==================================================
+        # Select Target Liquidity First
+        # ==================================================
+
+        entry_price = self.analysis.entry.current_price
+
+
+        liquidity_target = self.select_target_liquidity(
             direction,
-            self.session.symbol,
-            "4h",
-            self.analysis.entry.current_price
+            entry_price
         )
 
-        self.target_liquidity = self.convert_zone_to_target(
-            zone_target,
-            direction
+
+        if liquidity_target:
+
+            self.target_liquidity = liquidity_target
+
+
+        else:
+
+            # Fallback to Supply/Demand zone target
+
+            zone_target = self.select_target_zone(
+                direction,
+                self.session.symbol,
+                "4h",
+                entry_price
+            )
+
+
+            self.target_liquidity = self.convert_zone_to_target(
+                zone_target,
+                direction
+            )
+
+
+        print(
+            "AFTER TARGET SELECTION:",
+            self.target_liquidity
         )
 
         print(

@@ -421,15 +421,12 @@ class LiquidityEngine:
 
 
 
-            # Need valid sweep only
 
-            if not zone.swept:
+            # For targets we prefer unswept liquidity
 
-                continue
+            # Swept liquidity is already consumed
 
-
-
-            if not zone.sweep_valid:
+            if zone.swept:
 
                 continue
 
@@ -438,22 +435,21 @@ class LiquidityEngine:
 
             # Bullish setup requires sell-side liquidity
 
+            # Bullish trade targets buy-side liquidity above price
+
             if direction == "Bullish":
 
-
-                if zone.side != "Sell-side":
+                if zone.side != "Buy-side":
 
                     continue
 
 
 
-
-            # Bearish setup requires buy-side liquidity
+            # Bearish trade targets sell-side liquidity below price
 
             if direction == "Bearish":
 
-
-                if zone.side != "Buy-side":
+                if zone.side != "Sell-side":
 
                     continue
 
