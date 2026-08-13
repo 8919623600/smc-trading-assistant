@@ -489,6 +489,13 @@ class MarketEngine:
             return None
 
 
+        if self.selected_order_block is None:
+            print(
+                "TARGET SKIPPED: No valid order block"
+            )
+            return None
+
+
         print(
             "TARGET DEBUG:",
             "direction=",
