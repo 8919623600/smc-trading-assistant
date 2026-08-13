@@ -455,6 +455,7 @@ class MarketEngine:
         if entry_price is None:
             return None
 
+
         print(
             "TARGET DEBUG:",
             "direction=",
@@ -478,16 +479,75 @@ class MarketEngine:
         zones = liquidity_engine.analyze()
 
 
-        target = liquidity_engine.get_best_liquidity(
-            zones,
-            entry_price,
-            direction
-        )
+        candidates = []
 
 
-        if target:
+        for zone in zones:
 
-            return target
+
+            # ==================================================
+            # Ignore liquidity inside active Order Block
+            # ==================================================
+
+            if self.selected_order_block:
+
+                if (
+                    self.selected_order_block.low
+                    <= zone.level
+                    <= self.selected_order_block.high
+                ):
+                    continue
+
+
+
+            # ==================================================
+            # Directional Target Validation
+            # ==================================================
+
+            if direction == "Bullish":
+
+
+                # Bullish target should be above entry
+
+                if zone.side != "Buy-side":
+                    continue
+
+
+                if zone.level <= entry_price:
+                    continue
+
+
+
+            elif direction == "Bearish":
+
+
+                # Bearish target should be below entry
+
+                if zone.side != "Sell-side":
+                    continue
+
+
+                if zone.level >= entry_price:
+                    continue
+
+
+
+            candidates.append(zone)
+
+
+
+        if candidates:
+
+
+            return sorted(
+
+                candidates,
+
+                key=lambda x: abs(
+                    entry_price - x.level
+                )
+
+            )[0]
 
 
 
@@ -542,8 +602,6 @@ class MarketEngine:
                 )
 
 
-
-        # No valid directional target
 
         return None
 
