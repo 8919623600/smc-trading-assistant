@@ -453,6 +453,16 @@ class RiskManager:
             order_blocks
         )
 
+        print(
+            "ENTRY DEBUG:",
+            "entry=",
+            entry,
+            "current_price=",
+            getattr(trade_decision, "current_price", None),
+            "order_blocks=",
+            len(order_blocks)
+        )
+
 
         stop_loss = self.calculate_stop_loss(
             direction,

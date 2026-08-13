@@ -160,6 +160,24 @@ class StrategyEngine:
                 risk_available = True
 
 
+
+        print(
+            "FULL RISK OBJECT DEBUG:",
+            "entry=",
+            getattr(risk, "entry", None),
+            "sl=",
+            getattr(risk, "stop_loss", None),
+            "target=",
+            getattr(risk, "target", None),
+            "rr=",
+            getattr(risk, "risk_reward", None),
+            "valid=",
+            getattr(risk, "valid", None),
+            "reason=",
+            getattr(risk, "reason", None)
+        )
+
+
         if risk_available:
 
             print(
