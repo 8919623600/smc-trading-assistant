@@ -538,16 +538,74 @@ class MarketEngine:
 
         if candidates:
 
+            valid_targets = []
 
-            return sorted(
 
-                candidates,
+            for zone in candidates:
 
-                key=lambda x: abs(
-                    entry_price - x.level
+                if direction == "Bearish":
+
+                    stop = self.selected_order_block.high
+
+                    risk = abs(
+                        entry_price - stop
+                    )
+
+                    reward = abs(
+                        entry_price - zone.level
+                    )
+
+
+                else:
+
+                    stop = self.selected_order_block.low
+
+                    risk = abs(
+                        entry_price - stop
+                    )
+
+                    reward = abs(
+                        zone.level - entry_price
+                    )
+
+
+                if risk == 0:
+                    continue
+
+
+                rr = reward / risk
+
+
+                print(
+                    "TARGET RR CHECK:",
+                    zone.level,
+                    "RR=",
+                    round(rr,2)
                 )
 
-            )[0]
+
+                if 2 <= rr <= 8:
+
+                    valid_targets.append(
+                        (
+                            rr,
+                            zone
+                        )
+                    )
+
+
+            if valid_targets:
+
+                # nearest RR valid target
+
+                valid_targets.sort(
+                    key=lambda x: x[1].level
+                )
+
+                return valid_targets[0][1]
+
+
+            return None
 
 
 
