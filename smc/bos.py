@@ -40,7 +40,10 @@ class BOSEngine:
 
             start_idx = df.index.get_loc(swing.time)
 
-            for i in range(start_idx + 1, len(df)):
+            for i in range(
+                start_idx + 1,
+                len(df)
+            ):
 
                 close = float(df.iloc[i]["close"])
 

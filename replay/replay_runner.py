@@ -135,6 +135,21 @@ class ReplayRunner:
             balance=100000
         )
 
+        print(
+            "SNAPSHOT 5M END:",
+            snapshot["5m"].iloc[-1]["time"]
+        )
+
+        print(
+            "SNAPSHOT 15M END:",
+            snapshot["15m"].iloc[-1]["time"]
+        )
+
+        print(
+            "SNAPSHOT 1H END:",
+            snapshot["1h"].iloc[-1]["time"]
+        )
+
 
         engine = MarketEngine(
             session,
