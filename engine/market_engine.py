@@ -760,7 +760,7 @@ class MarketEngine:
 
 
         # ==================================================
-        # Select Target Liquidity First
+        # Select Target Liquidity After Final Direction
         # ==================================================
 
         entry_price = self.analysis.entry.current_price
