@@ -478,62 +478,16 @@ class MarketEngine:
         zones = liquidity_engine.analyze()
 
 
-        candidates = []
+        target = liquidity_engine.get_best_liquidity(
+            zones,
+            entry_price,
+            direction
+        )
 
 
-        for zone in zones:
+        if target:
 
-            print(
-                "ZONE DEBUG:",
-                "side=",
-                zone.side,
-                "level=",
-                zone.level
-            )
-
-
-
-            if direction == "Bullish":
-
-
-                # Bullish target must be above entry
-
-                if zone.side != "Buy-side":
-                    continue
-
-
-                if zone.level <= entry_price:
-                    continue
-
-
-
-            elif direction == "Bearish":
-
-
-                # Bearish target must be below entry
-
-                if zone.side != "Sell-side":
-                    continue
-
-
-                if zone.level >= entry_price:
-                    continue
-
-
-
-            candidates.append(zone)
-
-
-
-        if candidates:
-
-            return sorted(
-
-                candidates,
-
-                key=lambda x: abs(entry_price - x.level)
-
-            )[0]
+            return target
 
 
 
@@ -840,11 +794,6 @@ class MarketEngine:
                 direction
             )
 
-
-        print(
-            "AFTER TARGET SELECTION:",
-            self.target_liquidity
-        )
 
         print(
             "AFTER TARGET SELECTION:",
