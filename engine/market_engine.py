@@ -180,12 +180,20 @@ class MarketEngine:
 
                 # Direction validation
 
-                if getattr(
+                block_direction = getattr(
                     block,
                     "direction",
                     None
-                ) != direction:
+                )
 
+
+                if (
+                    block_direction
+                    and
+                    block_direction.lower()
+                    !=
+                    direction.lower()
+                ):
                     continue
 
 
@@ -830,11 +838,11 @@ class MarketEngine:
 
         )
 
-        self.selected_order_block = (
-            self.select_order_block(
-                direction
-            )
-        )
+        # self.selected_order_block = (
+        #     self.select_order_block(
+        #         direction
+        #     )
+        # )
 
 
 
