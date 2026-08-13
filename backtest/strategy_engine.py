@@ -201,10 +201,16 @@ class StrategyEngine:
 
         else:
 
-            print(
-                "RISK DEBUG: NO RISK PLAN",
-                getattr(risk, "reason", "unknown")
-            )
+            if getattr(
+                engine.analysis.entry.trade_decision,
+                "signal",
+                None
+            ) != "NO TRADE":
+
+                print(
+                    "RISK DEBUG: NO RISK PLAN",
+                    getattr(risk, "reason", "unknown")
+                )
 
 
         confirmation_status = ""

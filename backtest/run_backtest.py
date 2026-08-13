@@ -152,7 +152,7 @@ class BMIEBacktest:
             self.exchange,
             data,
             start_index=4000,
-            max_candles=5
+            max_candles=500
         )
 
 
