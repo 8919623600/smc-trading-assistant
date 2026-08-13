@@ -107,7 +107,10 @@ class MarketEngine:
     # Select Best Order Block
     # ======================================================
 
-    def select_order_block(self):
+    def select_order_block(
+        self,
+        direction
+    ):
 
 
         """
@@ -174,6 +177,16 @@ class MarketEngine:
 
 
             for block in result.order_blocks:
+
+                # Direction validation
+
+                if getattr(
+                    block,
+                    "direction",
+                    None
+                ) != direction:
+
+                    continue
 
 
 
@@ -767,11 +780,11 @@ class MarketEngine:
         # Select Institutional Order Block
         # ==================================================
 
-        self.selected_order_block = (
+        # self.selected_order_block = (
 
-            self.select_order_block()
+        #     self.select_order_block()
 
-        )
+        # )
 
 
 
@@ -817,6 +830,12 @@ class MarketEngine:
 
         )
 
+        self.selected_order_block = (
+            self.select_order_block(
+                direction
+            )
+        )
+
 
 
 
@@ -842,6 +861,12 @@ class MarketEngine:
 
         # Attach direction for RiskManager
         trade_decision.direction = direction
+
+        self.selected_order_block = (
+            self.select_order_block(
+                direction
+            )
+        )
 
 
 
