@@ -1367,7 +1367,20 @@ class MarketEngine:
                 getattr(order_blocks[0], "low", None) if order_blocks else None
             )
 
-            risk_decision = risk_manager.analyze(
+
+            if trade_decision.signal == "NO TRADE":
+
+                print(
+                    "SKIPPING RISK - NO TRADE"
+                )
+
+                risk_decision = None
+
+
+            else:
+
+
+             risk_decision = risk_manager.analyze(
 
                 trade_decision,
 
