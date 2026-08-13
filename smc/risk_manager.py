@@ -183,6 +183,19 @@ class RiskManager:
     ):
 
 
+        current_price = getattr(
+            trade_decision,
+            "current_price",
+            None
+        )
+
+
+        direction = self.get_direction(
+            trade_decision
+        )
+
+
+
         if order_blocks:
 
 
@@ -205,18 +218,55 @@ class RiskManager:
 
             if high is not None and low is not None:
 
-                return (
+
+                entry = (
                     high + low
                 ) / 2
 
 
+
+                # ======================================
+                # Entry sanity validation
+                # ======================================
+
+                if current_price is not None:
+
+
+                    distance = abs(
+                        current_price - entry
+                    )
+
+
+                    # Reject extremely distant OB
+                    # Allow maximum 3% deviation
+
+                    max_distance = (
+                        current_price * 0.03
+                    )
+
+
+                    if distance <= max_distance:
+
+                        return entry
+
+
+                    print(
+                        "ENTRY REJECTED:",
+                        "Current=",
+                        current_price,
+                        "OB Entry=",
+                        entry
+                    )
+
+
+
+        # fallback
 
         return getattr(
             trade_decision,
             "price",
             None
         )
-
 
 
     def calculate_entry_zone(
