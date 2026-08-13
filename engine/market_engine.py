@@ -257,6 +257,19 @@ class MarketEngine:
 
                         continue
 
+                print(
+                    "OB AFTER DIRECTION CHECK:",
+                    block_direction,
+                    "high=",
+                    block.high,
+                    "low=",
+                    block.low,
+                    "broken=",
+                    getattr(block,"broken",False),
+                    "mitigated=",
+                    getattr(block,"mitigated",False)
+                )
+
 
 
                 # Skip invalid blocks
