@@ -231,23 +231,25 @@ class MarketEngine:
 
 
 
-                # Direction validation
+                # ==================================================
+                # SMC OB Direction Validation
+                # ==================================================
 
-                block_direction = getattr(
-                    block,
-                    "direction",
-                    None
-                )
+                # Bullish trade requires bearish order block candle
+                # Bearish trade requires bullish order block candle
+
+                if direction == "Bullish":
+
+                    if block_direction != "Bearish":
+
+                        continue
 
 
-                if (
-                    block_direction
-                    and
-                    block_direction.lower()
-                    !=
-                    direction.lower()
-                ):
-                    continue
+                if direction == "Bearish":
+
+                    if block_direction != "Bullish":
+
+                        continue
 
 
 
