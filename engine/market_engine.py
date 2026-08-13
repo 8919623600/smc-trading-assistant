@@ -1156,19 +1156,19 @@ class MarketEngine:
             # Trade Journal Save
             # ==================================================
 
-            journal_entry = self.trade_journal.create_entry(
-
-                self.session,
-                self.analysis,
-                self.setup_quality,
-                self.entry_confirmation,
-                entry.trade_decision,
-                entry.risk_decision,
-
-            )
-
-
             if self.trade_journal:
+
+                journal_entry = self.trade_journal.create_entry(
+
+                    self.session,
+                    self.analysis,
+                    self.setup_quality,
+                    self.entry_confirmation,
+                    entry.trade_decision,
+                    entry.risk_decision,
+
+                )
+
 
                 self.trade_journal.save_trade(
 
