@@ -1112,7 +1112,18 @@ class MarketEngine:
                 getattr(trade_decision, "direction", None),
                 vars(trade_decision)
             )
-            
+
+            print(
+                "RISK INPUT DEBUG:",
+                "direction=",
+                trade_decision.direction,
+                "order_blocks=",
+                len(order_blocks),
+                order_blocks[0].low if order_blocks else None,
+                order_blocks[0].high if order_blocks else None,
+                "target=",
+                self.target_liquidity
+            )
 
             risk_decision = risk_manager.analyze(
 
