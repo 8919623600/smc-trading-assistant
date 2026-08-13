@@ -2,16 +2,9 @@ REPLAY_CASE = {
 
     "symbol": "XAUUSD",
 
-    "timeframe": {
-        "bias": "1d",
-        "structure": "4h",
-        "trend": "1h",
-        "setup": "15m",
-        "entry": "5m"
-    },
+    "exchange": "OANDA",
 
-
-    "candle_time": None,
+    "candle_index": 4000,
 
 
     "expected": {
@@ -24,7 +17,9 @@ REPLAY_CASE = {
 
         "target": None,
 
-        "rr": None
+        "minimum_rr": 2,
+
+        "maximum_rr": 8
 
     }
 
