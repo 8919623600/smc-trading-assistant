@@ -980,7 +980,29 @@ class MarketEngine:
             )
 
 
-            entry_price = entry.current_price
+            # ==================================================
+            # Use Order Block Entry For Target Calculation
+            # ==================================================
+
+            entry_price = None
+
+
+            if self.selected_order_block:
+
+                entry_price = (
+
+                    self.selected_order_block.high +
+
+                    self.selected_order_block.low
+
+                ) / 2
+
+
+
+            if entry_price is None:
+
+                entry_price = entry.current_price
+
 
 
             liquidity_target = self.select_target_liquidity(
