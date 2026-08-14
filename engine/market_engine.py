@@ -374,6 +374,19 @@ class MarketEngine:
                     0
                 )
 
+                print(
+                    "ADDING OB CANDIDATE:",
+                    block.direction,
+                    "HIGH=",
+                    block.high,
+                    "LOW=",
+                    block.low,
+                    "BROKEN=",
+                    getattr(block,"broken",False),
+                    "MITIGATED=",
+                    getattr(block,"mitigated",False)
+                )
+
 
 
                 candidates.append(
@@ -404,6 +417,10 @@ class MarketEngine:
 
         if not candidates:
 
+            print(
+                "NO OB CANDIDATES FOUND"
+            )
+
             return None
 
 
@@ -428,10 +445,12 @@ class MarketEngine:
 
 
 
+        print(
+            "FINAL OB SELECTED:",
+            candidates[0][3]
+        )
+
         return candidates[0][3]
-
-
-
 
 
     # ======================================================
