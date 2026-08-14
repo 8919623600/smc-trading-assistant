@@ -401,7 +401,25 @@ class OrderBlockEngine:
 
                 if next_close < close_price:
 
-                   origin_index = i
+                    bearish_count = 0
+
+                    for j in range(
+                        i + 1,
+                        bos_index + 1
+                    ):
+
+                        c = self.df.iloc[j]
+
+                        if float(c["close"]) < float(c["open"]):
+                            bearish_count += 1
+                        else:
+                            break
+
+
+                    if bearish_count >= 2:
+
+                        origin_index = i
+                        break
 
 
 
