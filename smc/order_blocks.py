@@ -419,34 +419,30 @@ class OrderBlockEngine:
 
 
 
-            # last bullish candle before BOS
+            # strongest bullish candle before bearish BOS
+
+            best_block = None
+            best_range = 0
 
             if close_price > open_price:
 
+                candle_range = float(candle["high"]) - float(candle["low"])
+
+                if candle_range > best_range:
+
+                    best_range = candle_range
+
+                    best_block = OrderBlock(
+                        direction="Bearish",
+                        high=float(candle["high"]),
+                        low=float(candle["low"]),
+                        created_at=self.df.iloc[i]["time"],
+                    )
 
 
-                block = OrderBlock(
+            if best_block:
 
-                    direction="Bearish",
-
-                    high=float(
-                        candle["high"]
-                    ),
-
-                    low=float(
-                        candle["low"]
-                    ),
-
-                    created_at=self.df.iloc[i]["time"],
-
-                )
-
-
-
-                blocks.append(
-                    block
-                )
-
+                blocks.append(best_block)
 
                 break
 
