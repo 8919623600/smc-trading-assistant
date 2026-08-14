@@ -385,22 +385,12 @@ class OrderBlockEngine:
 
 
 
-            # find first bearish expansion candle
-            if close_price < open_price:
+            # find last bullish/bearish origin before bearish BOS
 
-                next_candle = self.df.iloc[i+1]
+            if close_price > open_price:
 
-                next_close = float(
-                    next_candle["close"]
-                )
-
-
-                # candle must start displacement
-                if next_close > close_price:
-
-                    origin_index = i
-
-                    break
+                origin_index = i
+                break
 
 
 
@@ -445,16 +435,19 @@ class OrderBlockEngine:
             direction="Bearish",
 
             high=float(
-                self.df.iloc[origin_index]["high"]
+                zone["high"].max()
             ),
 
             low=float(
-                self.df.iloc[bos_index]["low"]
+                zone["low"].min()
             ),
 
-            created_at=self.df.iloc[origin_index]["time"]
+            created_at=self.df.iloc[
+                origin_index
+            ]["time"]
 
         )
+
 
 
         blocks.append(block)
