@@ -401,8 +401,7 @@ class OrderBlockEngine:
 
                 if next_close < close_price:
 
-                    if origin_index is None:
-                        origin_index = i
+                   origin_index = i
 
 
 
