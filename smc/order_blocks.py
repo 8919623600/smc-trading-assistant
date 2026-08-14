@@ -319,7 +319,7 @@ class OrderBlockEngine:
                         candle["low"]
                     ),
 
-                    created_at=self.df.index[i],
+                    created_at=self.df.iloc[i]["time"],
 
                 )
 
@@ -426,7 +426,7 @@ class OrderBlockEngine:
                         candle["low"]
                     ),
 
-                    created_at=self.df.index[i],
+                    created_at=self.df.iloc[i]["time"],
 
                 )
 
