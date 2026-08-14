@@ -387,10 +387,21 @@ class OrderBlockEngine:
 
             # find last bullish/bearish origin before bearish BOS
 
+            # Find last bullish candle before bearish displacement
+
             if close_price > open_price:
 
-                origin_index = i
-                break
+                next_candle = self.df.iloc[i + 1]
+
+                next_close = float(
+                    next_candle["close"]
+                )
+
+                # next candle should start bearish move
+                if next_close < close_price:
+
+                    origin_index = i
+                    break
 
 
 
