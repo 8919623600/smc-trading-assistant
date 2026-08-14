@@ -271,95 +271,124 @@ class OrderBlockEngine:
     # ======================================================
 
     def detect_bearish_order_block(
-        self,
-    ) -> List[OrderBlock]:
-
-        blocks = []
+            self,
+        ) -> List[OrderBlock]:
 
 
-        if not self.bos.confirmed:
-            return blocks
+            blocks = []
 
 
-        if self.bos.direction != "Bearish":
-            return blocks
+            if not self.bos.confirmed:
+                return blocks
 
 
-        bos_time = self.bos.time
+            if self.bos.direction != "Bearish":
+                return blocks
 
 
-        time_matches = self.df.index[
-            self.df["time"] == bos_time
-        ]
+            bos_time = self.bos.time
 
 
-        if len(time_matches) == 0:
-            return blocks
+            time_matches = self.df.index[
+                self.df["time"] == bos_time
+            ]
 
 
-        bos_index = time_matches[0]
+            if len(time_matches) == 0:
+                return blocks
 
 
-        origin_index = bos_index - 1
+            bos_index = time_matches[0]
 
 
-        # Find displacement start
-        for i in range(
-            bos_index - 1,
-            max(bos_index - 50, 0),
-            -1
-        ):
-
-            candle = self.df.iloc[i]
+            origin_index = None
 
 
-            previous = self.df.iloc[i-1] if i > 0 else candle
-
-
-            # strong bearish expansion starts here
-
-            if (
-                float(candle["high"])
-                >
-                float(previous["high"])
+            # Find start of bearish displacement
+            for i in range(
+                bos_index - 1,
+                max(
+                    bos_index - 50,
+                    1
+                ),
+                -1
             ):
 
-                origin_index = i
+
+                candle = self.df.iloc[i]
+
+                previous = self.df.iloc[i-1]
 
 
-            else:
-
-                break
-
+                high = float(candle["high"])
+                previous_high = float(previous["high"])
 
 
-        zone = self.df.iloc[
-            origin_index:
-            bos_index + 1
-        ]
+                close_price = float(candle["close"])
+                open_price = float(candle["open"])
 
 
-        block = OrderBlock(
 
-            direction="Bearish",
+                # Ignore liquidity sweep candles
+                if high > previous_high:
 
-            high=float(
-                zone["high"].max()
-            ),
-
-            low=float(
-                zone["low"].min()
-            ),
-
-            created_at=self.df.iloc[origin_index]["time"]
-
-        )
+                    continue
 
 
-        blocks.append(block)
+
+                # Find first bearish displacement candle
+                if close_price < open_price:
+
+                    origin_index = i
+                    break
 
 
-        return blocks
+
+            if origin_index is None:
+
+                return blocks
+
+            print(
+                "BEARISH OB ORIGIN DEBUG:",
+                self.df.iloc[origin_index]["time"],
+                "HIGH=",
+                self.df.iloc[origin_index]["high"],
+                "LOW=",
+                self.df.iloc[origin_index]["low"]
+            )
+
+
+
+            zone = self.df.iloc[
+                origin_index:
+                bos_index + 1
+            ]
+
+
+
+            block = OrderBlock(
+
+                direction="Bearish",
+
+                high=float(
+                    zone["high"].max()
+                ),
+
+                low=float(
+                    zone["low"].min()
+                ),
+
+                created_at=self.df.iloc[
+                    origin_index
+                ]["time"]
+
+            )
+
+
+            blocks.append(block)
+
+
+            return blocks
 
 
 
