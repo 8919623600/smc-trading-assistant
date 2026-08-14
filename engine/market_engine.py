@@ -456,29 +456,23 @@ class MarketEngine:
 
                     rank = 1
 
+                broken_penalty = 0
+
+                if getattr(block, "broken", False):
+                    broken_penalty = -50
+
+
                 candidates.append(
-
-                    (
-
-                        rank,
-
-                        strength,
-
-                        -distance,
-
-                        created_at,
-
-                        block
-
-                    )
-
+                (
+                    rank,
+                    strength,
+                    broken_penalty,
+                    -distance,
+                    created_at,
+                    block
+                )
                 )
 
-                if result is self.analysis.entry:
-                    print(
-                        "ENTRY TF OB FOUND - STOP SEARCHING HIGHER TF"
-                    )
-                    break
 
 
 
