@@ -253,12 +253,7 @@ class OrderBlockEngine:
 
             if close_price > open_price:
 
-
-                if next_close > close_price:
-
-                    origin_index = i
-
-                    break
+               origin_index = i
 
 
 
@@ -381,12 +376,7 @@ class OrderBlockEngine:
 
             if close_price < open_price:
 
-
-                if next_close < close_price:
-
-                    origin_index = i
-
-                    break
+               origin_index = i
 
 
 
