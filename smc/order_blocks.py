@@ -241,27 +241,18 @@ class OrderBlockEngine:
             close_price = float(candle["close"])
 
 
-            # LAST bearish candle before bullish BOS
+            # Find first candle of bullish displacement
 
-            if close_price < open_price:
+            if close_price > open_price:
 
+                previous = self.df.iloc[i-1]
 
-                block = OrderBlock(
+                previous_close = float(previous["close"])
 
-                    direction="Bullish",
+                if previous_close < close_price:
 
-                    high=float(candle["high"]),
-
-                    low=float(candle["low"]),
-
-                    created_at=self.df.iloc[i]["time"]
-
-                )
-
-
-                blocks.append(block)
-
-                break
+                    origin_index = i
+                    break
 
 
         return blocks
@@ -336,11 +327,18 @@ class OrderBlockEngine:
 
 
 
-                # Find first bearish displacement candle
-                if close_price > open_price:
+                # Find first candle of bearish displacement
 
-                    origin_index = i
-                    break
+                if close_price < open_price:
+
+                    next_candle = self.df.iloc[i+1]
+
+                    next_close = float(next_candle["close"])
+
+                    if next_close < close_price:
+
+                        origin_index = i
+                        break
 
 
 
@@ -368,15 +366,15 @@ class OrderBlockEngine:
 
             block = OrderBlock(
 
-                direction="Bearish",
+            direction="Bearish",
 
-                high=float(
-                    zone["high"].max()
-                ),
+            high=float(
+                self.df.iloc[origin_index]["high"]
+            ),
 
-                low=float(
-                    zone["low"].min()
-                ),
+            low=float(
+                zone["low"].min()
+            ),
 
                 created_at=self.df.iloc[
                     origin_index
