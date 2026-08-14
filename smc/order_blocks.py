@@ -412,6 +412,18 @@ class OrderBlockEngine:
             bos_index + 1
         ]
 
+        print(
+            "BEARISH OB FINAL DEBUG:",
+            "origin=",
+            self.df.iloc[origin_index]["time"],
+            "origin_high=",
+            self.df.iloc[origin_index]["high"],
+            "bos_time=",
+            self.df.iloc[bos_index]["time"],
+            "bos_low=",
+            self.df.iloc[bos_index]["low"]
+        )
+
 
 
         block = OrderBlock(
@@ -423,12 +435,10 @@ class OrderBlockEngine:
             ),
 
             low=float(
-                zone["low"].min()
+                self.df.iloc[bos_index]["low"]
             ),
 
-            created_at=self.df.iloc[
-                origin_index
-            ]["time"]
+            created_at=self.df.iloc[origin_index]["time"]
 
         )
 
