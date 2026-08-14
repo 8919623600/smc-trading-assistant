@@ -264,25 +264,19 @@ class OrderBlockEngine:
 
         bos_time = self.bos.time
 
-        print(
-            "BULLISH OB BOS DEBUG:",
-            "bos_time=",
-            bos_time,
-            "exists=",
-            bos_time in self.df.index
-        )
+
+        # Find BOS candle using dataframe time column
+        time_matches = self.df.index[
+            self.df["time"] == bos_time
+        ]
 
 
-
-        if bos_time not in self.df.index:
+        if len(time_matches) == 0:
 
             return blocks
 
 
-
-        bos_index = self.df.index.get_loc(
-            bos_time
-        )
+        bos_index = time_matches[0]
 
 
 
@@ -381,25 +375,18 @@ class OrderBlockEngine:
 
         bos_time = self.bos.time
 
-        print(
-            "BEARISH OB BOS DEBUG:",
-            "bos_time=",
-            bos_time,
-            "exists=",
-            bos_time in self.df.index
-        )
+
+        time_matches = self.df.index[
+            self.df["time"] == bos_time
+        ]
 
 
-
-        if bos_time not in self.df.index:
+        if len(time_matches) == 0:
 
             return blocks
 
 
-
-        bos_index = self.df.index.get_loc(
-            bos_time
-        )
+        bos_index = time_matches[0]
 
 
 
