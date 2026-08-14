@@ -133,9 +133,9 @@ class MarketEngine:
 
 
         priority = [
-            self.analysis.entry,
-            self.analysis.setup,
             self.analysis.trend,
+            self.analysis.setup,
+            self.analysis.entry,
         ]
 
 
@@ -501,9 +501,9 @@ class MarketEngine:
 
             # Keep timeframe priority
 
-            if candidates:
+            # if candidates:
 
-                continue
+            #     continue
 
 
 
