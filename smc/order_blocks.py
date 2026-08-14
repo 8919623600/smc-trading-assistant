@@ -274,7 +274,6 @@ class OrderBlockEngine:
         self,
     ) -> List[OrderBlock]:
 
-
         blocks = []
 
 
@@ -301,55 +300,63 @@ class OrderBlockEngine:
         bos_index = time_matches[0]
 
 
-        # Find LAST bullish candle before bearish BOS
+        origin_index = bos_index - 1
 
+
+        # Find displacement start
         for i in range(
             bos_index - 1,
-            max(
-                bos_index - 30,
-                0
-            ),
+            max(bos_index - 50, 0),
             -1
         ):
 
             candle = self.df.iloc[i]
 
 
-            open_price = float(
-                candle["open"]
-            )
-
-            close_price = float(
-                candle["close"]
-            )
+            previous = self.df.iloc[i-1] if i > 0 else candle
 
 
-            # bullish candle = bearish order block
+            # strong bearish expansion starts here
 
-            if close_price > open_price:
+            if (
+                float(candle["high"])
+                >
+                float(previous["high"])
+            ):
 
-
-                block = OrderBlock(
-
-                    direction="Bearish",
-
-                    high=float(
-                        candle["high"]
-                    ),
-
-                    low=float(
-                        candle["low"]
-                    ),
-
-                    created_at=self.df.iloc[i]["time"]
-
-                )
+                origin_index = i
 
 
-                blocks.append(block)
-
+            else:
 
                 break
+
+
+
+        zone = self.df.iloc[
+            origin_index:
+            bos_index + 1
+        ]
+
+
+        block = OrderBlock(
+
+            direction="Bearish",
+
+            high=float(
+                zone["high"].max()
+            ),
+
+            low=float(
+                zone["low"].min()
+            ),
+
+            created_at=self.df.iloc[origin_index]["time"]
+
+        )
+
+
+        blocks.append(block)
 
 
         return blocks
