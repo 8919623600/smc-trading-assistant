@@ -525,10 +525,10 @@ class MarketEngine:
 
         print(
             "FINAL OB SELECTED:",
-            candidates[0][5]
+            candidates[0][7]
         )
 
-        return candidates[0][5]
+        return candidates[0][7]
 
 
     # ======================================================
