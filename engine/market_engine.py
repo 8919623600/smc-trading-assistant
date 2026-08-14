@@ -184,6 +184,11 @@ class MarketEngine:
             for block in result.order_blocks:
 
                 print(
+                    "RAW OB OBJECT:",
+                    block
+                )
+
+                print(
                     "OB DEBUG:",
                     "wanted=",
                     direction,
