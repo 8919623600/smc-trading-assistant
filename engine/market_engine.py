@@ -462,7 +462,8 @@ class MarketEngine:
                     broken_penalty = -50
 
 
-                # Prefer fresh OB over broken entry OB
+                # Timeframe priority is more important than freshness
+
                 direction_bonus = 0
 
                 if block.direction.lower() == direction.lower():
@@ -510,9 +511,9 @@ class MarketEngine:
 
         candidates.sort(
             key=lambda x: (
+                x[2],   # timeframe priority FIRST
                 x[0],   # direction match
                 x[1],   # fresh OB
-                x[2],   # timeframe priority
                 x[3],   # strength
                 x[4],   # broken penalty
                 x[5],   # distance
