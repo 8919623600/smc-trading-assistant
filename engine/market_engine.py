@@ -439,11 +439,19 @@ class MarketEngine:
 
                 timeframe_rank = 1
 
-                if result == self.analysis.trend:
-                    timeframe_rank = 3
+                if result is self.analysis.trend:
 
-                elif result == self.analysis.setup:
-                    timeframe_rank = 2
+                    rank = 3
+
+
+                elif result is self.analysis.setup:
+
+                    rank = 2
+
+
+                else:
+
+                    rank = 1
 
                 candidates.append(
 
