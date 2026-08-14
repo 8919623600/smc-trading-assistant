@@ -322,6 +322,19 @@ class MarketEngine:
 
                     continue
 
+                print(
+                    "OB VALIDATION PASSED:",
+                    block.direction,
+                    block.high,
+                    block.low,
+                    "broken=",
+                    block.broken,
+                    "mitigated=",
+                    block.mitigated,
+                    "strength=",
+                    block.strength
+                )
+
 
 
                 # Calculate distance from price
