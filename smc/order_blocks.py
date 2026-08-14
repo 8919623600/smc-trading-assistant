@@ -224,14 +224,14 @@ class OrderBlockEngine:
                 # Find bearish OB origin
                 # Last bullish candle before bearish displacement
 
-        for i in range(
+                for i in range(
                     bos_index - 1,
                     max(
                         bos_index - 50,
                         1
                     ),
                     -1
-        ):
+                ):
 
                     candle = self.df.iloc[i]
 
@@ -425,7 +425,7 @@ class OrderBlockEngine:
 
             direction="Bearish",
 
-            # Bearish OB:
+            # Bearish OB range:
             # high = origin candle high
             # low  = BOS candle low
 
