@@ -208,53 +208,34 @@ class MarketEngine:
                 )
 
 
-                current_index = None
-
-
                 current_time = None
 
 
                 if self.analysis.entry:
 
-                    current_time = (
-                        self.analysis.entry.df.iloc[-1]["time"]
+                    current_time = getattr(
+                        self.analysis.entry,
+                        "current_time",
+                        None
                     )
+
+
+                block_time = block_created_at
 
 
                 if (
-                    block_created_at is not None
+                    block_time is not None
                     and
                     current_time is not None
+                    and
+                    block_time > current_time
                 ):
-
-                    block_time = (
-                        self.analysis.entry.df
-                        .loc[block_created_at]["time"]
-                        if block_created_at in self.analysis.entry.df.index
-                        else None
-                    )
-
-
-                    if (
-                        block_time
-                        and
-                        block_time > current_time
-                    ):
-
-                        print(
-                            "FUTURE OB SKIPPED:",
-                            block_time,
-                            "CURRENT:",
-                            current_time
-                        )
-
-                        continue
 
                     print(
                         "FUTURE OB SKIPPED:",
-                        block_created_at,
+                        block_time,
                         "CURRENT:",
-                        current_index
+                        current_time
                     )
 
                     continue
