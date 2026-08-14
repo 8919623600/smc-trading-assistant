@@ -133,9 +133,9 @@ class MarketEngine:
 
 
         priority = [
-            self.analysis.entry,
-            self.analysis.setup,
             self.analysis.trend,
+            self.analysis.setup,
+            self.analysis.entry,
         ]
 
 
@@ -194,6 +194,15 @@ class MarketEngine:
                     "low=",
                     block.low
                 )
+
+                ob_size = abs(block.high - block.low)
+
+                if ob_size < 5:
+                    print(
+                        "OB TOO SMALL SKIPPED:",
+                        ob_size
+                    )
+                    continue
 
                 block_direction = getattr(
                     block,
@@ -347,6 +356,20 @@ class MarketEngine:
 
                     continue
 
+                ob_size = abs(
+                    block.high - block.low
+                )
+
+
+                if ob_size < 5:
+
+                    print(
+                        "OB TOO SMALL SKIPPED:",
+                        ob_size
+                    )
+
+                    continue
+
                 print(
                     "OB VALIDATION PASSED:",
                     block.direction,
@@ -414,9 +437,19 @@ class MarketEngine:
 
 
 
+                timeframe_rank = 1
+
+                if result == self.analysis.trend:
+                    timeframe_rank = 3
+
+                elif result == self.analysis.setup:
+                    timeframe_rank = 2
+
                 candidates.append(
 
                     (
+
+                        timeframe_rank,
 
                         strength,
 
@@ -436,7 +469,7 @@ class MarketEngine:
 
             if candidates:
 
-                break
+                continue
 
 
 
@@ -456,11 +489,13 @@ class MarketEngine:
 
                 (
 
-                    x[0],      # strength
+                    x[0],      # timeframe priority
 
-                    x[1],      # nearest price
+                    x[1],      # strength
 
-                    x[2]       # newest
+                    x[2],      # nearest price
+
+                    x[3]       # newest
 
                 ),
 
@@ -475,7 +510,7 @@ class MarketEngine:
             candidates[0][3]
         )
 
-        return candidates[0][3]
+        return candidates[0][4]
 
 
     # ======================================================
@@ -773,7 +808,7 @@ class MarketEngine:
                 )
 
 
-                if 2 <= rr <= 8:
+                if 1.5 <= rr <= 8:
 
                     valid_targets.append(
                         (
