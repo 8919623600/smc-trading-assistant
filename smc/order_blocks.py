@@ -337,7 +337,7 @@ class OrderBlockEngine:
 
 
                 # Find first bearish displacement candle
-                if close_price < open_price:
+                if close_price > open_price:
 
                     origin_index = i
                     break
