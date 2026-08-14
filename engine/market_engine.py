@@ -479,18 +479,21 @@ class MarketEngine:
                 if not getattr(block, "broken", False):
                     fresh_bonus = 50
 
+                if block.broken and block.direction != direction:
+                   continue
+
 
                 candidates.append(
-                (
-                    direction_bonus,
-                    fresh_bonus,
-                    rank,
-                    strength,
-                    broken_penalty,
-                    -distance,
-                    created_at,
-                    block
-                )
+                    (
+                        direction_bonus,
+                        broken_penalty,
+                        fresh_bonus,
+                        rank,
+                        strength,
+                        -distance,
+                        created_at,
+                        block
+                    )
                 )
 
 
