@@ -31,9 +31,6 @@ from core.analysis_context import AnalysisContext
 
 @dataclass
 class OrderBlock:
-    """
-    Represents institutional order block.
-    """
 
     direction: str
 
@@ -43,19 +40,13 @@ class OrderBlock:
 
     created_at: datetime
 
-
     mitigated: bool = False
 
     broken: bool = False
 
-
     strength: int = 0
 
-
     source_swing: Optional[SwingPoint] = None
-
-
-    # New V2 fields
 
     status: str = "Unknown"
 
@@ -68,10 +59,6 @@ class OrderBlock:
 # ==========================================================
 
 class OrderBlockEngine:
-    """
-    Detects and validates SMC order blocks.
-    """
-
 
 
     def __init__(
@@ -83,6 +70,7 @@ class OrderBlockEngine:
 
         self.df = context.df
 
+
         print(
             "ORDER BLOCK DF DEBUG:",
             "ROWS=",
@@ -93,12 +81,14 @@ class OrderBlockEngine:
             self.df.iloc[-1]["time"]
         )
 
+
         print(
             "OB ENGINE DATA END:",
             self.df.iloc[-1]["time"],
             "INDEX:",
             self.df.index[-1]
         )
+
 
         self.bos = context.bos
 
@@ -124,35 +114,21 @@ class OrderBlockEngine:
 
 
         midpoint = (
-
-            block.high
-
-            +
+            block.high +
             block.low
-
         ) / 2
 
 
 
         distance = abs(
-
-            current_price
-
-            -
+            current_price -
             midpoint
-
         )
 
 
-        # percentage distance
-
         percent = (
-
-            distance
-
-            /
+            distance /
             current_price
-
         ) * 100
 
 
@@ -191,23 +167,17 @@ class OrderBlockEngine:
 
 
 
-        # BOS confirmation
-
         if self.bos.confirmed:
 
             score += 40
 
 
 
-        # Freshness
-
         if not block.mitigated:
 
             score += 30
 
 
-
-        # Distance
 
         if block.distance == "Valid":
 
@@ -219,8 +189,6 @@ class OrderBlockEngine:
             score += 10
 
 
-
-        # Cap
 
         block.strength = min(
             score,
@@ -244,14 +212,11 @@ class OrderBlockEngine:
         blocks = []
 
 
-
         if not self.bos.confirmed:
 
             return blocks
 
 
-        # Allow bullish reversal OB after bearish BOS
-        # when higher timeframe bias is bullish
 
         if self.bos.direction not in [
             "Bullish",
@@ -265,7 +230,7 @@ class OrderBlockEngine:
         bos_time = self.bos.time
 
 
-        # Find BOS candle using dataframe time column
+
         time_matches = self.df.index[
             self.df["time"] == bos_time
         ]
@@ -276,12 +241,14 @@ class OrderBlockEngine:
             return blocks
 
 
+
         bos_index = time_matches[0]
 
 
-
         best_block = None
+
         largest_range = 0
+
 
 
         for i in range(
@@ -293,24 +260,42 @@ class OrderBlockEngine:
             -1
         ):
 
+
             candle = self.df.iloc[i]
 
-            open_price = float(candle["open"])
-            close_price = float(candle["close"])
 
-            high = float(candle["high"])
-            low = float(candle["low"])
+            open_price = float(
+                candle["open"]
+            )
+
+
+            close_price = float(
+                candle["close"]
+            )
+
+
+            high = float(
+                candle["high"]
+            )
+
+
+            low = float(
+                candle["low"]
+            )
+
 
             candle_range = high - low
 
 
-            # bullish candle before bearish BOS
 
             if close_price > open_price:
 
+
                 if candle_range > largest_range:
 
+
                     largest_range = candle_range
+
 
                     best_block = OrderBlock(
 
@@ -320,19 +305,20 @@ class OrderBlockEngine:
 
                         low=low,
 
-                        created_at=self.df.iloc[i]["time"],
+                        created_at=self.df.iloc[i]["time"]
 
                     )
 
 
+
         if best_block:
 
-            blocks.append(best_block)
+            blocks.append(
+                best_block
+            )
 
 
         return blocks
-
-
 
     # ======================================================
     # Bearish OB
@@ -344,7 +330,6 @@ class OrderBlockEngine:
 
 
         blocks = []
-
 
 
         if not self.bos.confirmed:
@@ -365,6 +350,7 @@ class OrderBlockEngine:
         bos_time = self.bos.time
 
 
+
         time_matches = self.df.index[
             self.df["time"] == bos_time
         ]
@@ -375,49 +361,93 @@ class OrderBlockEngine:
             return blocks
 
 
+
         bos_index = time_matches[0]
 
 
 
         best_block = None
+
         best_range = 0
 
 
-        for i in range(
 
+        for i in range(
             bos_index - 1,
             max(
                 bos_index - 30,
                 0
             ),
             -1
-
         ):
+
 
             candle = self.df.iloc[i]
 
+
+            open_price = float(
+                candle["open"]
+            )
+
+
+            close_price = float(
+                candle["close"]
+            )
+
+
+
+            # last bullish candle before bearish BOS
+
             if close_price > open_price:
 
-                candle_range = float(candle["high"]) - float(candle["low"])
+
+                candle_range = (
+
+                    float(candle["high"])
+
+                    -
+                    float(candle["low"])
+
+                )
+
+
 
                 if candle_range > best_range:
 
+
                     best_range = candle_range
 
+
+
                     best_block = OrderBlock(
+
                         direction="Bearish",
-                        high=float(candle["high"]),
-                        low=float(candle["low"]),
-                        created_at=self.df.iloc[i]["time"],
+
+                        high=float(
+                            candle["high"]
+                        ),
+
+                        low=float(
+                            candle["low"]
+                        ),
+
+                        created_at=self.df.iloc[i]["time"]
+
                     )
 
 
-            if best_block:
-                blocks.append(best_block)
+
+        if best_block:
+
+            blocks.append(
+                best_block
+            )
 
 
 
         return blocks
+
+
 
 
 
@@ -481,37 +511,67 @@ class OrderBlockEngine:
 
             ):
 
-                # Ignore break if this is the BOS created by this OB
+
                 print(
                     "MITIGATION BOS DEBUG:",
                     "confirmed=",
-                    getattr(self.bos, "confirmed", None),
+                    getattr(
+                        self.bos,
+                        "confirmed",
+                        None
+                    ),
+
                     "direction=",
-                    getattr(self.bos, "direction", None),
+                    getattr(
+                        self.bos,
+                        "direction",
+                        None
+                    ),
+
                     "bos_time=",
-                    getattr(self.bos, "time", None),
+                    getattr(
+                        self.bos,
+                        "time",
+                        None
+                    ),
+
                     "block_created=",
                     block.created_at
                 )
 
+
+
                 if (
+
                     self.bos
+
                     and self.bos.confirmed
+
                     and self.bos.direction == "Bullish"
+
                     and self.bos.time >= block.created_at
+
                 ):
 
+
                     block.broken = False
+
                     block.status = "Fresh"
+
+
 
                 else:
 
+
                     block.broken = True
+
                     block.status = "Broken"
 
 
 
         return blocks
+
+
 
 
 
@@ -521,10 +581,16 @@ class OrderBlockEngine:
 
     def analyze(self):
 
+
         blocks = []
 
 
-        bullish_blocks = self.detect_bullish_order_block()
+
+        bullish_blocks = (
+            self.detect_bullish_order_block()
+        )
+
+
 
         print(
             "BULLISH OB FOUND:",
@@ -532,12 +598,18 @@ class OrderBlockEngine:
         )
 
 
-        bearish_blocks = self.detect_bearish_order_block()
+
+        bearish_blocks = (
+            self.detect_bearish_order_block()
+        )
+
+
 
         print(
             "BEARISH OB FOUND:",
             len(bearish_blocks)
         )
+
 
 
         blocks.extend(
@@ -560,14 +632,17 @@ class OrderBlockEngine:
         for block in blocks:
 
 
+
             self.check_distance(
                 block
             )
 
 
+
             self.calculate_strength(
                 block
             )
+
 
 
             if block.status == "Unknown":
@@ -584,10 +659,11 @@ class OrderBlockEngine:
 
 
 
+
         return sorted(
 
             blocks,
 
-            key=lambda x:x.created_at,
+            key=lambda x: x.created_at
 
         )
