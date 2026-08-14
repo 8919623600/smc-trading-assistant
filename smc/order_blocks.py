@@ -279,7 +279,6 @@ class OrderBlockEngine:
 
 
         if not self.bos.confirmed:
-
             return blocks
 
 
@@ -296,12 +295,13 @@ class OrderBlockEngine:
 
 
         if len(time_matches) == 0:
-
             return blocks
 
 
         bos_index = time_matches[0]
 
+
+        # Find LAST bullish candle before bearish BOS
 
         for i in range(
             bos_index - 1,
@@ -319,51 +319,37 @@ class OrderBlockEngine:
                 candle["open"]
             )
 
-
             close_price = float(
                 candle["close"]
             )
 
 
-            # LAST bullish candle before bearish BOS
+            # bullish candle = bearish order block
 
-            best_block = None
-            best_range = 0
-
-
-            for i in range(
-                bos_index - 1,
-                max(bos_index - 30, 0),
-                -1
-            ):
-
-                candle = self.df.iloc[i]
-
-                open_price = float(candle["open"])
-                close_price = float(candle["close"])
-
-                if close_price > open_price:
-
-                    candle_range = (
-                        float(candle["high"])
-                        -
-                        float(candle["low"])
-                    )
-
-                    if candle_range > best_range:
-
-                        best_range = candle_range
-
-                        best_block = OrderBlock(
-                            direction="Bearish",
-                            high=float(candle["high"]),
-                            low=float(candle["low"]),
-                            created_at=self.df.iloc[i]["time"]
-                        )
+            if close_price > open_price:
 
 
-            if best_block:
-                blocks.append(best_block)
+                block = OrderBlock(
+
+                    direction="Bearish",
+
+                    high=float(
+                        candle["high"]
+                    ),
+
+                    low=float(
+                        candle["low"]
+                    ),
+
+                    created_at=self.df.iloc[i]["time"]
+
+                )
+
+
+                blocks.append(block)
+
+
+                break
 
 
         return blocks
