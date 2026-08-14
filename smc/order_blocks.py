@@ -83,6 +83,23 @@ class OrderBlockEngine:
 
         self.df = context.df
 
+        print(
+            "ORDER BLOCK DF DEBUG:",
+            "ROWS=",
+            len(self.df),
+            "INDEX END=",
+            self.df.index[-1],
+            "TIME END=",
+            self.df.iloc[-1]["time"]
+        )
+
+        print(
+            "OB ENGINE DATA END:",
+            self.df.iloc[-1]["time"],
+            "INDEX:",
+            self.df.index[-1]
+        )
+
         self.bos = context.bos
 
         self.swing_highs = context.swing_highs
