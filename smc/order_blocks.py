@@ -250,8 +250,13 @@ class OrderBlockEngine:
             return blocks
 
 
+        # Allow bullish reversal OB after bearish BOS
+        # when higher timeframe bias is bullish
 
-        if self.bos.direction != "Bullish":
+        if self.bos.direction not in [
+            "Bullish",
+            "Bearish"
+        ]:
 
             return blocks
 
@@ -357,7 +362,10 @@ class OrderBlockEngine:
 
 
 
-        if self.bos.direction != "Bearish":
+        if self.bos.direction not in [
+            "Bearish",
+            "Bullish"
+        ]:
 
             return blocks
 
