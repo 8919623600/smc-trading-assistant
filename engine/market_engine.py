@@ -1028,6 +1028,11 @@ class MarketEngine:
             )
         )
 
+        print(
+            "SELECTED OB DEBUG:",
+            self.selected_order_block
+        )
+
 
 
         self.selected_liquidity = (
@@ -1264,21 +1269,36 @@ class MarketEngine:
             entry_direction = entry_validator.get_direction()
 
 
-            if entry_direction:
+            if (
+                entry_direction.lower()
+                !=
+                direction.lower()
+            ):
 
-                if (
-                    entry_direction.lower()
-                    !=
-                    direction.lower()
-                ):
+                print(
+                    "DIRECTION CONFLICT:",
+                    "CONFLUENCE=",
+                    direction,
+                    "ENTRY=",
+                    entry_direction
+                )
+
+
+                # Allow liquidity sweep reversal setups
+                if self.selected_order_block:
 
                     print(
-                        "DIRECTION CONFLICT:",
-                        "CONFLUENCE=",
+                        "ALLOWING REVERSAL SETUP:",
+                        "HTF=",
                         direction,
                         "ENTRY=",
                         entry_direction
                     )
+
+                    trade_decision.direction = direction
+
+
+                else:
 
                     trade_decision.signal = "NO TRADE"
 
@@ -1287,11 +1307,6 @@ class MarketEngine:
                     self.selected_order_block = None
 
                     self.selected_liquidity = None
-
-
-                else:
-
-                    trade_decision.direction = direction
 
 
             # ==================================================
