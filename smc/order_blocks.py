@@ -379,7 +379,7 @@ class OrderBlockEngine:
 
             if close_price > open_price:
 
-                bearish_move = False
+                bearish_count = 0
 
 
                 for j in range(
@@ -390,13 +390,17 @@ class OrderBlockEngine:
                     c = self.df.iloc[j]
 
 
-                    if float(c["close"]) < close_price:
+                    if float(c["close"]) < float(c["open"]):
 
-                        bearish_move = True
+                        bearish_count += 1
+
+                    else:
+
                         break
 
 
-                if bearish_move:
+                # confirm real bearish displacement
+                if bearish_count >= 2:
 
                     origin_index = i
                     break
