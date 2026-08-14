@@ -204,118 +204,64 @@ class OrderBlockEngine:
     # Bullish OB
     # ======================================================
 
-    def detect_bullish_order_block(
-        self,
-    ) -> List[OrderBlock]:
-
+    def detect_bullish_order_block(self):
 
         blocks = []
 
-
         if not self.bos.confirmed:
-
             return blocks
 
-
-
-        if self.bos.direction not in [
-            "Bullish",
-            "Bearish"
-        ]:
-
+        if self.bos.direction != "Bullish":
             return blocks
-
 
 
         bos_time = self.bos.time
-
-
 
         time_matches = self.df.index[
             self.df["time"] == bos_time
         ]
 
-
         if len(time_matches) == 0:
-
             return blocks
-
 
 
         bos_index = time_matches[0]
 
 
-        best_block = None
-
-        largest_range = 0
-
-
-
         for i in range(
             bos_index - 1,
-            max(
-                bos_index - 30,
-                0
-            ),
+            max(bos_index - 30,0),
             -1
         ):
-
 
             candle = self.df.iloc[i]
 
 
-            open_price = float(
-                candle["open"]
-            )
+            open_price = float(candle["open"])
+            close_price = float(candle["close"])
 
 
-            close_price = float(
-                candle["close"]
-            )
+            # LAST bearish candle before bullish BOS
+
+            if close_price < open_price:
 
 
-            high = float(
-                candle["high"]
-            )
+                block = OrderBlock(
+
+                    direction="Bullish",
+
+                    high=float(candle["high"]),
+
+                    low=float(candle["low"]),
+
+                    created_at=self.df.iloc[i]["time"]
+
+                )
 
 
-            low = float(
-                candle["low"]
-            )
+                blocks.append(block)
 
-
-            candle_range = high - low
-
-
-
-            if close_price > open_price:
-
-
-                if candle_range > largest_range:
-
-
-                    largest_range = candle_range
-
-
-                    best_block = OrderBlock(
-
-                        direction="Bearish",
-
-                        high=high,
-
-                        low=low,
-
-                        created_at=self.df.iloc[i]["time"]
-
-                    )
-
-
-
-        if best_block:
-
-            blocks.append(
-                best_block
-            )
+                break
 
 
         return blocks
@@ -337,18 +283,11 @@ class OrderBlockEngine:
             return blocks
 
 
-
-        if self.bos.direction not in [
-            "Bearish",
-            "Bullish"
-        ]:
-
+        if self.bos.direction != "Bearish":
             return blocks
 
 
-
         bos_time = self.bos.time
-
 
 
         time_matches = self.df.index[
@@ -361,15 +300,7 @@ class OrderBlockEngine:
             return blocks
 
 
-
         bos_index = time_matches[0]
-
-
-
-        best_block = None
-
-        best_range = 0
-
 
 
         for i in range(
@@ -380,7 +311,6 @@ class OrderBlockEngine:
             ),
             -1
         ):
-
 
             candle = self.df.iloc[i]
 
@@ -395,54 +325,32 @@ class OrderBlockEngine:
             )
 
 
-
-            # last bullish candle before bearish BOS
+            # LAST bullish candle before bearish BOS
 
             if close_price > open_price:
 
 
-                candle_range = (
+                block = OrderBlock(
 
-                    float(candle["high"])
+                    direction="Bearish",
 
-                    -
-                    float(candle["low"])
+                    high=float(
+                        candle["high"]
+                    ),
+
+                    low=float(
+                        candle["low"]
+                    ),
+
+                    created_at=self.df.iloc[i]["time"],
 
                 )
 
 
-
-                if candle_range > best_range:
-
-
-                    best_range = candle_range
+                blocks.append(block)
 
 
-
-                    best_block = OrderBlock(
-
-                        direction="Bearish",
-
-                        high=float(
-                            candle["high"]
-                        ),
-
-                        low=float(
-                            candle["low"]
-                        ),
-
-                        created_at=self.df.iloc[i]["time"]
-
-                    )
-
-
-
-        if best_block:
-
-            blocks.append(
-                best_block
-            )
-
+                break
 
 
         return blocks
