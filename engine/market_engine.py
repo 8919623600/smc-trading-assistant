@@ -460,7 +460,7 @@ class MarketEngine:
 
                     (
 
-                        timeframe_rank,
+                        rank,
 
                         strength,
 
