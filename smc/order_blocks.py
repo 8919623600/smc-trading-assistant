@@ -422,8 +422,15 @@ class OrderBlockEngine:
             bos_index + 1
         ]
 
+        print(
+            "ZONE DEBUG",
+            zone[["time","open","high","low","close"]].to_string()
+        )
+
 
         block = OrderBlock(
+
+
 
             direction="Bearish",
 
