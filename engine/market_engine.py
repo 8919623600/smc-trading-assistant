@@ -484,16 +484,16 @@ class MarketEngine:
 
 
                 candidates.append(
-                    (
-                        direction_bonus,
-                        broken_penalty,
-                        fresh_bonus,
-                        rank,
-                        strength,
-                        -distance,
-                        created_at,
-                        block
-                    )
+                (
+                    rank,
+                    -distance,
+                    fresh_bonus,
+                    strength,
+                    direction_bonus,
+                    broken_penalty,
+                    created_at,
+                    block
+                )
                 )
 
 
@@ -519,12 +519,12 @@ class MarketEngine:
 
         candidates.sort(
             key=lambda x: (
-                x[3],   # timeframe rank FIRST
-                x[0],   # SMC direction match
+                x[0],   # timeframe rank
+                x[4],   # direction bonus
                 x[2],   # fresh bonus
-                x[4],   # strength
-                x[1],   # broken penalty
-                x[5],   # distance
+                x[3],   # strength
+                x[5],   # broken penalty
+                x[1],   # distance
                 x[6].timestamp() if hasattr(x[6], "timestamp") else 0
             ),
             reverse=True
