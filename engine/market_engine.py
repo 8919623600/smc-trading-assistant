@@ -495,33 +495,24 @@ class MarketEngine:
 
 
         candidates.sort(
-
-            key=lambda x:
-
-                (
-
-                    x[0],      # timeframe priority
-
-                    x[1],      # strength
-
-                    x[2],      # nearest price
-
-                    x[3]       # newest
-
-                ),
-
+            key=lambda x: (
+                x[0],
+                x[1],
+                x[2],
+                x[3],
+                x[4].timestamp() if hasattr(x[4], "timestamp") else 0
+            ),
             reverse=True
-
         )
 
 
 
         print(
             "FINAL OB SELECTED:",
-            candidates[0][3]
+            candidates[0][5]
         )
 
-        return candidates[0][4]
+        return candidates[0][5]
 
 
     # ======================================================
