@@ -545,22 +545,32 @@ class OrderBlockEngine:
 
     def analyze(self):
 
-
         blocks = []
 
 
+        bullish_blocks = self.detect_bullish_order_block()
 
-        blocks.extend(
+        print(
+            "BULLISH OB FOUND:",
+            len(bullish_blocks)
+        )
 
-            self.detect_bullish_order_block()
 
+        bearish_blocks = self.detect_bearish_order_block()
+
+        print(
+            "BEARISH OB FOUND:",
+            len(bearish_blocks)
         )
 
 
         blocks.extend(
+            bullish_blocks
+        )
 
-            self.detect_bearish_order_block()
 
+        blocks.extend(
+            bearish_blocks
         )
 
 
