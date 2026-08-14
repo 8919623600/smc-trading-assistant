@@ -264,6 +264,14 @@ class OrderBlockEngine:
 
         bos_time = self.bos.time
 
+        print(
+            "BULLISH OB BOS DEBUG:",
+            "bos_time=",
+            bos_time,
+            "exists=",
+            bos_time in self.df.index
+        )
+
 
 
         if bos_time not in self.df.index:
@@ -372,6 +380,14 @@ class OrderBlockEngine:
 
 
         bos_time = self.bos.time
+
+        print(
+            "BEARISH OB BOS DEBUG:",
+            "bos_time=",
+            bos_time,
+            "exists=",
+            bos_time in self.df.index
+        )
 
 
 
