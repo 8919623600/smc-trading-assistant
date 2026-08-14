@@ -22,6 +22,8 @@ Author: BMIE Project
 
 from types import SimpleNamespace
 
+import numpy as np
+
 from analyzer import analyze_market
 
 
