@@ -221,88 +221,64 @@ class OrderBlockEngine:
 
 
 
-        # Find bullish displacement start
-        for i in range(
-            bos_index - 1,
-            max(
-                bos_index - 50,
-                1
-            ),
-            -1
-        ):
+                # Find bearish OB origin
+                # Last bullish candle before bearish displacement
+
+                for i in range(
+                    bos_index - 1,
+                    max(
+                        bos_index - 50,
+                        1
+                    ),
+                    -1
+                ):
+
+                    candle = self.df.iloc[i]
 
 
-            candle = self.df.iloc[i]
+                    close_price = float(
+                        candle["close"]
+                    )
 
-            close_price = float(
-                candle["close"]
-            )
-
-            open_price = float(
-                candle["open"]
-            )
+                    open_price = float(
+                        candle["open"]
+                    )
 
 
-            next_candle = self.df.iloc[i+1]
+                    # bullish candle only
 
-            next_close = float(
-                next_candle["close"]
-            )
+                    if close_price > open_price:
 
 
-
-            # Find first bullish candle before continuous bearish displacement
-
-            if close_price > open_price:
-
-                bearish_move = True
-
-                for j in range(i + 1, bos_index + 1):
-
-                    future = self.df.iloc[j]
-
-                    if float(future["close"]) > float(future["open"]):
                         bearish_move = False
-                        break
 
 
-                if bearish_move:
+                        # Check if bearish displacement starts after this candle
 
-                    origin_index = i
-                    break
+                        for j in range(
+                            i + 1,
+                            bos_index + 1
+                        ):
 
-
-
-        if origin_index is None:
-
-            return blocks
+                            c = self.df.iloc[j]
 
 
+                            if float(c["close"]) < close_price:
 
-        zone = self.df.iloc[
-            origin_index:
-            bos_index + 1
-        ]
-
+                                bearish_move = True
+                                break
 
 
-        block = OrderBlock(
+                        if bearish_move:
 
-            direction="Bullish",
+                            origin_index = i
+                            break
 
-            high=float(
-                zone["high"].max()
-            ),
 
-            low=float(
-                self.df.iloc[origin_index]["low"]
-            ),
 
-            created_at=self.df.iloc[
-                origin_index
-            ]["time"]
+                if origin_index is None:
 
-        )
+                    return blocks
 
 
 
@@ -401,25 +377,11 @@ class OrderBlockEngine:
 
                 if next_close < close_price:
 
-                    bearish_count = 0
+                    # Last bullish candle before bearish displacement
+                    # is the bearish order block origin
 
-                    for j in range(
-                        i + 1,
-                        bos_index + 1
-                    ):
-
-                        c = self.df.iloc[j]
-
-                        if float(c["close"]) < float(c["open"]):
-                            bearish_count += 1
-                        else:
-                            break
-
-
-                    if bearish_count >= 2:
-
-                        origin_index = i
-                        break
+                    origin_index = i
+                    break
 
 
 
@@ -463,12 +425,16 @@ class OrderBlockEngine:
 
             direction="Bearish",
 
+            # Bearish OB:
+            # high = origin candle high
+            # low  = BOS candle low
+
             high=float(
-                zone["high"].max()
+                self.df.iloc[origin_index]["high"]
             ),
 
             low=float(
-                zone["low"].min()
+                self.df.iloc[bos_index]["low"]
             ),
 
             created_at=self.df.iloc[
