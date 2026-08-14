@@ -437,16 +437,19 @@ class MarketEngine:
 
 
 
-                timeframe_rank = 1
+                if result is self.analysis.entry:
 
-                if result is self.analysis.trend:
-
-                    rank = 3
+                    rank = 5
 
 
                 elif result is self.analysis.setup:
 
-                    rank = 2
+                    rank = 4
+
+
+                elif result is self.analysis.trend:
+
+                    rank = 3
 
 
                 else:
