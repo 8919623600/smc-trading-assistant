@@ -462,8 +462,22 @@ class MarketEngine:
                     broken_penalty = -50
 
 
+                # Prefer fresh OB over broken entry OB
+                direction_bonus = 0
+
+                if block.direction.lower() == direction.lower():
+                    direction_bonus = 100
+
+                fresh_bonus = 0
+
+                if not getattr(block, "broken", False):
+                    fresh_bonus = 50
+
+
                 candidates.append(
                 (
+                    direction_bonus,
+                    fresh_bonus,
                     rank,
                     strength,
                     broken_penalty,
@@ -496,11 +510,13 @@ class MarketEngine:
 
         candidates.sort(
             key=lambda x: (
-                x[0],
-                x[1],
-                x[2],
-                x[3],
-                x[4].timestamp() if hasattr(x[4], "timestamp") else 0
+                x[0],   # direction match
+                x[1],   # fresh OB
+                x[2],   # timeframe priority
+                x[3],   # strength
+                x[4],   # broken penalty
+                x[5],   # distance
+                x[6].timestamp() if hasattr(x[6], "timestamp") else 0
             ),
             reverse=True
         )
