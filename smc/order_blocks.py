@@ -251,9 +251,22 @@ class OrderBlockEngine:
 
 
 
+            # bullish expansion start
+
             if close_price > open_price:
 
-               origin_index = i
+                next_candle = self.df.iloc[i+1]
+
+                next_close = float(
+                    next_candle["close"]
+                )
+
+
+                if next_close < close_price:
+
+                    origin_index = i
+
+                    break
 
 
 
@@ -372,11 +385,22 @@ class OrderBlockEngine:
 
 
 
-            # bearish displacement begins
-
+            # find first bearish expansion candle
             if close_price < open_price:
 
-               origin_index = i
+                next_candle = self.df.iloc[i+1]
+
+                next_close = float(
+                    next_candle["close"]
+                )
+
+
+                # candle must start displacement
+                if next_close > close_price:
+
+                    origin_index = i
+
+                    break
 
 
 

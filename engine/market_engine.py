@@ -202,7 +202,7 @@ class MarketEngine:
 
                 ob_size = abs(block.high - block.low)
 
-                if ob_size < 1.5:
+                if ob_size < 0.5:
                     print(
                         "OB TOO SMALL SKIPPED:",
                         ob_size
@@ -366,7 +366,7 @@ class MarketEngine:
                 )
 
 
-                if ob_size < 1.5:
+                if ob_size < 0.5:
 
                     print(
                         "OB TOO SMALL SKIPPED:",
