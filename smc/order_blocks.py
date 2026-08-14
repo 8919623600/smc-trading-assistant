@@ -251,21 +251,24 @@ class OrderBlockEngine:
 
 
 
-            # bullish expansion start
+            # Find first bullish candle before continuous bearish displacement
 
             if close_price > open_price:
 
-                next_candle = self.df.iloc[i+1]
+                bearish_move = True
 
-                next_close = float(
-                    next_candle["close"]
-                )
+                for j in range(i + 1, bos_index + 1):
+
+                    future = self.df.iloc[j]
+
+                    if float(future["close"]) > float(future["open"]):
+                        bearish_move = False
+                        break
 
 
-                if next_close < close_price:
+                if bearish_move:
 
                     origin_index = i
-
                     break
 
 
