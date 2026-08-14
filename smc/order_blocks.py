@@ -314,6 +314,134 @@ class OrderBlockEngine:
             return blocks
 
 
+    # ======================================================
+    # Bearish OB
+    # ======================================================
+
+    def detect_bearish_order_block(self):
+
+        blocks = []
+
+
+        if not self.bos.confirmed:
+
+            return blocks
+
+
+        if self.bos.direction != "Bearish":
+
+            return blocks
+
+
+        bos_time = self.bos.time
+
+
+        time_matches = self.df.index[
+            self.df["time"] == bos_time
+        ]
+
+
+        if len(time_matches) == 0:
+
+            return blocks
+
+
+        bos_index = time_matches[0]
+
+
+        origin_index = None
+
+
+        # Find last bullish candle before bearish displacement
+
+        for i in range(
+            bos_index - 1,
+            max(
+                bos_index - 50,
+                1
+            ),
+            -1
+        ):
+
+            candle = self.df.iloc[i]
+
+
+            close_price = float(
+                candle["close"]
+            )
+
+            open_price = float(
+                candle["open"]
+            )
+
+
+            # bullish candle
+
+            if close_price > open_price:
+
+                bearish_move = False
+
+
+                for j in range(
+                    i + 1,
+                    bos_index + 1
+                ):
+
+                    c = self.df.iloc[j]
+
+
+                    if float(c["close"]) < close_price:
+
+                        bearish_move = True
+                        break
+
+
+                if bearish_move:
+
+                    origin_index = i
+                    break
+
+
+        if origin_index is None:
+
+            return blocks
+
+
+        print(
+            "BEARISH OB ORIGIN DEBUG:",
+            self.df.iloc[origin_index]["time"],
+            "HIGH=",
+            self.df.iloc[origin_index]["high"],
+            "LOW=",
+            self.df.iloc[origin_index]["low"]
+        )
+
+
+        block = OrderBlock(
+
+            direction="Bearish",
+
+            high=float(
+                self.df.iloc[origin_index]["high"]
+            ),
+
+            low=float(
+                self.df.iloc[bos_index]["low"]
+            ),
+
+            created_at=self.df.iloc[
+                origin_index
+            ]["time"]
+
+        )
+
+
+        blocks.append(block)
+
+
+        return blocks
+
+
 
 
 
