@@ -883,6 +883,40 @@ class MarketEngine:
 
             )
 
+            # ==================================================
+            # ENTRY STRUCTURE DEBUG
+            # ==================================================
+
+            if name == "entry":
+
+                print(
+                    "ENTRY STRUCTURE DEBUG:",
+                    "BOS=",
+                    getattr(
+                        result.bos,
+                        "direction",
+                        None
+                    ),
+                    "BOS TIME=",
+                    getattr(
+                        result.bos,
+                        "time",
+                        None
+                    ),
+                    "CHOCH=",
+                    getattr(
+                        result.choch,
+                        "direction",
+                        None
+                    ),
+                    "CHOCH TIME=",
+                    getattr(
+                        result.choch,
+                        "time",
+                        None
+                    )
+                )
+
 
 
         print(
