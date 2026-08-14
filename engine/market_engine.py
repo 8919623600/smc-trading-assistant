@@ -537,14 +537,13 @@ class MarketEngine:
 
         candidates.sort(
             key=lambda x: (
-                x[0],  # timeframe priority
-                x[1],  # BOS origin bonus
-                x[2],  # direction alignment
-                x[3],  # freshness
-                x[4],  # strength
-                x[5],  # broken penalty
-                x[6],  # distance
-                x[7].timestamp() if hasattr(x[7], "timestamp") else 0
+                x[5],   # broken penalty FIRST
+                x[0],   # timeframe rank
+                x[4],   # direction bonus
+                x[2],   # fresh bonus
+                x[3],   # strength
+                x[1],   # distance
+                x[6].timestamp() if hasattr(x[6], "timestamp") else 0
             ),
             reverse=True
         )
