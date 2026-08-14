@@ -156,6 +156,13 @@ class MarketEngine:
 
         for result in priority:
 
+            print(
+                "OB TIMEFRAME DEBUG:",
+                getattr(result, "current_time", None),
+                "OB COUNT=",
+                len(getattr(result,"order_blocks",[]))
+            )
+
 
             if not result:
 
