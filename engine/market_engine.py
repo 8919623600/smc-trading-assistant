@@ -131,13 +131,9 @@ class MarketEngine:
 
 
         priority = [
-
-            self.analysis.trend,
-
-            self.analysis.setup,
-
             self.analysis.entry,
-
+            self.analysis.setup,
+            self.analysis.trend,
         ]
 
 
@@ -248,7 +244,27 @@ class MarketEngine:
 
                 if block_direction:
 
-                    if block_direction.lower() != direction.lower():
+                    # SMC reversal logic:
+                    # Bullish trade uses Bearish OB
+                    # Bearish trade uses Bullish OB
+
+                    valid_ob = False
+
+
+                    if direction == "Bullish":
+
+                        if block_direction.lower() == "bearish":
+                            valid_ob = True
+
+
+                    elif direction == "Bearish":
+
+                        if block_direction.lower() == "bullish":
+                            valid_ob = True
+
+
+
+                    if not valid_ob:
 
                         print(
                             "OB DIRECTION SKIPPED:",
