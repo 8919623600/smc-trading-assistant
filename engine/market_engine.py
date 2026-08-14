@@ -471,16 +471,16 @@ class MarketEngine:
 
                 direction_bonus = 0
 
-                if block.direction.lower() == direction.lower():
+                if direction.lower() == "bullish" and block.direction.lower() == "bearish":
+                    direction_bonus = 100
+
+                elif direction.lower() == "bearish" and block.direction.lower() == "bullish":
                     direction_bonus = 100
 
                 fresh_bonus = 0
 
                 if not getattr(block, "broken", False):
                     fresh_bonus = 50
-
-                if block.broken and block.direction != direction:
-                   continue
 
 
                 candidates.append(
@@ -519,11 +519,11 @@ class MarketEngine:
 
         candidates.sort(
             key=lambda x: (
-                x[2],   # timeframe priority FIRST
-                x[0],   # direction match
-                x[1],   # fresh OB
-                x[3],   # strength
-                x[4],   # broken penalty
+                x[3],   # timeframe priority
+                x[0],   # SMC direction bonus
+                x[2],   # fresh OB
+                x[4],   # strength
+                x[1],   # broken penalty
                 x[5],   # distance
                 x[6].timestamp() if hasattr(x[6], "timestamp") else 0
             ),
