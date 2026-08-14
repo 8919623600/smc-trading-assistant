@@ -423,6 +423,12 @@ class OrderBlockEngine:
         ]
 
 
+        zone = self.df.iloc[
+            origin_index:
+            bos_index + 1
+        ]
+
+
         block = OrderBlock(
 
             direction="Bearish",
