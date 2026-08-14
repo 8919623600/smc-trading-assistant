@@ -290,6 +290,16 @@ class MarketEngine:
                         None
                     )
 
+
+                    if (
+                        isinstance(bos_time, (int, np.integer))
+                        and self.analysis.entry.df is not None
+                    ):
+
+                        bos_time = (
+                            self.analysis.entry.df.iloc[bos_time]["time"]
+                        )
+
                     if (
                         bos_time
                         and

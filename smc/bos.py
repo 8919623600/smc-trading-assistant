@@ -52,7 +52,7 @@ class BOSEngine:
                     latest_event = BOSEvent(
                         direction="Bullish",
                         level=swing.price,
-                        time=df.index[i],
+                        time=df.iloc[i]["time"],
                         confirmed=True,
                     )
 
@@ -87,7 +87,7 @@ class BOSEngine:
                     latest_event = BOSEvent(
                         direction="Bearish",
                         level=swing.price,
-                        time=df.index[i],
+                        time=df.iloc[i]["time"],
                         confirmed=True,
                     )
 
