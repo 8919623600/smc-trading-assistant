@@ -133,9 +133,9 @@ class MarketEngine:
 
 
         priority = [
-            self.analysis.trend,
-            self.analysis.setup,
             self.analysis.entry,
+            self.analysis.setup,
+            self.analysis.trend,
         ]
 
 
@@ -197,7 +197,7 @@ class MarketEngine:
 
                 ob_size = abs(block.high - block.low)
 
-                if ob_size < 5:
+                if ob_size < 1.5:
                     print(
                         "OB TOO SMALL SKIPPED:",
                         ob_size
@@ -361,7 +361,7 @@ class MarketEngine:
                 )
 
 
-                if ob_size < 5:
+                if ob_size < 1.5:
 
                     print(
                         "OB TOO SMALL SKIPPED:",
@@ -473,6 +473,12 @@ class MarketEngine:
                     )
 
                 )
+
+                if result is self.analysis.entry:
+                    print(
+                        "ENTRY TF OB FOUND - STOP SEARCHING HIGHER TF"
+                    )
+                    break
 
 
 
