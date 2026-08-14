@@ -464,7 +464,7 @@ class MarketEngine:
                 broken_penalty = 0
 
                 if getattr(block, "broken", False):
-                    broken_penalty = -50
+                    broken_penalty = -200
 
 
                 # Timeframe priority is more important than freshness
@@ -519,9 +519,9 @@ class MarketEngine:
 
         candidates.sort(
             key=lambda x: (
-                x[3],   # timeframe priority
-                x[0],   # SMC direction bonus
-                x[2],   # fresh OB
+                x[3],   # timeframe rank FIRST
+                x[0],   # SMC direction match
+                x[2],   # fresh bonus
                 x[4],   # strength
                 x[1],   # broken penalty
                 x[5],   # distance
