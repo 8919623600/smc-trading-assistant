@@ -483,14 +483,32 @@ class MarketEngine:
                     fresh_bonus = 50
 
 
+                # Prefer OB which existed before BOS displacement
+                bos_bonus = 0
+
+                try:
+
+                    bos_time = result.bos.time
+
+                    if created_at < bos_time:
+
+                        bos_bonus = 100
+
+
+                except Exception:
+
+                    bos_bonus = 0
+
+
                 candidates.append(
                 (
                     rank,
-                    -distance,
+                    bos_bonus,
+                    direction_bonus,
                     fresh_bonus,
                     strength,
-                    direction_bonus,
                     broken_penalty,
+                    -distance,
                     created_at,
                     block
                 )
@@ -519,13 +537,14 @@ class MarketEngine:
 
         candidates.sort(
             key=lambda x: (
-                x[0],   # timeframe rank
-                x[4],   # direction bonus
-                x[2],   # fresh bonus
-                x[3],   # strength
-                x[5],   # broken penalty
-                x[1],   # distance
-                x[6].timestamp() if hasattr(x[6], "timestamp") else 0
+                x[0],  # timeframe priority
+                x[1],  # BOS origin bonus
+                x[2],  # direction alignment
+                x[3],  # freshness
+                x[4],  # strength
+                x[5],  # broken penalty
+                x[6],  # distance
+                x[7].timestamp() if hasattr(x[7], "timestamp") else 0
             ),
             reverse=True
         )
@@ -534,10 +553,10 @@ class MarketEngine:
 
         print(
             "FINAL OB SELECTED:",
-            candidates[0][7]
+            candidates[0][8]
         )
 
-        return candidates[0][7]
+        return candidates[0][8]
 
 
     # ======================================================
