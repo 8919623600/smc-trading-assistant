@@ -388,9 +388,8 @@ class OrderBlockEngine:
 
 
 
-            # find last bullish/bearish origin before bearish BOS
-
-            # Find last bullish candle before bearish displacement
+            # Find bullish origin before bearish displacement
+            # Keep searching until displacement start is found
 
             if close_price > open_price:
 
@@ -400,11 +399,10 @@ class OrderBlockEngine:
                     next_candle["close"]
                 )
 
-                # next candle should start bearish move
                 if next_close < close_price:
 
-                    origin_index = i
-                    break
+                    if origin_index is None:
+                        origin_index = i
 
 
 
