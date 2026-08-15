@@ -437,6 +437,25 @@ class OrderBlockEngine:
                         bearish_displacement = True
                         break
 
+            print(
+                "PREVIOUS CANDLES DEBUG"
+            )
+
+            print(
+                self.df.iloc[
+                    bos_index-10:
+                    bos_index
+                ][
+                    [
+                        "time",
+                        "open",
+                        "high",
+                        "low",
+                        "close"
+                    ]
+                ]
+            )
+
 
             if bearish_displacement:
 
