@@ -356,7 +356,7 @@ class OrderBlockEngine:
         # Last bullish candle before strong bearish displacement
 
         for i in range(
-            bos_index - 2,
+            bos_index - 1,
             max(
                 bos_index - 50,
                 1
@@ -376,16 +376,6 @@ class OrderBlockEngine:
 
                 continue
 
-            next_candle = self.df.iloc[i + 1]
-
-            next_open = float(next_candle["open"])
-            next_close = float(next_candle["close"])
-
-
-            # next candle must be bearish displacement
-
-            if next_close >= next_open:
-                continue
 
 
             bearish_displacement = False
