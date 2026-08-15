@@ -355,6 +355,9 @@ class OrderBlockEngine:
         # Find true bearish OB origin
         # Last bullish candle before strong bearish displacement
 
+        candidate_index = None
+        candidate_high = 0
+        
         for i in range(
             bos_index - 1,
             max(
@@ -372,8 +375,19 @@ class OrderBlockEngine:
 
             # Origin must be bullish candle
 
+            # bullish candle candidate
+
             if close_price <= open_price:
                 continue
+
+
+            # keep the highest bullish candle
+            # before bearish displacement
+
+            if float(candle["high"]) > candidate_high:
+
+                candidate_high = float(candle["high"])
+                candidate_index = i
 
 
             # Check if this bullish candle is the beginning of the move
@@ -490,20 +504,6 @@ class OrderBlockEngine:
             if bearish_displacement:
 
                 origin_index = i
-
-                # search backwards for true bullish origin candle
-
-                for k in range(i - 1, max(i - 5, 0), -1):
-
-                    previous = self.df.iloc[k]
-
-                    previous_open = float(previous["open"])
-                    previous_close = float(previous["close"])
-
-                    if previous_close > previous_open:
-
-                        origin_index = k
-                        break
 
                 break
 
