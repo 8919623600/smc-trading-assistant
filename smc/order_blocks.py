@@ -376,6 +376,15 @@ class OrderBlockEngine:
 
                 continue
 
+            print(
+                "BULLISH CANDIDATE:",
+                self.df.iloc[i]["time"],
+                "HIGH=",
+                self.df.iloc[i]["high"],
+                "LOW=",
+                self.df.iloc[i]["low"]
+            )
+
 
 
             bearish_displacement = False
