@@ -352,7 +352,8 @@ class OrderBlockEngine:
         origin_index = None
 
 
-        # Find last bullish candle before bearish displacement
+        # Find true bearish OB origin
+        # Last bullish candle before strong bearish displacement
 
         for i in range(
             bos_index - 1,
@@ -365,50 +366,71 @@ class OrderBlockEngine:
 
             candle = self.df.iloc[i]
 
+            open_price = float(candle["open"])
+            close_price = float(candle["close"])
 
-            close_price = float(
-                candle["close"]
+
+            # Origin must be bullish candle
+
+            if close_price <= open_price:
+
+                continue
+
+
+            bearish_displacement = False
+
+
+            displacement_low = float(
+                self.df.iloc[bos_index]["low"]
             )
 
-            open_price = float(
-                candle["open"]
-            )
+
+            # Find first bearish displacement candle after origin
+
+            for j in range(
+                i + 1,
+                bos_index + 1
+            ):
+
+                next_candle = self.df.iloc[j]
+
+                next_open = float(next_candle["open"])
+                next_close = float(next_candle["close"])
+                next_low = float(next_candle["low"])
 
 
-            # bullish candle
+                # strong bearish candle
 
-            if close_price > open_price:
-
-                bearish_count = 0
-
-
-                for j in range(
-                    i + 1,
-                    bos_index + 1
+                if (
+                    next_close < next_open
+                    and next_low <= displacement_low
                 ):
 
-                    c = self.df.iloc[j]
+                    candle_range = (
+                        float(next_candle["high"])
+                        -
+                        float(next_candle["low"])
+                    )
 
 
-                    if float(c["close"]) < float(c["open"]):
+                    body = abs(
+                        next_open -
+                        next_close
+                    )
 
-                        bearish_count += 1
 
-                    else:
+                    # displacement confirmation
 
+                    if body >= candle_range * 0.5:
+
+                        bearish_displacement = True
                         break
 
 
-                # confirm real bearish displacement
-                if bearish_count >= 2:
+            if bearish_displacement:
 
-                    origin_index = i
-                    break
-
-
-        if origin_index is None:
-
-            return blocks
+                origin_index = i
+                break
 
 
         print(
