@@ -503,7 +503,10 @@ class OrderBlockEngine:
 
             if bearish_displacement:
 
-                origin_index = i
+                if candidate_index is None:
+                   return blocks
+
+                origin_index = candidate_index
 
                 break
 
