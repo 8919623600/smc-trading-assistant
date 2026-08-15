@@ -373,8 +373,22 @@ class OrderBlockEngine:
             # Origin must be bullish candle
 
             if close_price <= open_price:
-
                 continue
+
+
+            # Check if this bullish candle is the beginning of the move
+            # Ignore bullish candles that are inside previous bullish sequence
+
+            if i > 1:
+
+                previous = self.df.iloc[i-1]
+
+                prev_open = float(previous["open"])
+                prev_close = float(previous["close"])
+
+
+                if prev_close > prev_open:
+                    continue
 
             # reject bullish candles that appear after bearish displacement started
 
