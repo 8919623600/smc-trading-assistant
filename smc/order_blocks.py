@@ -440,7 +440,30 @@ class OrderBlockEngine:
 
             if bearish_displacement:
 
-                origin_index = i
+                # check previous candle also
+                if i > 0:
+
+                    previous = self.df.iloc[i - 1]
+
+                    previous_open = float(previous["open"])
+                    previous_close = float(previous["close"])
+
+
+                    # previous candle is also bullish,
+                    # it is the actual order block
+
+                    if previous_close > previous_open:
+
+                        origin_index = i - 1
+
+                    else:
+
+                        origin_index = i
+
+                else:
+
+                    origin_index = i
+
                 break
 
 
