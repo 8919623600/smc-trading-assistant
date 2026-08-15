@@ -376,6 +376,23 @@ class OrderBlockEngine:
 
                 continue
 
+            # reject bullish candles that appear after bearish displacement started
+
+            future_bearish = False
+
+            for k in range(i + 1, bos_index + 1):
+
+                k_open = float(self.df.iloc[k]["open"])
+                k_close = float(self.df.iloc[k]["close"])
+
+                if k_close < k_open:
+                    future_bearish = True
+                    break
+
+
+            if not future_bearish:
+                continue
+
             print(
                 "BULLISH CANDIDATE:",
                 self.df.iloc[i]["time"],
@@ -489,7 +506,7 @@ class OrderBlockEngine:
 
         zone = self.df.iloc[
             origin_index:
-            bos_index + 1
+            bos_index
         ]
 
         print(
