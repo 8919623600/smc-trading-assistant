@@ -495,8 +495,16 @@ class OrderBlockEngine:
         # =====================================================
 
 
+        # Include previous consolidation before OB origin
+
+        zone_start = max(
+            origin_index - 3,
+            0
+        )
+
+
         zone = self.df.iloc[
-            origin_index:
+            zone_start:
             bos_index
         ]
 
