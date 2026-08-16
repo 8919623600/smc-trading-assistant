@@ -455,30 +455,56 @@ class OrderBlockEngine:
 
             if bearish_displacement:
 
-                candidate_index = i
+
+                # find start of bearish displacement sequence
+
+                displacement_start = None
 
 
-                # Search backwards for the first bullish candle
-                # before bearish displacement sequence
+                for d in range(i + 1, bos_index + 1):
 
-                for k in range(i - 1, max(i - 30, 0), -1):
+                    dc = self.df.iloc[d]
 
-                    prev = self.df.iloc[k]
-
-                    prev_open = float(prev["open"])
-                    prev_close = float(prev["close"])
+                    d_open = float(dc["open"])
+                    d_close = float(dc["close"])
 
 
-                    # first bullish candle encountered
-                    # before displacement becomes origin
+                    if d_close < d_open:
 
-                    if prev_close > prev_open:
-
-                        candidate_index = k
+                        displacement_start = d
+                        break
 
 
-                    # continue searching older candles
-                    # do not stop on bearish candles
+
+                if displacement_start is None:
+
+                    continue
+
+
+
+                # candle immediately before displacement
+
+                candidate_index = displacement_start - 1
+
+
+
+                # move backwards only through bullish continuation
+
+                while candidate_index > 1:
+
+                    candle = self.df.iloc[candidate_index]
+
+                    c_open = float(candle["open"])
+                    c_close = float(candle["close"])
+
+
+                    if c_close > c_open:
+
+                        break
+
+
+                    candidate_index -= 1
+
 
 
                 print(
