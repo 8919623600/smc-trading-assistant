@@ -439,7 +439,7 @@ class OrderBlockEngine:
             return blocks
 
 
-        origin_index = candidate_index
+        origin_index = 1
 
 
         print(
@@ -454,23 +454,26 @@ class OrderBlockEngine:
 
         zone_start = origin_index
 
-        while zone_start > 0:
 
-            previous = self.df.iloc[zone_start - 1]
+        # move forward until bearish displacement starts
 
-            prev_open = float(previous["open"])
-            prev_close = float(previous["close"])
+        for x in range(origin_index, bos_index):
 
+            candle = self.df.iloc[x]
 
-            # include previous bullish candles
+            candle_open = float(candle["open"])
+            candle_close = float(candle["close"])
 
-            if prev_close > prev_open:
+            if candle_close < candle_open:
 
-                zone_start -= 1
-
-            else:
-
+                zone_start = x
                 break
+
+
+        zone = self.df.iloc[
+            zone_start:
+            bos_index
+        ]
 
 
         zone = self.df.iloc[
