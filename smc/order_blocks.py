@@ -424,7 +424,14 @@ class OrderBlockEngine:
 
             if bearish_displacement:
 
-                break
+                # keep searching older candles
+                # do not immediately break
+
+                if candidate_index is None:
+
+                    candidate_index = i
+
+                continue
 
 
         if candidate_index is None:
@@ -445,8 +452,29 @@ class OrderBlockEngine:
         )
 
 
+        zone_start = origin_index
+
+        while zone_start > 0:
+
+            previous = self.df.iloc[zone_start - 1]
+
+            prev_open = float(previous["open"])
+            prev_close = float(previous["close"])
+
+
+            # include previous bullish candles
+
+            if prev_close > prev_open:
+
+                zone_start -= 1
+
+            else:
+
+                break
+
+
         zone = self.df.iloc[
-            origin_index:
+            zone_start:
             bos_index
         ]
 
