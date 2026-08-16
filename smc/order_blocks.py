@@ -347,6 +347,7 @@ class OrderBlockEngine:
 
 
         candidate_index = None
+        displacement_index = None
 
 
         displacement_low = float(
@@ -354,10 +355,9 @@ class OrderBlockEngine:
         )
 
 
-        displacement_index = None
-
-
+        # ---------------------------------
         # Find bullish candle before bearish displacement
+        # ---------------------------------
 
         for i in range(
             bos_index - 1,
@@ -372,20 +372,26 @@ class OrderBlockEngine:
             candle = self.df.iloc[i]
 
 
-            open_price = float(candle["open"])
-            close_price = float(candle["close"])
+            open_price = float(
+                candle["open"]
+            )
+
+            close_price = float(
+                candle["close"]
+            )
 
 
-            # bullish candle only
+            # bullish candle candidate
 
             if close_price <= open_price:
                 continue
 
 
+
             bearish_displacement = False
 
 
-            # Find bearish displacement after this candle
+            # Check displacement after candidate
 
             for j in range(
                 i + 1,
@@ -396,9 +402,17 @@ class OrderBlockEngine:
                 next_candle = self.df.iloc[j]
 
 
-                next_open = float(next_candle["open"])
-                next_close = float(next_candle["close"])
-                next_low = float(next_candle["low"])
+                next_open = float(
+                    next_candle["open"]
+                )
+
+                next_close = float(
+                    next_candle["close"]
+                )
+
+                next_low = float(
+                    next_candle["low"]
+                )
 
 
                 if (
@@ -422,8 +436,19 @@ class OrderBlockEngine:
 
                     if body >= candle_range * 0.5:
 
+
                         bearish_displacement = True
                         displacement_index = j
+
+                        print(
+                            "DISPLACEMENT DEBUG:",
+                            next_candle["time"],
+                            "HIGH=",
+                            next_candle["high"],
+                            "LOW=",
+                            next_candle["low"]
+                        )
+
                         break
 
 
@@ -436,11 +461,11 @@ class OrderBlockEngine:
 
                 print(
                     "BULLISH CANDIDATE:",
-                    self.df.iloc[i]["time"],
+                    candle["time"],
                     "HIGH=",
-                    self.df.iloc[i]["high"],
+                    candle["high"],
                     "LOW=",
-                    self.df.iloc[i]["low"]
+                    candle["low"]
                 )
 
 
@@ -449,24 +474,32 @@ class OrderBlockEngine:
 
 
         if candidate_index is None:
-
             return blocks
 
 
 
-        # ------------------------------------
-        # Expand OB zone backwards
-        # Include full consolidation before displacement
-        # ------------------------------------
+        # ---------------------------------
+        # Expand order block zone backwards
+        # Capture complete consolidation
+        # ---------------------------------
 
         origin_index = candidate_index
 
 
+        max_high = float(
+            self.df.iloc[candidate_index]["high"]
+        )
+
+
         for x in range(
             candidate_index - 1,
-            max(candidate_index - 20, 0),
+            max(
+                candidate_index - 20,
+                0
+            ),
             -1
         ):
+
 
             candle = self.df.iloc[x]
 
@@ -475,94 +508,101 @@ class OrderBlockEngine:
                 candle["high"]
             )
 
+
             candle_low = float(
                 candle["low"]
             )
 
 
+            candle_open = float(
+                candle["open"]
+            )
+
+
+            candle_close = float(
+                candle["close"]
+            )
+
+
+            # Include previous candles
+            # until structure starts expanding
+
             origin_index = x
 
 
-            # stop only when we find a candle
-            # which belongs to previous structure
+            if candle_high > max_high:
 
-            previous_highs = self.df.iloc[
-                x:min(x+3, bos_index)
-            ]["high"]
+                max_high = candle_high
 
 
-            if candle_high >= previous_highs.max():
+
+            # stop when we find a clear bullish push start
+
+            if (
+                candle_close > candle_open
+                and candle_high >= max_high
+            ):
 
                 break
 
 
 
-                print(
-                    "BEARISH OB ORIGIN DEBUG:",
-                    self.df.iloc[origin_index]["time"],
-                    "HIGH=",
-                    self.df.iloc[origin_index]["high"],
-                    "LOW=",
-                    self.df.iloc[origin_index]["low"]
-                )
+        print(
+            "BEARISH OB ORIGIN DEBUG:",
+            self.df.iloc[origin_index]["time"],
+            "HIGH=",
+            self.df.iloc[origin_index]["high"],
+            "LOW=",
+            self.df.iloc[origin_index]["low"]
+        )
 
 
 
-                zone = self.df.iloc[
-                    origin_index:
-                    bos_index
+        zone = self.df.iloc[
+            origin_index:
+            bos_index
+        ]
+
+
+
+        print(
+            "ZONE DEBUG",
+            zone[
+                [
+                    "time",
+                    "open",
+                    "high",
+                    "low",
+                    "close"
                 ]
+            ].to_string()
+        )
 
 
 
-                print(
-                    "DISPLACEMENT DEBUG:",
-                    self.df.iloc[displacement_index]["time"],
-                    "HIGH=",
-                    self.df.iloc[displacement_index]["high"],
-                    "LOW=",
-                    self.df.iloc[displacement_index]["low"]
-                )
+        block = OrderBlock(
+
+            direction="Bearish",
+
+            high=float(
+                zone["high"].max()
+            ),
+
+            low=float(
+                self.df.iloc[bos_index]["low"]
+            ),
+
+            created_at=self.df.iloc[
+                origin_index
+            ]["time"]
+
+        )
 
 
-                print(
-                    "ZONE DEBUG",
-                    zone[
-                        [
-                            "time",
-                            "open",
-                            "high",
-                            "low",
-                            "close"
-                        ]
-                    ].to_string()
-                )
+        blocks.append(block)
 
 
-
-                block = OrderBlock(
-
-                    direction="Bearish",
-
-                    high=float(
-                        zone["high"].max()
-                    ),
-
-                    low=float(
-                        self.df.iloc[bos_index]["low"]
-                    ),
-
-                    created_at=self.df.iloc[
-                        origin_index
-                    ]["time"]
-
-                )
-
-
-                blocks.append(block)
-
-
-                return blocks
+        return blocks
 
 
 
