@@ -456,24 +456,10 @@ class OrderBlockEngine:
 
         # ------------------------------------
         # Expand OB zone backwards
-        # Capture complete bullish leg
+        # Include full consolidation before displacement
         # ------------------------------------
 
-
-        # Expand OB zone backwards
-        # Capture complete consolidation before displacement
-
-
         origin_index = candidate_index
-
-
-        # Move backwards until the bullish push starts
-        # Include candles that created the high
-
-
-        highest_high = float(
-            self.df.iloc[candidate_index]["high"]
-        )
 
 
         for x in range(
@@ -489,100 +475,94 @@ class OrderBlockEngine:
                 candle["high"]
             )
 
-
             candle_low = float(
                 candle["low"]
             )
 
 
-            # extend zone backwards
-
             origin_index = x
 
 
-            if candle_high > highest_high:
+            # stop only when we find a candle
+            # which belongs to previous structure
 
-                highest_high = candle_high
-
-
-            # stop when we find bearish candle before bullish leg
-
-            candle_open = float(candle["open"])
-            candle_close = float(candle["close"])
+            previous_highs = self.df.iloc[
+                x:min(x+3, bos_index)
+            ]["high"]
 
 
-            if candle_close < candle_open:
+            if candle_high >= previous_highs.max():
 
                 break
 
 
 
-        print(
-            "BEARISH OB ORIGIN DEBUG:",
-            self.df.iloc[origin_index]["time"],
-            "HIGH=",
-            self.df.iloc[origin_index]["high"],
-            "LOW=",
-            self.df.iloc[origin_index]["low"]
-        )
+                print(
+                    "BEARISH OB ORIGIN DEBUG:",
+                    self.df.iloc[origin_index]["time"],
+                    "HIGH=",
+                    self.df.iloc[origin_index]["high"],
+                    "LOW=",
+                    self.df.iloc[origin_index]["low"]
+                )
 
 
 
-        zone = self.df.iloc[
-            origin_index:
-            bos_index
-        ]
-
-
-
-        print(
-            "DISPLACEMENT DEBUG:",
-            self.df.iloc[displacement_index]["time"],
-            "HIGH=",
-            self.df.iloc[displacement_index]["high"],
-            "LOW=",
-            self.df.iloc[displacement_index]["low"]
-        )
-
-
-        print(
-            "ZONE DEBUG",
-            zone[
-                [
-                    "time",
-                    "open",
-                    "high",
-                    "low",
-                    "close"
+                zone = self.df.iloc[
+                    origin_index:
+                    bos_index
                 ]
-            ].to_string()
-        )
 
 
 
-        block = OrderBlock(
-
-            direction="Bearish",
-
-            high=float(
-                zone["high"].max()
-            ),
-
-            low=float(
-                self.df.iloc[bos_index]["low"]
-            ),
-
-            created_at=self.df.iloc[
-                origin_index
-            ]["time"]
-
-        )
+                print(
+                    "DISPLACEMENT DEBUG:",
+                    self.df.iloc[displacement_index]["time"],
+                    "HIGH=",
+                    self.df.iloc[displacement_index]["high"],
+                    "LOW=",
+                    self.df.iloc[displacement_index]["low"]
+                )
 
 
-        blocks.append(block)
+                print(
+                    "ZONE DEBUG",
+                    zone[
+                        [
+                            "time",
+                            "open",
+                            "high",
+                            "low",
+                            "close"
+                        ]
+                    ].to_string()
+                )
 
 
-        return blocks
+
+                block = OrderBlock(
+
+                    direction="Bearish",
+
+                    high=float(
+                        zone["high"].max()
+                    ),
+
+                    low=float(
+                        self.df.iloc[bos_index]["low"]
+                    ),
+
+                    created_at=self.df.iloc[
+                        origin_index
+                    ]["time"]
+
+                )
+
+
+                blocks.append(block)
+
+
+                return blocks
 
 
 
