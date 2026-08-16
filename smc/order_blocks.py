@@ -455,16 +455,21 @@ class OrderBlockEngine:
 
             if bearish_displacement:
 
-                # keep oldest bullish candle before displacement
                 candidate_index = i
 
-                for k in range(i - 1, max(i - 10, 0), -1):
+
+                # move backwards through bullish retracement candles
+                # until bearish leg origin is found
+
+                for k in range(i - 1, max(i - 20, 0), -1):
 
                     prev = self.df.iloc[k]
 
                     prev_open = float(prev["open"])
                     prev_close = float(prev["close"])
 
+
+                    # bullish candle before displacement
                     if prev_close > prev_open:
 
                         candidate_index = k
