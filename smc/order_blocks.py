@@ -455,17 +455,32 @@ class OrderBlockEngine:
 
             if bearish_displacement:
 
-
+                # keep oldest bullish candle before displacement
                 candidate_index = i
+
+                for k in range(i - 1, max(i - 10, 0), -1):
+
+                    prev = self.df.iloc[k]
+
+                    prev_open = float(prev["open"])
+                    prev_close = float(prev["close"])
+
+                    if prev_close > prev_open:
+
+                        candidate_index = k
+
+                    else:
+
+                        break
 
 
                 print(
                     "BULLISH CANDIDATE:",
-                    candle["time"],
+                    self.df.iloc[candidate_index]["time"],
                     "HIGH=",
-                    candle["high"],
+                    self.df.iloc[candidate_index]["high"],
                     "LOW=",
-                    candle["low"]
+                    self.df.iloc[candidate_index]["low"]
                 )
 
 
