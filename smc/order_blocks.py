@@ -473,7 +473,7 @@ class OrderBlockEngine:
             direction="Bearish",
 
             high=float(
-                zone["high"].max()
+                self.df.iloc[bos_index]["high"]
             ),
 
             low=float(
