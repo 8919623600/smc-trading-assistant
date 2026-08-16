@@ -460,33 +460,39 @@ class OrderBlockEngine:
         # ------------------------------------
 
 
-        origin_index = candidate_index
+        # Expand OB zone backwards
+        # Capture complete consolidation before displacement
 
+
+        origin_index = candidate_index
 
 
         for x in range(
             candidate_index - 1,
-            max(candidate_index - 10, 0),
+            max(candidate_index - 20, 0),
             -1
         ):
-
 
             candle = self.df.iloc[x]
 
 
-            candle_open = float(candle["open"])
-            candle_close = float(candle["close"])
+            candle_high = float(candle["high"])
+            candle_low = float(candle["low"])
 
 
-            # previous bullish candles belong to OB
+            candidate_high = float(
+                self.df.iloc[candidate_index]["high"]
+            )
 
-            if candle_close >= candle_open:
 
-                origin_index = x
+            # stop if previous candle breaks the bullish origin high
 
-            else:
+            if candle_high > candidate_high:
 
                 break
+
+
+            origin_index = x
 
 
 
