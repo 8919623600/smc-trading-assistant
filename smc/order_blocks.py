@@ -486,17 +486,17 @@ class OrderBlockEngine:
         origin_index = candidate_index
 
 
-        max_high = float(
+        # Find start of consolidation
+        # Stop when previous candle creates a new extreme
+
+        candidate_high = float(
             self.df.iloc[candidate_index]["high"]
         )
 
 
         for x in range(
             candidate_index - 1,
-            max(
-                candidate_index - 20,
-                0
-            ),
+            max(candidate_index - 20, 0),
             -1
         ):
 
@@ -514,34 +514,22 @@ class OrderBlockEngine:
             )
 
 
-            candle_open = float(
-                candle["open"]
+            previous_candle = self.df.iloc[x-1]
+
+
+            previous_high = float(
+                previous_candle["high"]
             )
 
 
-            candle_close = float(
-                candle["close"]
-            )
-
-
-            # Include previous candles
-            # until structure starts expanding
+            # include candles before displacement
 
             origin_index = x
 
 
-            if candle_high > max_high:
+            # stop before previous swing high
 
-                max_high = candle_high
-
-
-
-            # stop when we find a clear bullish push start
-
-            if (
-                candle_close > candle_open
-                and candle_high >= max_high
-            ):
+            if previous_high > candle_high:
 
                 break
 
