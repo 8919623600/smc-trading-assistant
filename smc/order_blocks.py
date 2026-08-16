@@ -403,7 +403,6 @@ class OrderBlockEngine:
                         float(next_candle["low"])
                     )
 
-
                     body = abs(
                         next_open -
                         next_close
@@ -413,9 +412,19 @@ class OrderBlockEngine:
                     if body >= candle_range * 0.5:
 
                         bearish_displacement = True
-                        displacement_index = j
-                        break
 
+                        displacement_index = j
+
+                        print(
+                            "DISPLACEMENT DEBUG:",
+                            self.df.iloc[j]["time"],
+                            "HIGH=",
+                            self.df.iloc[j]["high"],
+                            "LOW=",
+                            self.df.iloc[j]["low"]
+                        )
+
+                        break
 
             if bearish_displacement:
 
