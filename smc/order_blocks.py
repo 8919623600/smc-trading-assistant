@@ -328,26 +328,26 @@ class OrderBlockEngine:
         if self.bos.direction != "Bearish":
             return blocks
 
+
         bos_time = self.bos.time
+
 
         time_matches = self.df.index[
             self.df["time"] == bos_time
         ]
 
+
         if len(time_matches) == 0:
             return blocks
 
+
         bos_index = time_matches[0]
 
-        origin_index = None
-
-        # Find true bearish OB origin
-        # Last bullish candle before bearish displacement
 
         candidate_index = None
-        candidate_high = 0
 
 
+        # Find nearest bullish candle before bearish displacement
         for i in range(
             bos_index - 1,
             max(
@@ -359,22 +359,14 @@ class OrderBlockEngine:
 
             candle = self.df.iloc[i]
 
+
             open_price = float(candle["open"])
             close_price = float(candle["close"])
 
 
-            # Origin must be bullish candle
-
+            # OB origin must be bullish candle
             if close_price <= open_price:
                 continue
-
-
-            # keep highest bullish candle
-
-            if float(candle["high"]) > candidate_high:
-
-                candidate_high = float(candle["high"])
-                candidate_index = i
 
 
             displacement_low = float(
@@ -386,13 +378,13 @@ class OrderBlockEngine:
 
 
             # Check bearish displacement after candidate
-
             for j in range(
                 i + 1,
                 bos_index + 1
             ):
 
                 next_candle = self.df.iloc[j]
+
 
                 next_open = float(next_candle["open"])
                 next_close = float(next_candle["close"])
@@ -410,6 +402,7 @@ class OrderBlockEngine:
                         float(next_candle["low"])
                     )
 
+
                     body = abs(
                         next_open -
                         next_close
@@ -424,22 +417,25 @@ class OrderBlockEngine:
 
             if bearish_displacement:
 
-                # keep searching older candles
-                # do not immediately break
+                candidate_index = i
 
-                if candidate_index is None:
+                print(
+                    "BULLISH CANDIDATE:",
+                    self.df.iloc[i]["time"],
+                    "HIGH=",
+                    self.df.iloc[i]["high"],
+                    "LOW=",
+                    self.df.iloc[i]["low"]
+                )
 
-                    candidate_index = i
-
-                continue
+                break
 
 
         if candidate_index is None:
-
             return blocks
 
 
-        origin_index = 1
+        origin_index = candidate_index
 
 
         print(
@@ -452,32 +448,8 @@ class OrderBlockEngine:
         )
 
 
-        zone_start = origin_index
-
-
-        # move forward until bearish displacement starts
-
-        for x in range(origin_index, bos_index):
-
-            candle = self.df.iloc[x]
-
-            candle_open = float(candle["open"])
-            candle_close = float(candle["close"])
-
-            if candle_close < candle_open:
-
-                zone_start = x
-                break
-
-
         zone = self.df.iloc[
-            zone_start:
-            bos_index
-        ]
-
-
-        zone = self.df.iloc[
-            zone_start:
+            origin_index:
             bos_index
         ]
 
