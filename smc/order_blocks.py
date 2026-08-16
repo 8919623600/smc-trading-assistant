@@ -347,22 +347,16 @@ class OrderBlockEngine:
 
 
         candidate_index = None
-        displacement_index = None
 
 
-        displacement_low = float(
-            self.df.iloc[bos_index]["low"]
-        )
-
-
-        # ---------------------------------
-        # Find bullish candle before bearish displacement
-        # ---------------------------------
+        # =====================================================
+        # Find LAST bullish candle before bearish displacement
+        # =====================================================
 
         for i in range(
             bos_index - 1,
             max(
-                bos_index - 50,
+                bos_index - 30,
                 1
             ),
             -1
@@ -372,16 +366,11 @@ class OrderBlockEngine:
             candle = self.df.iloc[i]
 
 
-            open_price = float(
-                candle["open"]
-            )
-
-            close_price = float(
-                candle["close"]
-            )
+            open_price = float(candle["open"])
+            close_price = float(candle["close"])
 
 
-            # bullish candle candidate
+            # OB origin must be bullish candle
 
             if close_price <= open_price:
                 continue
@@ -391,7 +380,10 @@ class OrderBlockEngine:
             bearish_displacement = False
 
 
-            # Check displacement after candidate
+            displacement_index = None
+
+
+            # Check candles after origin until BOS
 
             for j in range(
                 i + 1,
@@ -410,185 +402,79 @@ class OrderBlockEngine:
                     next_candle["close"]
                 )
 
+
+                next_high = float(
+                    next_candle["high"]
+                )
+
                 next_low = float(
                     next_candle["low"]
                 )
 
 
+                candle_range = (
+                    next_high -
+                    next_low
+                )
+
+
+                body = abs(
+                    next_open -
+                    next_close
+                )
+
+
+                # bearish displacement candle
+
                 if (
                     next_close < next_open
-                    and next_low <= displacement_low
+                    and body >= candle_range * 0.5
+                    and next_low <= float(self.df.iloc[bos_index]["low"])
                 ):
 
 
-                    candle_range = (
-                        float(next_candle["high"])
-                        -
-                        float(next_candle["low"])
+                    bearish_displacement = True
+
+                    displacement_index = j
+
+                    print(
+                        "DISPLACEMENT DEBUG:",
+                        next_candle["time"],
+                        "HIGH=",
+                        next_high,
+                        "LOW=",
+                        next_low
                     )
 
-
-                    body = abs(
-                        next_open -
-                        next_close
-                    )
-
-
-                    if body >= candle_range * 0.5:
-
-
-                        bearish_displacement = True
-                        displacement_index = j
-
-                        print(
-                            "DISPLACEMENT DEBUG:",
-                            next_candle["time"],
-                            "HIGH=",
-                            next_candle["high"],
-                            "LOW=",
-                            next_candle["low"]
-                        )
-
-                        break
+                    break
 
 
 
             if bearish_displacement:
 
 
-                # find start of bearish displacement sequence
-
-                displacement_start = None
-
-
-                for d in range(i + 1, bos_index + 1):
-
-                    dc = self.df.iloc[d]
-
-                    d_open = float(dc["open"])
-                    d_close = float(dc["close"])
-
-
-                    if d_close < d_open:
-
-                        displacement_start = d
-                        break
-
-
-
-                if displacement_start is None:
-
-                    continue
-
-
-
-                # candle immediately before displacement
-
-                candidate_index = displacement_start - 1
-
-
-
-                # move backwards only through bullish continuation
-
-                while candidate_index > 1:
-
-                    candle = self.df.iloc[candidate_index]
-
-                    c_open = float(candle["open"])
-                    c_close = float(candle["close"])
-
-
-                    if c_close > c_open:
-
-                        break
-
-
-                    candidate_index -= 1
-
+                candidate_index = i
 
 
                 print(
                     "FINAL CANDIDATE SELECTED:",
-                    self.df.iloc[candidate_index]["time"]
+                    self.df.iloc[i]["time"]
                 )
 
 
                 break
 
 
-                print(
-                    "BULLISH CANDIDATE:",
-                    self.df.iloc[candidate_index]["time"],
-                    "HIGH=",
-                    self.df.iloc[candidate_index]["high"],
-                    "LOW=",
-                    self.df.iloc[candidate_index]["low"]
-                )
 
-
-                break
-
-
+        # No valid OB found
 
         if candidate_index is None:
+
             return blocks
 
 
 
-        # ---------------------------------
-        # Expand order block zone backwards
-        # Capture complete consolidation
-        # ---------------------------------
-
         origin_index = candidate_index
-
-
-        # Find start of consolidation
-        # Stop when previous candle creates a new extreme
-
-        candidate_high = float(
-            self.df.iloc[candidate_index]["high"]
-        )
-
-
-        for x in range(
-            candidate_index - 1,
-            max(candidate_index - 20, 0),
-            -1
-        ):
-
-
-            candle = self.df.iloc[x]
-
-
-            candle_high = float(
-                candle["high"]
-            )
-
-
-            candle_low = float(
-                candle["low"]
-            )
-
-
-            previous_candle = self.df.iloc[x-1]
-
-
-            previous_high = float(
-                previous_candle["high"]
-            )
-
-
-            # include candles before displacement
-
-            origin_index = x
-
-
-            # stop before previous swing high
-
-            if previous_high > candle_high:
-
-                break
 
 
 
@@ -601,6 +487,12 @@ class OrderBlockEngine:
             self.df.iloc[origin_index]["low"]
         )
 
+
+
+        # =====================================================
+        # Create OB zone
+        # Only origin candle -> displacement start
+        # =====================================================
 
 
         zone = self.df.iloc[
@@ -629,19 +521,23 @@ class OrderBlockEngine:
 
             direction="Bearish",
 
+
             high=float(
                 zone["high"].max()
             ),
 
+
             low=float(
                 self.df.iloc[bos_index]["low"]
             ),
+
 
             created_at=self.df.iloc[
                 origin_index
             ]["time"]
 
         )
+
 
 
         blocks.append(block)
