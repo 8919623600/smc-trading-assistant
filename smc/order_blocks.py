@@ -322,8 +322,10 @@ class OrderBlockEngine:
 
         blocks = []
 
+
         if not self.bos.confirmed:
             return blocks
+
 
         if self.bos.direction != "Bearish":
             return blocks
@@ -345,10 +347,18 @@ class OrderBlockEngine:
 
 
         candidate_index = None
+
+
+        displacement_low = float(
+            self.df.iloc[bos_index]["low"]
+        )
+
+
         displacement_index = None
 
 
-        # Find nearest bullish candle before bearish displacement
+        # Find bullish candle before bearish displacement
+
         for i in range(
             bos_index - 1,
             max(
@@ -358,6 +368,7 @@ class OrderBlockEngine:
             -1
         ):
 
+
             candle = self.df.iloc[i]
 
 
@@ -365,24 +376,22 @@ class OrderBlockEngine:
             close_price = float(candle["close"])
 
 
-            # OB origin must be bullish candle
+            # bullish candle only
+
             if close_price <= open_price:
                 continue
-
-
-            displacement_low = float(
-                self.df.iloc[bos_index]["low"]
-            )
 
 
             bearish_displacement = False
 
 
-            # Check bearish displacement after candidate
+            # Find bearish displacement after this candle
+
             for j in range(
                 i + 1,
                 bos_index + 1
             ):
+
 
                 next_candle = self.df.iloc[j]
 
@@ -397,11 +406,13 @@ class OrderBlockEngine:
                     and next_low <= displacement_low
                 ):
 
+
                     candle_range = (
                         float(next_candle["high"])
                         -
                         float(next_candle["low"])
                     )
+
 
                     body = abs(
                         next_open -
@@ -412,23 +423,16 @@ class OrderBlockEngine:
                     if body >= candle_range * 0.5:
 
                         bearish_displacement = True
-
                         displacement_index = j
-
-                        print(
-                            "DISPLACEMENT DEBUG:",
-                            self.df.iloc[j]["time"],
-                            "HIGH=",
-                            self.df.iloc[j]["high"],
-                            "LOW=",
-                            self.df.iloc[j]["low"]
-                        )
-
                         break
+
+
 
             if bearish_displacement:
 
+
                 candidate_index = i
+
 
                 print(
                     "BULLISH CANDIDATE:",
@@ -439,14 +443,51 @@ class OrderBlockEngine:
                     self.df.iloc[i]["low"]
                 )
 
+
                 break
 
 
+
         if candidate_index is None:
+
             return blocks
 
 
+
+        # ------------------------------------
+        # Expand OB zone backwards
+        # Capture complete bullish leg
+        # ------------------------------------
+
+
         origin_index = candidate_index
+
+
+
+        for x in range(
+            candidate_index - 1,
+            max(candidate_index - 10, 0),
+            -1
+        ):
+
+
+            candle = self.df.iloc[x]
+
+
+            candle_open = float(candle["open"])
+            candle_close = float(candle["close"])
+
+
+            # previous bullish candles belong to OB
+
+            if candle_close >= candle_open:
+
+                origin_index = x
+
+            else:
+
+                break
+
 
 
         print(
@@ -459,10 +500,22 @@ class OrderBlockEngine:
         )
 
 
+
         zone = self.df.iloc[
             origin_index:
             bos_index
         ]
+
+
+
+        print(
+            "DISPLACEMENT DEBUG:",
+            self.df.iloc[displacement_index]["time"],
+            "HIGH=",
+            self.df.iloc[displacement_index]["high"],
+            "LOW=",
+            self.df.iloc[displacement_index]["low"]
+        )
 
 
         print(
@@ -479,12 +532,13 @@ class OrderBlockEngine:
         )
 
 
+
         block = OrderBlock(
 
             direction="Bearish",
 
             high=float(
-                self.df.iloc[displacement_index]["high"]
+                zone["high"].max()
             ),
 
             low=float(
