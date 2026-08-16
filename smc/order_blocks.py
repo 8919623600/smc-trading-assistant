@@ -345,6 +345,7 @@ class OrderBlockEngine:
 
 
         candidate_index = None
+        displacement_index = None
 
 
         # Find nearest bullish candle before bearish displacement
@@ -412,6 +413,7 @@ class OrderBlockEngine:
                     if body >= candle_range * 0.5:
 
                         bearish_displacement = True
+                        displacement_index = j
                         break
 
 
@@ -473,7 +475,7 @@ class OrderBlockEngine:
             direction="Bearish",
 
             high=float(
-                self.df.iloc[bos_index]["high"]
+                self.df.iloc[displacement_index]["high"]
             ),
 
             low=float(
