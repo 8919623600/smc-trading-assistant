@@ -506,7 +506,13 @@ class OrderBlockEngine:
                 if candidate_index is None:
                    return blocks
 
-                origin_index = candidate_index
+                if self.context.timeframe == "5m":
+
+                    origin_index = i
+
+                else:
+
+                    origin_index = candidate_index
 
                 break
 

@@ -160,6 +160,7 @@ def analyze_market(
     context = AnalysisContext(
 
         df=df,
+        timeframe=timeframe,
 
         swing_highs=major_highs,
 
