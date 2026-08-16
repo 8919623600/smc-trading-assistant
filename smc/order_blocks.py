@@ -467,6 +467,15 @@ class OrderBlockEngine:
         origin_index = candidate_index
 
 
+        # Move backwards until the bullish push starts
+        # Include candles that created the high
+
+
+        highest_high = float(
+            self.df.iloc[candidate_index]["high"]
+        )
+
+
         for x in range(
             candidate_index - 1,
             max(candidate_index - 20, 0),
@@ -476,23 +485,35 @@ class OrderBlockEngine:
             candle = self.df.iloc[x]
 
 
-            candle_high = float(candle["high"])
-            candle_low = float(candle["low"])
-
-
-            candidate_high = float(
-                self.df.iloc[candidate_index]["high"]
+            candle_high = float(
+                candle["high"]
             )
 
 
-            # stop if previous candle breaks the bullish origin high
+            candle_low = float(
+                candle["low"]
+            )
 
-            if candle_high > candidate_high:
 
-                break
-
+            # extend zone backwards
 
             origin_index = x
+
+
+            if candle_high > highest_high:
+
+                highest_high = candle_high
+
+
+            # stop when we find bearish candle before bullish leg
+
+            candle_open = float(candle["open"])
+            candle_close = float(candle["close"])
+
+
+            if candle_close < candle_open:
+
+                break
 
 
 
