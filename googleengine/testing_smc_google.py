@@ -16,9 +16,15 @@ NEWS_PAUSE = False                      # Set to True to halt scanning during hi
 
 # Risk Parameters for Lot Sizing & Safety
 MAX_DOLLAR_RISK = 10.0                  # Maximum allowed loss in USD per trade
-CONTRACT_SIZE_GOLD = 100                # Standard Gold contract size (1 lot = 100 oz)
 MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
 MAX_DAILY_LOSSES = 2                    # Circuit breaker limit: stop trading after X losses in a day
+
+# Multi-Asset Configuration (Contract sizes & point values for accurate risk/profit math)
+ASSET_CONFIG = {
+    "XAU/USD": {"contract_size": 100, "name": "Gold"},
+    "EUR/USD": {"contract_size": 100000, "name": "Euro / US Dollar"},
+    "USD/JPY": {"contract_size": 100000, "name": "US Dollar / Japanese Yen"}
+}
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -28,8 +34,9 @@ if not TWELVE_DATA_API_KEY:
     print("❌ Error: TWELVE_DATA_API_KEY environment variable is not set.")
     sys.exit(1)
 
-TICKERS = ["XAU/USD"]
-SCAN_INTERVAL_SECONDS = 150  # 2.5 minutes
+TICKERS = ["XAU/USD", "EUR/USD", "USD/JPY"]
+SCAN_INTERVAL_SECONDS = 180  # 3 minutes cycle for multi-ticker rotation
+API_THROTTLE_SECONDS = 15    # Pause between tickers to respect Twelve Data API limits
 IDLE_SLEEP_SECONDS = 300     # 5 minutes
 IST = ZoneInfo("Asia/Kolkata")
 TRADE_HISTORY_FILE = "trade_history.csv"
@@ -123,7 +130,7 @@ def log_trade_mistake(trade_id, symbol, decision, entry, sl, exit_price, atr_val
         "stop_loss": sl,
         "exit_price": exit_price,
         "atr_at_entry": atr_val,
-        "points_lost": round(points_lost, 2)
+        "points_lost": round(points_lost, 5)
     }
     
     df_new = pd.DataFrame([row_data])
@@ -157,40 +164,40 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
                     df.at[idx, "sl"] = entry
                     df.at[idx, "be_active"] = 1
                     updated = True
-                    send_telegram_alert(f"🛡️ *Breakeven Activated* for BUY (`{trade_id}`).\nStop Loss moved to entry price: `{entry:.2f}`")
+                    send_telegram_alert(f"🛡️ *Breakeven Activated* for {symbol} BUY (`{trade_id}`).\nStop Loss moved to entry price: `{entry}`")
 
                 if current_low <= float(df.at[idx, "sl"]):
                     df.at[idx, "status"] = "LOSS"
                     df.at[idx, "exit_time"] = now_str
                     updated = True
-                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl']):.2f}`")
+                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)* [{symbol}]\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl'])}`")
                     log_trade_mistake(trade_id, symbol, decision, entry, sl, current_low, atr_val, now_str)
 
                 elif current_high >= tp2:
                     df.at[idx, "status"] = "WIN"
                     df.at[idx, "exit_time"] = now_str
                     updated = True
-                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)*\nID: `{trade_id}`\nHitting TP2 at `{tp2:.2f}`")
+                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [{symbol}]\nID: `{trade_id}`\nHitting TP2 at `{tp2}`")
 
             elif decision == "SELL":
                 if current_low <= tp1 and be_active == 0:
                     df.at[idx, "sl"] = entry
                     df.at[idx, "be_active"] = 1
                     updated = True
-                    send_telegram_alert(f"🛡️ *Breakeven Activated* for SELL (`{trade_id}`).\nStop Loss moved to entry price: `{entry:.2f}`")
+                    send_telegram_alert(f"🛡️ *Breakeven Activated* for {symbol} SELL (`{trade_id}`).\nStop Loss moved to entry price: `{entry}`")
 
                 if current_high >= float(df.at[idx, "sl"]):
                     df.at[idx, "status"] = "LOSS"
                     df.at[idx, "exit_time"] = now_str
                     updated = True
-                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl']):.2f}`")
+                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)* [{symbol}]\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl'])}`")
                     log_trade_mistake(trade_id, symbol, decision, entry, sl, current_high, atr_val, now_str)
 
                 elif current_low <= tp2:
                     df.at[idx, "status"] = "WIN"
                     df.at[idx, "exit_time"] = now_str
                     updated = True
-                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)*\nID: `{trade_id}`\nHitting TP2 at `{tp2:.2f}`")
+                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [{symbol}]\nID: `{trade_id}`\nHitting TP2 at `{tp2}`")
 
     if updated:
         df.to_csv(TRADE_HISTORY_FILE, index=False)
@@ -261,7 +268,7 @@ def run_scanner():
     initialize_trade_history()
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + MACRO RANGE ENGINE v2.6     ")
+    print("  MULTI-ASSET SMC SCANNER v2.7 (XAU, EUR, JPY)   ")
     print("==================================================")
 
     while True:
@@ -284,8 +291,11 @@ def run_scanner():
 
         now_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p IST")
 
-        for symbol in TICKERS:
+        for idx, symbol in enumerate(TICKERS):
             try:
+                cfg = ASSET_CONFIG.get(symbol, {"contract_size": 100000, "name": symbol})
+                contract_size = cfg["contract_size"]
+
                 data = fetch_realtime_data(symbol)
                 latest_price = data["1M"]["close"].iloc[-1]
                 atr_val = calculate_atr(data["1H"], period=14)
@@ -302,17 +312,17 @@ def run_scanner():
                 bias = result.get("bias_4h", "N/A")
 
                 print("\n==================================================")
-                print(f"📊 LIVE SMC SCANNER STATUS ({symbol})")
+                print(f"📊 LIVE SMC SCANNER STATUS ({symbol} - {cfg['name']})")
                 print(f"⏰ Scan Time (IST):  {now_str}")
-                print(f"💲 Live Price:       {latest_price:.2f}")
+                print(f"💲 Live Price:       {latest_price}")
                 print(f"🚦 Engine Decision:  {decision} ({reason})")
                 print("==================================================")
                 print("1️⃣  4H MACRO DEALING RANGE & BIAS")
-                print(f"   • 4H Swing High:  {h4_sh:.2f}")
-                print(f"   • 4H Swing Low:   {h4_sl:.2f}")
-                print(f"   • Equilibrium:    {eq_4h:.2f}")
+                print(f"   • 4H Swing High:  {h4_sh}")
+                print(f"   • 4H Swing Low:   {h4_sl}")
+                print(f"   • Equilibrium:    {eq_4h}")
                 print(f"   • Overall Bias:   {bias}")
-                print(f"   • 1H ATR (Noise): {atr_val:.2f}")
+                print(f"   • 1H ATR (Noise): {atr_val}")
                 print("--------------------------------------------------")
                 print("2️⃣  PREDICTIVE EXECUTION & CHART VISIBILITY MAP")
 
@@ -329,11 +339,11 @@ def run_scanner():
                     rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
 
                     print("   • Direction:       SHORT (Bearish Reversal from Premium)")
-                    print(f"   • Target Entry:    {planned_entry:.2f} (1H BSL Fractal High Sweep)")
-                    print(f"   • 📈 CHART TIP:    Draw horizontal line at {planned_entry:.2f} on your 1H chart to watch the sweep!")
-                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural Ceiling + 0.5*ATR)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
-                    print(f"   • Target 2 (4H SL):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
+                    print(f"   • Target Entry:    {planned_entry} (1H BSL Fractal High Sweep)")
+                    print(f"   • 📈 CHART TIP:    Draw horizontal line at {planned_entry} on your 1H chart to watch the sweep!")
+                    print(f"   • Logical SL:      {planned_sl} (Structural Ceiling + 0.5*ATR)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1}")
+                    print(f"   • Target 2 (4H SL):{planned_tp2} -> R:R {rr_tp2:.2f}R")
                 else:
                     # LONG SETUP
                     planned_entry = h1_ssl
@@ -347,22 +357,22 @@ def run_scanner():
                     rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
 
                     print("   • Direction:       LONG (Bullish Reversal from Discount)")
-                    print(f"   • Target Entry:    {planned_entry:.2f} (1H SSL Fractal Low Sweep)")
-                    print(f"   • 📈 CHART TIP:    Draw horizontal line at {planned_entry:.2f} on your 1H chart to watch the sweep!")
-                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural Floor - 0.5*ATR)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
-                    print(f"   • Target 2 (4H SH):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
+                    print(f"   • Target Entry:    {planned_entry} (1H SSL Fractal Low Sweep)")
+                    print(f"   • 📈 CHART TIP:    Draw horizontal line at {planned_entry} on your 1H chart to watch the sweep!")
+                    print(f"   • Logical SL:      {planned_sl} (Structural Floor - 0.5*ATR)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1}")
+                    print(f"   • Target 2 (4H SH):{planned_tp2} -> R:R {rr_tp2:.2f}R")
 
                 # MULTI-LOT SCENARIO SIMULATOR TABLE (CONSOLE)
                 print("--------------------------------------------------")
-                print("💰 MULTI-LOT SCENARIO SIMULATOR (SL vs TP1 vs TP2)")
+                print(f"💰 MULTI-LOT SCENARIO SIMULATOR [{symbol}]")
                 print("==================================================")
                 print("   Lot Size   |   SL Loss    |   TP1 Profit (EQ) |   TP2 Profit")
                 print("--------------------------------------------------")
                 for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
-                    sl_loss = lot * risk_points * CONTRACT_SIZE_GOLD
-                    tp1_prof = lot * reward_tp1 * CONTRACT_SIZE_GOLD
-                    tp2_prof = lot * reward_tp2 * CONTRACT_SIZE_GOLD
+                    sl_loss = lot * risk_points * contract_size
+                    tp1_prof = lot * reward_tp1 * contract_size
+                    tp2_prof = lot * reward_tp2 * contract_size
                     print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}      |   +${tp2_prof:.2f}")
                 print("==================================================")
 
@@ -372,7 +382,7 @@ def run_scanner():
                 else:
                     print(f"   ✔ APPROVED: High-asymmetry setup verified.")
 
-                    risk_per_lot = risk_points * CONTRACT_SIZE_GOLD
+                    risk_per_lot = risk_points * contract_size
                     if risk_per_lot > 0:
                         exact_lots = MAX_DOLLAR_RISK / risk_per_lot
                         recommended_lots = math.floor(exact_lots * 100) / 100
@@ -390,29 +400,29 @@ def run_scanner():
                     if os.path.exists(TRADE_HISTORY_FILE):
                         df_check = pd.read_csv(TRADE_HISTORY_FILE)
                         if not df_check.empty and "status" in df_check.columns:
-                            has_active_trade = not df_check[df_check["status"] == "PENDING"].empty
+                            has_active_trade = not df_check[(df_check["status"] == "PENDING") & (df_check["symbol"] == symbol)].empty
 
                     if not has_active_trade:
-                        trade_id = f"XAU_{now_ist.strftime('%Y%m%d_%H%M%S')}"
+                        trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
                         log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
 
                         # Build Multi-Lot Telegram Table
                         telegram_table_lines = []
                         for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
-                            s_loss = lot * risk_points * CONTRACT_SIZE_GOLD
-                            t1_prof = lot * reward_tp1 * CONTRACT_SIZE_GOLD
-                            t2_prof = lot * reward_tp2 * CONTRACT_SIZE_GOLD
+                            s_loss = lot * risk_points * contract_size
+                            t1_prof = lot * reward_tp1 * contract_size
+                            t2_prof = lot * reward_tp2 * contract_size
                             telegram_table_lines.append(f"`{lot:.2f}L | -${s_loss:.2f} | +${t1_prof:.2f} | +${t2_prof:.2f}`")
                         table_string = "\n".join(telegram_table_lines)
 
                         msg = (
-                            f"🚨 *SMC STRUCTURAL TRADE SIGNAL ({trade_id})*\n\n"
+                            f"🚨 *SMC STRUCTURAL TRADE SIGNAL [{symbol}] ({trade_id})*\n\n"
                             f"• *Decision:* `{decision}`\n"
-                            f"• *Current Live Price:* `{latest_price:.2f}`\n"
-                            f"• *Target Entry Coordinate:* `{planned_entry:.2f}`\n"
-                            f"• *Logical SL:* `{planned_sl:.2f}`\n"
-                            f"• *Target 1 (EQ):* `{planned_tp1:.2f}`\n"
-                            f"• *Target 2 (4H):* `{planned_tp2:.2f}`\n"
+                            f"• *Current Live Price:* `{latest_price}`\n"
+                            f"• *Target Entry Coordinate:* `{planned_entry}`\n"
+                            f"• *Logical SL:* `{planned_sl}`\n"
+                            f"• *Target 1 (EQ):* `{planned_tp1}`\n"
+                            f"• *Target 2 (4H):* `{planned_tp2}`\n"
                             f"• *Recommended Lots:* `{recommended_lots}`\n"
                             f"• *Max Risk:* `${actual_dollar_risk:.2f}`\n"
                             f"• *Risk R:R:* `{rr_tp2:.2f}R`\n\n"
@@ -422,10 +432,14 @@ def run_scanner():
                         )
                         send_telegram_alert(msg)
                     else:
-                        print(f"   ⏳ [DUPLICATE BLOCKED] An active PENDING trade already exists. Skipping new entry.")
+                        print(f"   ⏳ [DUPLICATE BLOCKED] An active PENDING trade for {symbol} already exists. Skipping new entry.")
 
             except Exception as e:
                 print(f"[{symbol}] Error fetching data: {e}")
+
+            # API Rate-Limit Throttle: pause between tickers to stay safe under Twelve Data limits
+            if idx < len(TICKERS) - 1:
+                time.sleep(API_THROTTLE_SECONDS)
 
         time.sleep(SCAN_INTERVAL_SECONDS)
 
