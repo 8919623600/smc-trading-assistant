@@ -21,22 +21,22 @@ def inspect_market_state(symbol="XAU/USD"):
     print(f"Fetching real-time data for '{symbol}' via Twelve Data...")
 
     try:
-        ts = td.time_series(symbol=symbol, interval="1min", outputsize=500)
+        # Request data explicitly in UTC from Twelve Data
+        ts = td.time_series(symbol=symbol, interval="1min", outputsize=500, timezone="UTC")
         df_1m = ts.as_pandas()
 
         if df_1m is None or df_1m.empty:
-            print(
-                f"❌ Error: No data returned for '{symbol}'. Verify symbol or API key limits."
-            )
+            print(f"❌ Error: No data returned for '{symbol}'. Verify symbol or API key limits.")
             return
 
-        # Sort index chronologically (newest at bottom)
+        # Ensure datetime index and sort chronologically (oldest at top, newest at bottom)
+        df_1m.index = pd.to_datetime(df_1m.index)
         df_1m = df_1m.sort_index()
 
         for col in ["open", "high", "low", "close"]:
             df_1m[col] = df_1m[col].astype(float)
 
-        # Convert Datetime Index to IST
+        # Convert Datetime Index from UTC to IST
         if df_1m.index.tz is None:
             df_1m.index = df_1m.index.tz_localize("UTC").tz_convert(IST)
         else:
@@ -66,11 +66,7 @@ def inspect_market_state(symbol="XAU/USD"):
         h4_high = df_4h["high"].tail(20).max()
         h4_low = df_4h["low"].tail(20).min()
         equilibrium = (h4_high + h4_low) / 2
-        bias = (
-            "BEARISH (Premium Zone)"
-            if current_price > equilibrium
-            else "BULLISH (Discount Zone)"
-        )
+        bias = "BEARISH (Premium Zone)" if current_price > equilibrium else "BULLISH (Discount Zone)"
 
         # 2. 1H Liquidity Pools
         h1_bsl = df_1h["high"].iloc[-11:-1].max()
@@ -89,15 +85,11 @@ def inspect_market_state(symbol="XAU/USD"):
         for i in range(start_idx, end_idx, -1):
             if df_15m["low"].iloc[i] > df_15m["high"].iloc[i - 2]:
                 fvg_type = "Bullish FVG (Demand Zone)"
-                fvg_range = (
-                    f"{df_15m['high'].iloc[i-2]:.2f} - {df_15m['low'].iloc[i]:.2f}"
-                )
+                fvg_range = f"{df_15m['high'].iloc[i-2]:.2f} - {df_15m['low'].iloc[i]:.2f}"
                 break
             elif df_15m["high"].iloc[i] < df_15m["low"].iloc[i - 2]:
                 fvg_type = "Bearish FVG (Supply Zone)"
-                fvg_range = (
-                    f"{df_15m['high'].iloc[i]:.2f} - {df_15m['low'].iloc[i-2]:.2f}"
-                )
+                fvg_range = f"{df_15m['high'].iloc[i]:.2f} - {df_15m['low'].iloc[i-2]:.2f}"
                 break
 
         # Output Market Verification
@@ -115,12 +107,8 @@ def inspect_market_state(symbol="XAU/USD"):
         print("2️⃣  1H LIQUIDITY LEVELS")
         print(f"   • Buy-Side Liquidity (BSL):  {h1_bsl:.2f}")
         print(f"   • Sell-Side Liquidity (SSL): {h1_ssl:.2f}")
-        print(
-            f"   • BSL Swept Recently?        {'YES 🚨' if swept_bsl else 'NO'}"
-        )
-        print(
-            f"   • SSL Swept Recently?        {'YES 🚨' if swept_ssl else 'NO'}"
-        )
+        print(f"   • BSL Swept Recently?        {'YES 🚨' if swept_bsl else 'NO'}")
+        print(f"   • SSL Swept Recently?        {'YES 🚨' if swept_ssl else 'NO'}")
         print("--------------------------------------------------")
         print("3️⃣  15M POI (FAIR VALUE GAP / OB)")
         print(f"   • Active Imbalance: {fvg_type}")
@@ -128,19 +116,11 @@ def inspect_market_state(symbol="XAU/USD"):
         print("--------------------------------------------------")
         print("4️⃣  ACTIONABLE EXECUTION PLAN")
         if current_price > equilibrium:
-            print(
-                f"   • PLAN: IF price sweeps 1H BSL High ({h1_bsl:.2f}) and rejects,"
-            )
-            print(
-                f"           THEN watch for 1M Bearish CHoCH to SHORT down to {equilibrium:.2f}."
-            )
+            print(f"   • PLAN: IF price sweeps 1H BSL High ({h1_bsl:.2f}) and rejects,")
+            print(f"           THEN watch for 1M Bearish CHoCH to SHORT down to {equilibrium:.2f}.")
         else:
-            print(
-                f"   • PLAN: IF price sweeps 1H SSL Low ({h1_ssl:.2f}) and holds,"
-            )
-            print(
-                f"           THEN watch for 1M Bullish CHoCH to LONG up to {equilibrium:.2f}."
-            )
+            print(f"   • PLAN: IF price sweeps 1H SSL Low ({h1_ssl:.2f}) and holds,")
+            print(f"           THEN watch for 1M Bullish CHoCH to LONG up to {equilibrium:.2f}.")
         print("==================================================\n")
 
     except Exception as e:
