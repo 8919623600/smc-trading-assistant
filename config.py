@@ -32,11 +32,10 @@ DEFAULT_TIMEFRAME = "15m"
 
 # Timeframes used throughout BMIE
 TIMEFRAMES = {
-    "bias": "1d",         # Overall Market Bias
-    "structure": "4h",    # External Market Structure
-    "trend": "1h",        # Trend Confirmation
-    "setup": "15m",       # Setup Formation
-    "entry": "5m"         # Entry Confirmation
+    "bias": "4h",          # Higher Timeframe Direction Bias
+    "liquidity": "1h",     # Liquidity Mapping and Sweep Detection
+    "setup": "15m",        # CHoCH + Displacement + BOS + POI Creation
+    "entry": "1m"          # Lower Timeframe Entry Confirmation
 }
 
 # ==========================================================

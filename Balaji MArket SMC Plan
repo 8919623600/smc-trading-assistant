@@ -1,0 +1,90 @@
+Smart Money Concept Trading Assistant — Final Logic Flow (4H → 1H → 15M → 1M Model)
+
+The trading assistant will follow a strict top-down Smart Money Concept approach where the system first establishes the higher timeframe market narrative before searching for any trade opportunity. The analysis will begin from the 4H timeframe, which will act as the primary market bias timeframe. The 4H analysis will determine the overall market direction, identify the active dealing range, and define whether price is trading in a premium or discount zone. The 4H bias will control the trading direction, meaning bullish bias will allow only buy setups and bearish bias will allow only sell setups. The 4H timeframe will not be used for entry signals but only to understand the institutional direction and avoid trading against the larger market structure.
+
+After the 4H bias is established, the system will move to the 1H timeframe to identify institutional liquidity pools and liquidity hunts. The engine will mark important liquidity areas such as equal highs, equal lows, previous highs/lows, and major swing points. A liquidity level by itself will not create a trade; the system will wait for price to intentionally sweep that liquidity, representing a possible smart money stop hunt and order collection event. For example, in a bullish 4H environment, the system will look for a sell-side liquidity sweep where price takes previous lows or equal lows before reversing upward.
+
+Once the 1H liquidity sweep occurs, the system will move to the 15M timeframe for market structure confirmation. The 15M timeframe will validate whether the liquidity sweep has actually caused a change in market direction. The engine will wait for a Change of Character (CHoCH) showing the first shift from the previous structure, followed by a strong displacement move demonstrating institutional participation, and finally a Break of Structure (BOS) confirming continuation in the new direction. Only after CHoCH, displacement, and BOS confirmation will the system consider creating a valid trading zone.
+
+After the 15M BOS confirmation, the engine will identify the institutional Point of Interest (POI) by combining a valid Order Block (OB) with a Fair Value Gap (FVG) created during the displacement move. The Order Block represents the last opposing candle before the institutional move, while the FVG represents the imbalance created by aggressive buying or selling pressure. Only an OB supported by an FVG will be considered a valid POI. The system will then wait patiently for price to retrace back into this 15M POI instead of entering immediately.
+
+When price returns to the 15M POI, the execution engine will move to the 1M timeframe for precision entry confirmation. The 1M timeframe will not decide the market direction; it will only refine the entry location and reduce risk. Inside the higher timeframe POI, the system will wait for a lower timeframe confirmation through a micro liquidity sweep, followed by a micro CHoCH and a strong displacement candle. A small 1M Fair Value Gap created during this move will be used to refine the entry price. Once the 1M confirmation is complete, the system will generate the trade entry.
+
+The risk management engine will then calculate the trade parameters. The entry will be placed from the 1M refined OB/FVG area, the stop loss will be positioned beyond the local 1M invalidation swing point with an ATR buffer to avoid premature stop-outs, and the target will be selected from opposing higher timeframe liquidity zones such as previous 1H highs/lows, equal highs/lows, or unmitigated liquidity pools. Before allowing any trade, the system will validate the Risk-to-Reward ratio and only accept setups where RR is between 2 and 8. If any required condition is missing — such as 4H bias, 1H liquidity sweep, 15M CHoCH, displacement, BOS, valid OB, valid FVG, POI retracement, 1M confirmation, or acceptable RR — the system will reject the setup and return NO TRADE.
+
+The final output of the assistant will therefore be:
+
+BUY / SELL / WAIT / NO TRADE
+
+with a complete reasoning chain showing:
+
+4H Bias
+1H Liquidity Event
+15M Market Structure Shift
+15M POI Creation
+1M Entry Confirmation
+Entry Price
+Stop Loss
+Target
+Risk-to-Reward Ratio
+Simplified Flow
+4H
+ |
+ |-- Market Bias
+ |-- Premium / Discount
+ |-- Dealing Range
+ |
+ ↓
+
+
+1H
+ |
+ |-- Liquidity Mapping
+ |-- Equal High / Equal Low
+ |-- Previous High / Low
+ |-- Liquidity Sweep
+ |
+ ↓
+
+
+15M
+ |
+ |-- CHoCH
+ |-- Displacement
+ |-- BOS
+ |-- Order Block
+ |-- FVG
+ |-- POI Creation
+ |
+ ↓
+
+
+Price Returns to POI
+ |
+ ↓
+
+
+1M
+ |
+ |-- Micro Liquidity Sweep
+ |-- Micro CHoCH
+ |-- Displacement
+ |-- Micro FVG
+ |-- Entry
+ |
+ ↓
+
+
+Risk Engine
+ |
+ |-- SL + ATR Buffer
+ |-- Liquidity Target
+ |-- RR Validation (2-8)
+ |
+ ↓
+
+
+FINAL DECISION
+
+
+BUY / SELL / WAIT / NO TRADE

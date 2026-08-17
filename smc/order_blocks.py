@@ -452,17 +452,22 @@ class OrderBlockEngine:
 
             if bearish_displacement:
 
-
                 candidate_index = i
 
-
                 print(
-                    "FINAL CANDIDATE SELECTED:",
+                    "CANDIDATE FOUND:",
                     self.df.iloc[i]["time"]
                 )
 
+                # DO NOT BREAK
+                # continue searching closer to BOS
 
-                break
+            if candidate_index is not None:
+
+                print(
+                    "FINAL CANDIDATE SELECTED:",
+                    self.df.iloc[candidate_index]["time"]
+                )
 
 
 
