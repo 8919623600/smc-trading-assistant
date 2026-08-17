@@ -17,6 +17,7 @@ NEWS_PAUSE = False                      # Set to True to halt scanning during hi
 ACCOUNT_BALANCE = 10000.0               # Your account balance in USD
 RISK_PERCENTAGE = 1.0                   # Max risk per trade (% of account, e.g. 1.0%)
 CONTRACT_SIZE_GOLD = 100                # Standard Gold contract size (1 lot = 100 oz)
+MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -153,7 +154,7 @@ def run_scanner():
     last_signal_key = None
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + LOGICAL SL & LOT CALCULATOR  ")
+    print("  SMC GOLD SCANNER + LOGICAL SL & R:R FILTER     ")
     print("==================================================")
 
     while True:
@@ -203,9 +204,8 @@ def run_scanner():
                 print("2️⃣  LOGICAL EXECUTION & RISK PLAN")
 
                 if latest_price > eq_4h:
-                    # SHORT SETUP: Entry at 1H Buy-Side Liquidity (BSL)
+                    # SHORT SETUP
                     planned_entry = h1_bsl
-                    # Structural SL: Placed just above the 4H Swing High or immediate structural high + ATR buffer
                     structural_ceiling = max(h4_sh, h1_bsl)
                     planned_sl = structural_ceiling + (atr_val * 0.5)
                     planned_tp1 = eq_4h
@@ -216,13 +216,12 @@ def run_scanner():
 
                     print("   • Direction:       SHORT (Bearish Reversal from Premium)")
                     print(f"   • Planned Entry:   {planned_entry:.2f} (1H BSL Sweep)")
-                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural High + 0.5*ATR buffer)")
+                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural High + 0.5*ATR)")
                     print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
                     print(f"   • Target 2 (4H SL):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
                 else:
-                    # LONG SETUP: Entry at 1H Sell-Side Liquidity (SSL)
+                    # LONG SETUP
                     planned_entry = h1_ssl
-                    # Structural SL: Placed just below the 4H Swing Low or immediate structural low - ATR buffer
                     structural_floor = min(h4_sl, h1_ssl)
                     planned_sl = structural_floor - (atr_val * 0.5)
                     planned_tp1 = eq_4h
@@ -233,15 +232,22 @@ def run_scanner():
 
                     print("   • Direction:       LONG (Bullish Reversal from Discount)")
                     print(f"   • Planned Entry:   {planned_entry:.2f} (1H SSL Sweep)")
-                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural Low - 0.5*ATR buffer)")
+                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural Low - 0.5*ATR)")
                     print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
                     print(f"   • Target 2 (4H SH):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
+
+                # STRICT R:R FILTER CHECK
+                if rr_tp2 < MIN_REQUIRED_RR:
+                    print(f"   ❌ REJECTED: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R.")
+                    decision = "WAIT"
+                else:
+                    print(f"   ✔ APPROVED: High-asymmetry setup verified.")
 
                 # Lot Sizing Calculation based on % Risk
                 dollar_risk_allowed = ACCOUNT_BALANCE * (RISK_PERCENTAGE / 100.0)
                 risk_per_lot = risk_points * CONTRACT_SIZE_GOLD
                 recommended_lots = round(dollar_risk_allowed / risk_per_lot, 2) if risk_per_lot > 0 else 0.01
-                recommended_lots = max(0.01, recommended_lots)  # Minimum micro lot limit
+                recommended_lots = max(0.01, recommended_lots)
 
                 print(f"   • Position Sizing: {recommended_lots} Lots (Risking ${dollar_risk_allowed:.2f} / {RISK_PERCENTAGE}%)")
                 print("==================================================")
