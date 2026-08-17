@@ -17,8 +17,10 @@ if not TWELVE_DATA_API_KEY:
     print("Ensure you ran: export TWELVE_DATA_API_KEY='your_api_key'")
     sys.exit(1)
 
+# Single Target Asset & Parameters
 TICKERS = ["XAU/USD"]
 SCAN_INTERVAL_SECONDS = 60
+SL_BUFFER = 6.00  # $6.00 buffer (60 pips) to prevent prematurely getting stopped out
 IST = ZoneInfo("Asia/Kolkata")
 
 td = TDClient(apikey=TWELVE_DATA_API_KEY)
@@ -102,7 +104,7 @@ def run_scanner():
             try:
                 data = fetch_realtime_data(symbol)
 
-                # Structure & Liquidity Levels
+                # Higher Timeframe Levels
                 h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
                 eq_4h = (h4_sh + h4_sl) / 2
 
@@ -131,42 +133,48 @@ def run_scanner():
                 print(f"   • Buy-Side Liquidity (BSL):  {h1_bsl:.2f}")
                 print(f"   • Sell-Side Liquidity (SSL): {h1_ssl:.2f}")
                 print("--------------------------------------------------")
-                print("4️⃣  ACTIONABLE EXECUTION PLAN")
+                print("4️⃣  ACTIONABLE EXECUTION PLAN (ENLARGED RANGE)")
 
                 if latest_price > eq_4h:
                     # Bearish Reversal Plan (Premium Zone)
                     planned_entry = h1_bsl
-                    planned_sl = h1_bsl + 2.50
+                    planned_sl = h1_bsl + SL_BUFFER
                     planned_tp1 = eq_4h
-                    planned_tp2 = h1_ssl
-                    risk = planned_sl - planned_entry
-                    reward = planned_entry - planned_tp1
-                    rr_ratio = reward / risk if risk > 0 else 0
+                    planned_tp2 = h4_sl
 
-                    print(f"   • Direction:       SHORT (Bearish Reversal from Premium)")
+                    risk = planned_sl - planned_entry
+                    reward_tp1 = planned_entry - planned_tp1
+                    reward_tp2 = planned_entry - planned_tp2
+
+                    rr_tp1 = reward_tp1 / risk if risk > 0 else 0
+                    rr_tp2 = reward_tp2 / risk if risk > 0 else 0
+
+                    print("   • Direction:       SHORT (Bearish Reversal from Premium)")
                     print(f"   • Trigger:         Sweep 1H BSL ({h1_bsl:.2f}) + 1M Bearish CHoCH")
-                    print(f"   • Planned Entry:   {planned_entry:.2f} (or 15M Supply/FVG after sweep)")
-                    print(f"   • Planned SL:      {planned_sl:.2f} (Buffer above BSL Sweep)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (4H Equilibrium)")
-                    print(f"   • Target 2 (SSL):  {planned_tp2:.2f} (1H Sell-Side Liquidity)")
-                    print(f"   • Est. R:R Ratio:  {rr_ratio:.2f}R")
+                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H Buy-Side Liquidity Sweep)")
+                    print(f"   • Planned SL:      {planned_sl:.2f} (+${SL_BUFFER:.2f} / 60 Pips Above High)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium) -> R:R {rr_tp1:.2f}R")
+                    print(f"   • Target 2 (4H SL):{planned_tp2:.2f} (Major 4H Low) -> R:R {rr_tp2:.2f}R")
                 else:
                     # Bullish Reversal Plan (Discount Zone)
                     planned_entry = h1_ssl
-                    planned_sl = h1_ssl - 2.50
+                    planned_sl = h1_ssl - SL_BUFFER
                     planned_tp1 = eq_4h
-                    planned_tp2 = h1_bsl
-                    risk = planned_entry - planned_sl
-                    reward = planned_tp1 - planned_entry
-                    rr_ratio = reward / risk if risk > 0 else 0
+                    planned_tp2 = h4_sh
 
-                    print(f"   • Direction:       LONG (Bullish Reversal from Discount)")
+                    risk = planned_entry - planned_sl
+                    reward_tp1 = planned_tp1 - planned_entry
+                    reward_tp2 = planned_tp2 - planned_entry
+
+                    rr_tp1 = reward_tp1 / risk if risk > 0 else 0
+                    rr_tp2 = reward_tp2 / risk if risk > 0 else 0
+
+                    print("   • Direction:       LONG (Bullish Reversal from Discount)")
                     print(f"   • Trigger:         Sweep 1H SSL ({h1_ssl:.2f}) + 1M Bullish CHoCH")
-                    print(f"   • Planned Entry:   {planned_entry:.2f} (or 15M Demand/FVG after sweep)")
-                    print(f"   • Planned SL:      {planned_sl:.2f} (Buffer below SSL Sweep)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (4H Equilibrium)")
-                    print(f"   • Target 2 (BSL):  {planned_tp2:.2f} (1H Buy-Side Liquidity)")
-                    print(f"   • Est. R:R Ratio:  {rr_ratio:.2f}R")
+                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H Sell-Side Liquidity Sweep)")
+                    print(f"   • Planned SL:      {planned_sl:.2f} (-${SL_BUFFER:.2f} / 60 Pips Below Low)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium) -> R:R {rr_tp1:.2f}R")
+                    print(f"   • Target 2 (4H SH):{planned_tp2:.2f} (Major 4H High) -> R:R {rr_tp2:.2f}R")
 
                 print("==================================================")
 
