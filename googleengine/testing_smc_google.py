@@ -17,8 +17,9 @@ if not TWELVE_DATA_API_KEY:
     print("Ensure you ran: export TWELVE_DATA_API_KEY='your_api_key'")
     sys.exit(1)
 
-TICKERS = ["XAU/USD", "EUR/USD", "GBP/USD", "BTC/USD"]
-SCAN_INTERVAL_SECONDS = 60  # Runs scan once every 60 seconds
+# Single Target Asset
+TICKERS = ["XAU/USD"]
+SCAN_INTERVAL_SECONDS = 60  # Scan every 60 seconds
 IST = ZoneInfo("Asia/Kolkata")
 
 td = TDClient(apikey=TWELVE_DATA_API_KEY)
@@ -60,11 +61,9 @@ def fetch_realtime_data(symbol: str) -> dict:
     Fetches real-time multi-timeframe data via Twelve Data in UTC and converts to IST.
     Uses 15M candles for accurate higher timeframe resamples (1H, 4H) and 1M for entries.
     """
-    # 1. Fetch 15M data (~5 days for 4H/1H structure)
     ts_15m = td.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC")
     df_15m = ts_15m.as_pandas()
 
-    # 2. Fetch 1M data (for live spot price & micro entries)
     ts_1m = td.time_series(symbol=symbol, interval="1min", outputsize=100, timezone="UTC")
     df_1m = ts_1m.as_pandas()
 
@@ -97,7 +96,7 @@ def run_scanner():
     engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=1.0)
 
     print("==================================================")
-    print("   SMC REAL-TIME SCANNER (TWELVE DATA - IST)      ")
+    print("   SMC GOLD REAL-TIME SCANNER (TWELVE DATA - IST) ")
     print("==================================================")
 
     while True:
@@ -108,7 +107,6 @@ def run_scanner():
             try:
                 data = fetch_realtime_data(symbol)
 
-                # Calculate active fractal swing levels
                 h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
                 eq_4h = (h4_sh + h4_sl) / 2
 
@@ -122,7 +120,7 @@ def run_scanner():
                 if decision in ["BUY", "SELL"]:
                     params = result.get("trade_params", {})
                     print("\n" + "=" * 45)
-                    print(f"🚨 [TRADE SIGNAL DETECTED: {symbol}] 🚨")
+                    print(f"🚨 [GOLD TRADE SIGNAL DETECTED: {symbol}] 🚨")
                     print(f"   Time (IST):        {now_ist}")
                     print(f"   Live Price:        {latest_price:.2f}")
                     print(f"   Decision:          {decision}")
