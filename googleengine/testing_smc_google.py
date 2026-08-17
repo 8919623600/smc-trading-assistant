@@ -9,10 +9,14 @@ from twelvedata import TDClient
 from googlesmc import SMCTradingEngine
 
 # ==========================================
-# CONFIGURATION & ENVIRONMENT SETUP
+# CONFIGURATION & ACCOUNT SETTINGS
 # ==========================================
-# MANUAL CIRCUIT BREAKER: Set to True to halt all trading/API calls during high-impact news.
-NEWS_PAUSE = False 
+NEWS_PAUSE = False                      # Set to True to halt scanning during high-impact news
+
+# Account & Risk Parameters for Lot Sizing (Adjust to your actual broker specs)
+ACCOUNT_BALANCE = 10000.0               # Your account balance in USD
+RISK_PERCENTAGE = 1.0                   # Max risk per trade (% of account, e.g. 1.0%)
+CONTRACT_SIZE_GOLD = 100                # Standard Gold contract size (1 lot = 100 oz)
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -25,7 +29,6 @@ if not TWELVE_DATA_API_KEY:
 TICKERS = ["XAU/USD"]
 SCAN_INTERVAL_SECONDS = 150  # 2.5 minutes
 IDLE_SLEEP_SECONDS = 300     # 5 minutes
-SL_BUFFER = 6.00             # $6.00 (60 pips) for Gold
 IST = ZoneInfo("Asia/Kolkata")
 TRADE_HISTORY_FILE = "trade_history.csv"
 
@@ -54,17 +57,17 @@ def initialize_trade_history():
     """Initializes the CSV file for tracking trade outcomes."""
     if not os.path.exists(TRADE_HISTORY_FILE):
         pd.DataFrame(columns=[
-            "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "status", "exit_time"
+            "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time"
         ]).to_csv(TRADE_HISTORY_FILE, index=False)
 
 
-def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2):
+def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2, lots):
     """Logs a newly triggered trade into trade_history.csv."""
     initialize_trade_history()
     df = pd.read_csv(TRADE_HISTORY_FILE)
     new_row = {
         "trade_id": trade_id, "timestamp": timestamp, "symbol": symbol, "decision": decision,
-        "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "status": "PENDING", "exit_time": "N/A"
+        "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "lots": lots, "status": "PENDING", "exit_time": "N/A"
     }
     pd.concat([df, pd.DataFrame([new_row])], ignore_index=True).to_csv(TRADE_HISTORY_FILE, index=False)
 
@@ -82,7 +85,7 @@ def evaluate_pending_trades(current_high: float, current_low: float, now_str: st
                 df.at[idx, "status"] = "LOSS"
                 df.at[idx, "exit_time"] = now_str
                 updated = True
-                send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHit SL at `{sl:.2f}`")
+                send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHit structural SL at `{sl:.2f}`")
             elif (decision == "BUY" and current_high >= tp2) or (decision == "SELL" and current_low <= tp2):
                 df.at[idx, "status"] = "WIN_TP2"
                 df.at[idx, "exit_time"] = now_str
@@ -107,6 +110,16 @@ def find_smc_swings(df: pd.DataFrame, window: int = 2):
     active_sh = swing_highs[-1] if swing_highs else df["high"].max()
     active_sl = swing_lows[-1] if swing_lows else df["low"].min()
     return active_sh, active_sl
+
+
+def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
+    """Calculates Average True Range for dynamic structural noise buffer."""
+    high_low = df['high'] - df['low']
+    high_close = (df['high'] - df['close'].shift()).abs()
+    low_close = (df['low'] - df['close'].shift()).abs()
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = ranges.max(axis=1)
+    return float(true_range.rolling(period).mean().iloc[-1])
 
 
 def fetch_realtime_data(symbol: str) -> dict:
@@ -140,7 +153,7 @@ def run_scanner():
     last_signal_key = None
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + VERBOSE OUTPUT & TRACKER     ")
+    print("  SMC GOLD SCANNER + LOGICAL SL & LOT CALCULATOR  ")
     print("==================================================")
 
     while True:
@@ -166,6 +179,7 @@ def run_scanner():
                 h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
                 eq_4h = (h4_sh + h4_sl) / 2
                 h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
+                atr_val = calculate_atr(data["1H"], period=14)
 
                 result = engine.analyze(data)
                 decision = result.get("decision", "NO_TRADE")
@@ -184,44 +198,52 @@ def run_scanner():
                 print(f"   • 4H Swing Low:   {h4_sl:.2f}")
                 print(f"   • Equilibrium:    {eq_4h:.2f}")
                 print(f"   • Overall Bias:   {bias}")
+                print(f"   • 1H ATR (Noise): {atr_val:.2f}")
                 print("--------------------------------------------------")
-                print("2️⃣  1H LIQUIDITY LEVELS")
-                print(f"   • Buy-Side Liquidity (BSL):  {h1_bsl:.2f}")
-                print(f"   • Sell-Side Liquidity (SSL): {h1_ssl:.2f}")
-                print("--------------------------------------------------")
-                print("4️⃣  ACTIONABLE EXECUTION PLAN (ENLARGED RANGE)")
+                print("2️⃣  LOGICAL EXECUTION & RISK PLAN")
 
                 if latest_price > eq_4h:
+                    # SHORT SETUP: Entry at 1H Buy-Side Liquidity (BSL)
                     planned_entry = h1_bsl
-                    planned_sl = h1_bsl + SL_BUFFER
+                    # Structural SL: Placed just above the 4H Swing High or immediate structural high + ATR buffer
+                    structural_ceiling = max(h4_sh, h1_bsl)
+                    planned_sl = structural_ceiling + (atr_val * 0.5)
                     planned_tp1 = eq_4h
                     planned_tp2 = h4_sl
-                    risk = planned_sl - planned_entry
+                    risk_points = planned_sl - planned_entry
                     reward_tp2 = planned_entry - planned_tp2
-                    rr_tp2 = reward_tp2 / risk if risk > 0 else 0
+                    rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
 
                     print("   • Direction:       SHORT (Bearish Reversal from Premium)")
-                    print(f"   • Trigger:         Sweep 1H BSL ({h1_bsl:.2f}) + 1M Bearish CHoCH")
-                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H Buy-Side Liquidity Sweep)")
-                    print(f"   • Planned SL:      {planned_sl:.2f} (+${SL_BUFFER:.2f} / 60 Pips Above High)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium)")
-                    print(f"   • Target 2 (4H SL):{planned_tp2:.2f} (Major 4H Low) -> R:R {rr_tp2:.2f}R")
+                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H BSL Sweep)")
+                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural High + 0.5*ATR buffer)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
+                    print(f"   • Target 2 (4H SL):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
                 else:
+                    # LONG SETUP: Entry at 1H Sell-Side Liquidity (SSL)
                     planned_entry = h1_ssl
-                    planned_sl = h1_ssl - SL_BUFFER
+                    # Structural SL: Placed just below the 4H Swing Low or immediate structural low - ATR buffer
+                    structural_floor = min(h4_sl, h1_ssl)
+                    planned_sl = structural_floor - (atr_val * 0.5)
                     planned_tp1 = eq_4h
                     planned_tp2 = h4_sh
-                    risk = planned_entry - planned_sl
+                    risk_points = planned_entry - planned_sl
                     reward_tp2 = planned_tp2 - planned_entry
-                    rr_tp2 = reward_tp2 / risk if risk > 0 else 0
+                    rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
 
                     print("   • Direction:       LONG (Bullish Reversal from Discount)")
-                    print(f"   • Trigger:         Sweep 1H SSL ({h1_ssl:.2f}) + 1M Bullish CHoCH")
-                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H Sell-Side Liquidity Sweep)")
-                    print(f"   • Planned SL:      {planned_sl:.2f} (-${SL_BUFFER:.2f} / 60 Pips Below Low)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium)")
-                    print(f"   • Target 2 (4H SH):{planned_tp2:.2f} (Major 4H High) -> R:R {rr_tp2:.2f}R")
+                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H SSL Sweep)")
+                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural Low - 0.5*ATR buffer)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
+                    print(f"   • Target 2 (4H SH):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
 
+                # Lot Sizing Calculation based on % Risk
+                dollar_risk_allowed = ACCOUNT_BALANCE * (RISK_PERCENTAGE / 100.0)
+                risk_per_lot = risk_points * CONTRACT_SIZE_GOLD
+                recommended_lots = round(dollar_risk_allowed / risk_per_lot, 2) if risk_per_lot > 0 else 0.01
+                recommended_lots = max(0.01, recommended_lots)  # Minimum micro lot limit
+
+                print(f"   • Position Sizing: {recommended_lots} Lots (Risking ${dollar_risk_allowed:.2f} / {RISK_PERCENTAGE}%)")
                 print("==================================================")
 
                 if decision in ["BUY", "SELL"]:
@@ -229,16 +251,17 @@ def run_scanner():
                     if current_signal_key != last_signal_key:
                         last_signal_key = current_signal_key
                         trade_id = f"XAU_{now_ist.strftime('%Y%m%d_%H%M')}"
-                        log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2)
+                        log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
 
                         msg = (
-                            f"🚨 *SMC TRADE SIGNAL ({trade_id})*\n\n"
+                            f"🚨 *SMC STRUCTURAL TRADE SIGNAL ({trade_id})*\n\n"
                             f"• *Decision:* `{decision}`\n"
                             f"• *Entry:* `{planned_entry:.2f}`\n"
-                            f"• *Stop Loss:* `{planned_sl:.2f}`\n"
+                            f"• *Logical SL:* `{planned_sl:.2f}`\n"
                             f"• *Target 1 (EQ):* `{planned_tp1:.2f}`\n"
                             f"• *Target 2 (4H):* `{planned_tp2:.2f}`\n"
-                            f"• *4H Bias:* `{bias}`\n"
+                            f"• *Recommended Lots:* `{recommended_lots}`\n"
+                            f"• *Risk R:R:* `{rr_tp2:.2f}R`\n"
                             f"• *Time (IST):* `{now_str}`"
                         )
                         send_telegram_alert(msg)
