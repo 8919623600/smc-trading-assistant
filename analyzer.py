@@ -89,7 +89,10 @@ def analyze_market(
         df.iloc[-1]["close"]
     )
 
-    current_time = df.iloc[-1]["time"]
+    if "time" in df.columns:
+        current_time = df.iloc[-1]["time"]
+    else:
+        current_time = df.index[-1]
 
 
 
