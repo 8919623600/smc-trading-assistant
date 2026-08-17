@@ -153,14 +153,12 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
             be_active = int(row.get("be_active", 0))
 
             if decision == "BUY":
-                # 1. Breakeven Activation Check (Price reaches Target 1 / EQ)
                 if current_high >= tp1 and be_active == 0:
                     df.at[idx, "sl"] = entry
                     df.at[idx, "be_active"] = 1
                     updated = True
                     send_telegram_alert(f"🛡️ *Breakeven Activated* for BUY (`{trade_id}`).\nStop Loss moved to entry price: `{entry:.2f}`")
 
-                # 2. Check Stop Loss Hit
                 if current_low <= float(df.at[idx, "sl"]):
                     df.at[idx, "status"] = "LOSS"
                     df.at[idx, "exit_time"] = now_str
@@ -168,7 +166,6 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
                     send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl']):.2f}`")
                     log_trade_mistake(trade_id, symbol, decision, entry, sl, current_low, atr_val, now_str)
 
-                # 3. Check Final Target Hit
                 elif current_high >= tp2:
                     df.at[idx, "status"] = "WIN"
                     df.at[idx, "exit_time"] = now_str
@@ -176,14 +173,12 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
                     send_telegram_alert(f"🎯 *TARGET REACHED (WIN)*\nID: `{trade_id}`\nHitting TP2 at `{tp2:.2f}`")
 
             elif decision == "SELL":
-                # 1. Breakeven Activation Check (Price reaches Target 1 / EQ)
                 if current_low <= tp1 and be_active == 0:
                     df.at[idx, "sl"] = entry
                     df.at[idx, "be_active"] = 1
                     updated = True
                     send_telegram_alert(f"🛡️ *Breakeven Activated* for SELL (`{trade_id}`).\nStop Loss moved to entry price: `{entry:.2f}`")
 
-                # 2. Check Stop Loss Hit
                 if current_high >= float(df.at[idx, "sl"]):
                     df.at[idx, "status"] = "LOSS"
                     df.at[idx, "exit_time"] = now_str
@@ -191,7 +186,6 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
                     send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl']):.2f}`")
                     log_trade_mistake(trade_id, symbol, decision, entry, sl, current_high, atr_val, now_str)
 
-                # 3. Check Final Target Hit
                 elif current_low <= tp2:
                     df.at[idx, "status"] = "WIN"
                     df.at[idx, "exit_time"] = now_str
@@ -202,8 +196,16 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
         df.to_csv(TRADE_HISTORY_FILE, index=False)
 
 
+def find_macro_4h_range(df: pd.DataFrame, lookback: int = 50):
+    """Identifies the true macro 4H Dealing Range (Highest High and Lowest Low over a structural lookback)."""
+    macro_df = df.tail(lookback)
+    macro_sh = macro_df["high"].max()
+    macro_sl = macro_df["low"].min()
+    return macro_sh, macro_sl
+
+
 def find_smc_swings(df: pd.DataFrame, window: int = 2):
-    """Identifies verified SMC Fractal Swing Highs and Swing Lows."""
+    """Identifies verified SMC Fractal Swing Highs and Swing Lows for 1H liquidity."""
     swing_highs = [
         df["high"].iloc[i] for i in range(window, len(df) - window)
         if all(df["high"].iloc[i] > df["high"].iloc[i - j] for j in range(1, window + 1)) and
@@ -259,7 +261,7 @@ def run_scanner():
     initialize_trade_history()
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + VISIBILITY ENGINE v2.2      ")
+    print("  SMC GOLD SCANNER + MACRO RANGE ENGINE v2.4     ")
     print("==================================================")
 
     while True:
@@ -276,7 +278,6 @@ def run_scanner():
             time.sleep(IDLE_SLEEP_SECONDS)
             continue
 
-        # Daily Circuit Breaker Check
         if check_daily_circuit_breaker():
             time.sleep(IDLE_SLEEP_SECONDS)
             continue
@@ -289,10 +290,10 @@ def run_scanner():
                 latest_price = data["1M"]["close"].iloc[-1]
                 atr_val = calculate_atr(data["1H"], period=14)
 
-                # Evaluate Pending Trades & Breakeven/Autopsy triggers
                 evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str)
 
-                h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
+                # Macro 4H Dealing Range (50-bar structural lookback) & 1H fractal swings
+                h4_sh, h4_sl = find_macro_4h_range(data["4H"], lookback=50)
                 eq_4h = (h4_sh + h4_sl) / 2
                 h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
 
@@ -307,7 +308,7 @@ def run_scanner():
                 print(f"💲 Live Price:       {latest_price:.2f}")
                 print(f"🚦 Engine Decision:  {decision} ({reason})")
                 print("==================================================")
-                print("1️⃣  4H DEALING RANGE & BIAS")
+                print("1️⃣  4H MACRO DEALING RANGE & BIAS")
                 print(f"   • 4H Swing High:  {h4_sh:.2f}")
                 print(f"   • 4H Swing Low:   {h4_sl:.2f}")
                 print(f"   • Equilibrium:    {eq_4h:.2f}")
@@ -351,14 +352,12 @@ def run_scanner():
                     print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
                     print(f"   • Target 2 (4H SH):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
 
-                # STRICT R:R FILTER CHECK
                 if rr_tp2 < MIN_REQUIRED_RR:
                     print(f"   ❌ REJECTED: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R. Skipping execution.")
                     decision = "WAIT"
                 else:
                     print(f"   ✔ APPROVED: High-asymmetry setup verified.")
 
-                    # POSITION SIZING (MAX $10 RISK)
                     risk_per_lot = risk_points * CONTRACT_SIZE_GOLD
                     if risk_per_lot > 0:
                         exact_lots = MAX_DOLLAR_RISK / risk_per_lot
@@ -373,7 +372,6 @@ def run_scanner():
                 print("==================================================")
 
                 if decision in ["BUY", "SELL"]:
-                    # Check if an active PENDING trade already exists to block duplicates
                     has_active_trade = False
                     if os.path.exists(TRADE_HISTORY_FILE):
                         df_check = pd.read_csv(TRADE_HISTORY_FILE)
