@@ -1,30 +1,48 @@
 import pandas as pd
-import numpy as np
-from datetime import datetime
+import yfinance as yf
 from googlesmc import SMCTradingEngine
 
-# Helper function to generate realistic timeframe data
-def make_dummy_data(rows, freq='1min', start_price=4050.0):
-    times = pd.date_range(end=datetime.now(), periods=rows, freq=freq)
-    np.random.seed(42)
-    closes = start_price + np.cumsum(np.random.randn(rows))
-    return pd.DataFrame({
-        'open': closes - 0.5,
-        'high': closes + 1.5,
-        'low': closes - 1.5,
-        'close': closes
-    }, index=times)
+def fetch_real_data(ticker="GC=F"):
+    """
+    Fetches real multi-timeframe market data.
+    Note: 1m intraday data from Yahoo Finance is limited to the last 7 days.
+    """
+    print(f"Fetching market data for {ticker}...")
+    
+    # Download 1-minute data (last 5 days)
+    df_1m = yf.download(ticker, period="5d", interval="1m")
+    
+    # Clean up column names to lowercase
+    if isinstance(df_1m.columns, pd.MultiIndex):
+        df_1m.columns = df_1m.columns.get_level_values(0)
+    df_1m = df_1m.rename(columns={
+        "Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"
+    })
 
-# Test Runner Execution
+    # Resample 1M data into 15M, 1H, and 4H timeframes
+    df_15m = df_1m.resample('15min').agg({
+        'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'
+    }).dropna()
+
+    df_1h = df_1m.resample('1h').agg({
+        'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'
+    }).dropna()
+
+    df_4h = df_1m.resample('4h').agg({
+        'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'
+    }).dropna()
+
+    return {
+        '4H': df_4h,
+        '1H': df_1h,
+        '15M': df_15m,
+        '1M': df_1m
+    }
+
+# Run Engine on Real Market Data
 engine = SMCTradingEngine(min_rr=2.0, atr_multiplier=1.0)
-
-data = {
-    '4H': make_dummy_data(100, freq='4h'),
-    '1H': make_dummy_data(100, freq='1h'),
-    '15M': make_dummy_data(100, freq='15min'),
-    '1M': make_dummy_data(100, freq='1min')
-}
+data = fetch_real_data(ticker="GC=F")  # Gold Futures (or use 'EURUSD=X')
 
 result = engine.analyze(data)
-print("=== SMC ANALYSIS RESULT ===")
+print("\n=== SMC ANALYSIS RESULT (REAL DATA) ===")
 print(result)
