@@ -32,8 +32,17 @@ SCAN_INTERVAL_SECONDS = 150  # 2.5 minutes
 IDLE_SLEEP_SECONDS = 300     # 5 minutes
 IST = ZoneInfo("Asia/Kolkata")
 TRADE_HISTORY_FILE = "trade_history.csv"
+LOG_FILE = "scanner.log"
 
 td = TDClient(apikey=TWELVE_DATA_API_KEY)
+
+
+def manage_log_size():
+    """Prevents scanner.log from bloating server memory/disk (Max 5MB limit)."""
+    if os.path.exists(LOG_FILE):
+        if os.path.getsize(LOG_FILE) > 5 * 1024 * 1024:
+            with open(LOG_FILE, "w") as f:
+                f.write(f"[{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')}] Log rotated due to size limit.\n")
 
 
 def send_telegram_alert(message: str):
@@ -55,11 +64,20 @@ def is_active_session(now_dt: datetime) -> bool:
 
 
 def initialize_trade_history():
-    """Initializes the CSV file for tracking trade outcomes."""
+    """Initializes the CSV file for tracking trade outcomes and prints historical stats."""
     if not os.path.exists(TRADE_HISTORY_FILE):
         pd.DataFrame(columns=[
             "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time"
         ]).to_csv(TRADE_HISTORY_FILE, index=False)
+    else:
+        df = pd.read_csv(TRADE_HISTORY_FILE)
+        closed_trades = df[df["status"] != "PENDING"]
+        if not closed_trades.empty:
+            wins = len(closed_trades[closed_trades["status"] == "WIN_TP2"])
+            losses = len(closed_trades[closed_trades["status"] == "LOSS"])
+            total = len(closed_trades)
+            win_rate = (wins / total) * 100 if total > 0 else 0
+            print(f"📈 [PERFORMANCE REVIEW] Total Closed: {total} | Wins: {wins} | Losses: {losses} | Win Rate: {win_rate:.1f}%")
 
 
 def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2, lots):
@@ -158,6 +176,7 @@ def run_scanner():
     print("==================================================")
 
     while True:
+        manage_log_size()
         now_ist = datetime.now(IST)
 
         if NEWS_PAUSE:
@@ -175,6 +194,7 @@ def run_scanner():
         for symbol in TICKERS:
             try:
                 data = fetch_realtime_data(symbol)
+                latest_price = data["1M"]["close"].iloc[-1]
                 evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], now_str)
 
                 h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
@@ -186,7 +206,6 @@ def run_scanner():
                 decision = result.get("decision", "NO_TRADE")
                 reason = result.get("reason", "Setup validated")
                 bias = result.get("bias_4h", "N/A")
-                latest_price = data["1M"]["close"].iloc[-1]
 
                 print("\n==================================================")
                 print(f"📊 LIVE SMC SCANNER STATUS ({symbol})")
@@ -270,6 +289,7 @@ def run_scanner():
                         msg = (
                             f"🚨 *SMC STRUCTURAL TRADE SIGNAL ({trade_id})*\n\n"
                             f"• *Decision:* `{decision}`\n"
+                            f"• *Current Live Price:* `{latest_price:.2f}`\n"
                             f"• *Entry:* `{planned_entry:.2f}`\n"
                             f"• *Logical SL:* `{planned_sl:.2f}`\n"
                             f"• *Target 1 (EQ):* `{planned_tp1:.2f}`\n"
