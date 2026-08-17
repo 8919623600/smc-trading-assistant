@@ -19,11 +19,11 @@ MAX_DOLLAR_RISK = 10.0                  # Maximum allowed loss in USD per trade
 MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
 MAX_DAILY_LOSSES = 2                    # Circuit breaker limit: stop trading after X losses in a day
 
-# Multi-Asset Configuration (Contract sizes & descriptive asset names)
+# Multi-Asset Configuration (Contract sizes, base/quote structure, and names)
 ASSET_CONFIG = {
-    "XAU/USD": {"contract_size": 100, "name": "Gold"},
-    "EUR/USD": {"contract_size": 100000, "name": "Euro / US Dollar"},
-    "USD/JPY": {"contract_size": 100000, "name": "US Dollar / Japanese Yen"}
+    "XAU/USD": {"contract_size": 100, "quote_usd": True, "name": "Gold"},
+    "EUR/USD": {"contract_size": 100000, "quote_usd": True, "name": "Euro / US Dollar"},
+    "USD/JPY": {"contract_size": 100000, "quote_usd": False, "name": "US Dollar / Japanese Yen"}
 }
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
@@ -268,7 +268,7 @@ def run_scanner():
     initialize_trade_history()
 
     print("==================================================")
-    print("  MULTI-ASSET SMC SCANNER v2.8 (Explicit Trades) ")
+    print("  MULTI-ASSET SMC SCANNER v2.9 (Fixed JPY Math)  ")
     print("==================================================")
 
     while True:
@@ -293,8 +293,9 @@ def run_scanner():
 
         for idx, symbol in enumerate(TICKERS):
             try:
-                cfg = ASSET_CONFIG.get(symbol, {"contract_size": 100000, "name": symbol})
+                cfg = ASSET_CONFIG.get(symbol, {"contract_size": 100000, "quote_usd": True, "name": symbol})
                 contract_size = cfg["contract_size"]
+                quote_usd = cfg["quote_usd"]
                 asset_name = cfg["name"]
 
                 print("\n==================================================")
@@ -370,16 +371,22 @@ def run_scanner():
                     print(f"   • Target 1 (EQ):   {planned_tp1}")
                     print(f"   • Target 2 (4H SH):{planned_tp2} -> R:R {rr_tp2:.2f}R")
 
-                # MULTI-LOT SCENARIO SIMULATOR TABLE (CONSOLE)
+                # MULTI-LOT SCENARIO SIMULATOR TABLE (CONSOLE - WITH CORRECTED CURRENCY MATH)
                 print("--------------------------------------------------")
                 print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
                 print("==================================================")
                 print("   Lot Size   |   SL Loss    |   TP1 Profit (EQ) |   TP2 Profit")
                 print("--------------------------------------------------")
                 for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
-                    sl_loss = lot * risk_points * contract_size
-                    tp1_prof = lot * reward_tp1 * contract_size
-                    tp2_prof = lot * reward_tp2 * contract_size
+                    if quote_usd:
+                        sl_loss = lot * risk_points * contract_size
+                        tp1_prof = lot * reward_tp1 * contract_size
+                        tp2_prof = lot * reward_tp2 * contract_size
+                    else:
+                        # Correct currency conversion for USD-base pairs (e.g., USD/JPY)
+                        sl_loss = lot * contract_size * (risk_points / latest_price)
+                        tp1_prof = lot * contract_size * (reward_tp1 / latest_price)
+                        tp2_prof = lot * contract_size * (reward_tp2 / latest_price)
                     print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}      |   +${tp2_prof:.2f}")
                 print("==================================================")
 
@@ -389,7 +396,11 @@ def run_scanner():
                 else:
                     print(f"   ✔ APPROVED [{symbol}]: High-asymmetry setup verified.")
 
-                    risk_per_lot = risk_points * contract_size
+                    if quote_usd:
+                        risk_per_lot = risk_points * contract_size
+                    else:
+                        risk_per_lot = contract_size * (risk_points / latest_price)
+
                     if risk_per_lot > 0:
                         exact_lots = MAX_DOLLAR_RISK / risk_per_lot
                         recommended_lots = math.floor(exact_lots * 100) / 100
@@ -416,9 +427,14 @@ def run_scanner():
                         # Build Multi-Lot Telegram Table
                         telegram_table_lines = []
                         for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
-                            s_loss = lot * risk_points * contract_size
-                            t1_prof = lot * reward_tp1 * contract_size
-                            t2_prof = lot * reward_tp2 * contract_size
+                            if quote_usd:
+                                s_loss = lot * risk_points * contract_size
+                                t1_prof = lot * reward_tp1 * contract_size
+                                t2_prof = lot * reward_tp2 * contract_size
+                            else:
+                                s_loss = lot * contract_size * (risk_points / latest_price)
+                                t1_prof = lot * contract_size * (reward_tp1 / latest_price)
+                                t2_prof = lot * contract_size * (reward_tp2 / latest_price)
                             telegram_table_lines.append(f"`{lot:.2f}L | -${s_loss:.2f} | +${t1_prof:.2f} | +${t2_prof:.2f}`")
                         table_string = "\n".join(telegram_table_lines)
 
