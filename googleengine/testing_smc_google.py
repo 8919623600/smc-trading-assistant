@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import math
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 import pandas as pd
@@ -13,9 +14,8 @@ from googlesmc import SMCTradingEngine
 # ==========================================
 NEWS_PAUSE = False                      # Set to True to halt scanning during high-impact news
 
-# Account & Risk Parameters for Lot Sizing (Adjust to your actual broker specs)
-ACCOUNT_BALANCE = 10000.0               # Your account balance in USD
-RISK_PERCENTAGE = 1.0                   # Max risk per trade (% of account, e.g. 1.0%)
+# Risk Parameters for Lot Sizing (Strictly $10 or below max loss)
+MAX_DOLLAR_RISK = 10.0                  # Maximum allowed loss in USD per trade
 CONTRACT_SIZE_GOLD = 100                # Standard Gold contract size (1 lot = 100 oz)
 MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
 
@@ -154,7 +154,7 @@ def run_scanner():
     last_signal_key = None
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + LOGICAL SL & R:R FILTER     ")
+    print("  SMC GOLD SCANNER + $10 MAX LOSS RISK MODEL     ")
     print("==================================================")
 
     while True:
@@ -243,13 +243,19 @@ def run_scanner():
                 else:
                     print(f"   ✔ APPROVED: High-asymmetry setup verified.")
 
-                # Lot Sizing Calculation based on % Risk
-                dollar_risk_allowed = ACCOUNT_BALANCE * (RISK_PERCENTAGE / 100.0)
+                # STRICT $10 MAX LOSS LOT SIZING CALCULATION
                 risk_per_lot = risk_points * CONTRACT_SIZE_GOLD
-                recommended_lots = round(dollar_risk_allowed / risk_per_lot, 2) if risk_per_lot > 0 else 0.01
-                recommended_lots = max(0.01, recommended_lots)
+                if risk_per_lot > 0:
+                    exact_lots = MAX_DOLLAR_RISK / risk_per_lot
+                    # Floor to 2 decimal places to guarantee risk never exceeds $10 due to rounding
+                    recommended_lots = math.floor(exact_lots * 100) / 100
+                    recommended_lots = max(0.01, recommended_lots)
+                else:
+                    recommended_lots = 0.01
 
-                print(f"   • Position Sizing: {recommended_lots} Lots (Risking ${dollar_risk_allowed:.2f} / {RISK_PERCENTAGE}%)")
+                actual_dollar_risk = recommended_lots * risk_per_lot
+
+                print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
                 print("==================================================")
 
                 if decision in ["BUY", "SELL"]:
@@ -267,6 +273,7 @@ def run_scanner():
                             f"• *Target 1 (EQ):* `{planned_tp1:.2f}`\n"
                             f"• *Target 2 (4H):* `{planned_tp2:.2f}`\n"
                             f"• *Recommended Lots:* `{recommended_lots}`\n"
+                            f"• *Max Risk:* `${actual_dollar_risk:.2f}`\n"
                             f"• *Risk R:R:* `{rr_tp2:.2f}R`\n"
                             f"• *Time (IST):* `{now_str}`"
                         )
