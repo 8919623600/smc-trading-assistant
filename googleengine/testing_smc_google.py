@@ -137,9 +137,10 @@ def fetch_realtime_data(symbol: str) -> dict:
 def run_scanner():
     engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=1.0)
     initialize_trade_history()
+    last_signal_key = None
 
     print("==================================================")
-    print("  SMC GOLD SCANNER - TRADE TRACKING ACTIVE")
+    print("  SMC GOLD SCANNER + VERBOSE OUTPUT & TRACKER     ")
     print("==================================================")
 
     while True:
@@ -155,35 +156,95 @@ def run_scanner():
             time.sleep(IDLE_SLEEP_SECONDS)
             continue
 
-        try:
-            data = fetch_realtime_data("XAU/USD")
-            evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], now_ist.strftime("%Y-%m-%d %H:%M:%S"))
+        now_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p IST")
 
-            result = engine.analyze(data)
-            decision = result.get("decision", "NO_TRADE")
+        for symbol in TICKERS:
+            try:
+                data = fetch_realtime_data(symbol)
+                evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], now_str)
 
-            if decision in ["BUY", "SELL"]:
-                h4_sh, h4_sl = find_smc_swings(data["4H"])
-                h1_bsl, h1_ssl = find_smc_swings(data["1H"])
-                planned_entry = h1_bsl if decision == "SELL" else h1_ssl
-                planned_sl = planned_entry + SL_BUFFER if decision == "SELL" else planned_entry - SL_BUFFER
-                planned_tp1 = (h4_sh + h4_sl) / 2
-                planned_tp2 = h4_sl if decision == "SELL" else h4_sh
+                h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
+                eq_4h = (h4_sh + h4_sl) / 2
+                h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
 
-                trade_id = f"XAU_{now_ist.strftime('%Y%m%d_%H%M')}"
-                msg = (
-                    f"🚨 *SMC SIGNAL: XAU/USD*\n"
-                    f"• *Decision:* `{decision}`\n"
-                    f"• *Entry:* `{planned_entry:.2f}`\n"
-                    f"• *Stop Loss:* `{planned_sl:.2f}`\n"
-                    f"• *Target 2:* `{planned_tp2:.2f}`"
-                )
-                send_telegram_alert(msg)
-                log_new_trade(trade_id, now_ist.strftime('%Y-%m-%d %H:%M:%S'), "XAU/USD", decision, planned_entry, planned_sl, planned_tp1, planned_tp2)
+                result = engine.analyze(data)
+                decision = result.get("decision", "NO_TRADE")
+                reason = result.get("reason", "Setup validated")
+                bias = result.get("bias_4h", "N/A")
+                latest_price = data["1M"]["close"].iloc[-1]
 
-            print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] Scan complete. Decision: {decision}")
-        except Exception as e:
-            print(f"Error: {e}")
+                print("\n==================================================")
+                print(f"📊 LIVE SMC SCANNER STATUS ({symbol})")
+                print(f"⏰ Scan Time (IST):  {now_str}")
+                print(f"💲 Live Price:       {latest_price:.2f}")
+                print(f"🚦 Engine Decision:  {decision} ({reason})")
+                print("==================================================")
+                print("1️⃣  4H DEALING RANGE & BIAS")
+                print(f"   • 4H Swing High:  {h4_sh:.2f}")
+                print(f"   • 4H Swing Low:   {h4_sl:.2f}")
+                print(f"   • Equilibrium:    {eq_4h:.2f}")
+                print(f"   • Overall Bias:   {bias}")
+                print("--------------------------------------------------")
+                print("2️⃣  1H LIQUIDITY LEVELS")
+                print(f"   • Buy-Side Liquidity (BSL):  {h1_bsl:.2f}")
+                print(f"   • Sell-Side Liquidity (SSL): {h1_ssl:.2f}")
+                print("--------------------------------------------------")
+                print("4️⃣  ACTIONABLE EXECUTION PLAN (ENLARGED RANGE)")
+
+                if latest_price > eq_4h:
+                    planned_entry = h1_bsl
+                    planned_sl = h1_bsl + SL_BUFFER
+                    planned_tp1 = eq_4h
+                    planned_tp2 = h4_sl
+                    risk = planned_sl - planned_entry
+                    reward_tp2 = planned_entry - planned_tp2
+                    rr_tp2 = reward_tp2 / risk if risk > 0 else 0
+
+                    print("   • Direction:       SHORT (Bearish Reversal from Premium)")
+                    print(f"   • Trigger:         Sweep 1H BSL ({h1_bsl:.2f}) + 1M Bearish CHoCH")
+                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H Buy-Side Liquidity Sweep)")
+                    print(f"   • Planned SL:      {planned_sl:.2f} (+${SL_BUFFER:.2f} / 60 Pips Above High)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium)")
+                    print(f"   • Target 2 (4H SL):{planned_tp2:.2f} (Major 4H Low) -> R:R {rr_tp2:.2f}R")
+                else:
+                    planned_entry = h1_ssl
+                    planned_sl = h1_ssl - SL_BUFFER
+                    planned_tp1 = eq_4h
+                    planned_tp2 = h4_sh
+                    risk = planned_entry - planned_sl
+                    reward_tp2 = planned_tp2 - planned_entry
+                    rr_tp2 = reward_tp2 / risk if risk > 0 else 0
+
+                    print("   • Direction:       LONG (Bullish Reversal from Discount)")
+                    print(f"   • Trigger:         Sweep 1H SSL ({h1_ssl:.2f}) + 1M Bullish CHoCH")
+                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H Sell-Side Liquidity Sweep)")
+                    print(f"   • Planned SL:      {planned_sl:.2f} (-${SL_BUFFER:.2f} / 60 Pips Below Low)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium)")
+                    print(f"   • Target 2 (4H SH):{planned_tp2:.2f} (Major 4H High) -> R:R {rr_tp2:.2f}R")
+
+                print("==================================================")
+
+                if decision in ["BUY", "SELL"]:
+                    current_signal_key = f"{decision}_{latest_price:.1f}_{now_ist.strftime('%H%M')}"
+                    if current_signal_key != last_signal_key:
+                        last_signal_key = current_signal_key
+                        trade_id = f"XAU_{now_ist.strftime('%Y%m%d_%H%M')}"
+                        log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2)
+
+                        msg = (
+                            f"🚨 *SMC TRADE SIGNAL ({trade_id})*\n\n"
+                            f"• *Decision:* `{decision}`\n"
+                            f"• *Entry:* `{planned_entry:.2f}`\n"
+                            f"• *Stop Loss:* `{planned_sl:.2f}`\n"
+                            f"• *Target 1 (EQ):* `{planned_tp1:.2f}`\n"
+                            f"• *Target 2 (4H):* `{planned_tp2:.2f}`\n"
+                            f"• *4H Bias:* `{bias}`\n"
+                            f"• *Time (IST):* `{now_str}`"
+                        )
+                        send_telegram_alert(msg)
+
+            except Exception as e:
+                print(f"[{symbol}] Error fetching data: {e}")
 
         time.sleep(SCAN_INTERVAL_SECONDS)
 
