@@ -11,6 +11,9 @@ from googlesmc import SMCTradingEngine
 # ==========================================
 # CONFIGURATION & ENVIRONMENT SETUP
 # ==========================================
+# MANUAL CIRCUIT BREAKER: Set to True to halt all trading/API calls during high-impact news.
+NEWS_PAUSE = False 
+
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -20,227 +23,119 @@ if not TWELVE_DATA_API_KEY:
     sys.exit(1)
 
 TICKERS = ["XAU/USD"]
-SCAN_INTERVAL_SECONDS = 150  # 2.5 minutes (336 cycles = 672 API credits/day)
-IDLE_SLEEP_SECONDS = 300     # Check clock every 5 minutes during Asian session
-SL_BUFFER = 6.00             # $6.00 buffer (60 pips) for Gold
+SCAN_INTERVAL_SECONDS = 150  # 2.5 minutes
+IDLE_SLEEP_SECONDS = 300     # 5 minutes
+SL_BUFFER = 6.00             # $6.00 (60 pips) for Gold
 IST = ZoneInfo("Asia/Kolkata")
+TRADE_HISTORY_FILE = "trade_history.csv"
 
 td = TDClient(apikey=TWELVE_DATA_API_KEY)
 
-
 def send_telegram_alert(message: str):
-    """Sends formatted alert message to Telegram."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ Telegram token/chat_id not set. Skipping Telegram notification.")
-        return
-
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-    }
-    try:
-        requests.post(url, json=payload, timeout=5)
-    except Exception as e:
-        print(f"⚠️ Failed to send Telegram alert: {e}")
-
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try: requests.post(url, json=payload, timeout=5)
+    except Exception as e: print(f"⚠️ Telegram alert failed: {e}")
 
 def is_active_session(now_dt: datetime) -> bool:
-    """Checks if current time is within London/NY active window (1:30 PM to 3:30 AM IST)."""
     current_time = now_dt.time()
-    start_time = dtime(13, 30)  # 1:30 PM IST
-    end_time = dtime(3, 30)     # 3:30 AM IST
+    return (current_time >= dtime(13, 30) or current_time < dtime(3, 30))
 
-    if current_time >= start_time or current_time < end_time:
-        return True
-    return False
+def initialize_trade_history():
+    if not os.path.exists(TRADE_HISTORY_FILE):
+        pd.DataFrame(columns=["trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "status", "exit_time"]).to_csv(TRADE_HISTORY_FILE, index=False)
 
+def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2):
+    initialize_trade_history()
+    df = pd.read_csv(TRADE_HISTORY_FILE)
+    new_row = {"trade_id": trade_id, "timestamp": timestamp, "symbol": symbol, "decision": decision, "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "status": "PENDING", "exit_time": "N/A"}
+    pd.concat([df, pd.DataFrame([new_row])], ignore_index=True).to_csv(TRADE_HISTORY_FILE, index=False)
+
+def evaluate_pending_trades(current_high: float, current_low: float, now_str: str):
+    if not os.path.exists(TRADE_HISTORY_FILE): return
+    df = pd.read_csv(TRADE_HISTORY_FILE)
+    updated = False
+    for idx, row in df.iterrows():
+        if row["status"] == "PENDING":
+            decision, sl, tp2, trade_id = row["decision"], float(row["sl"]), float(row["tp2"]), row["trade_id"]
+            if (decision == "BUY" and current_low <= sl) or (decision == "SELL" and current_high >= sl):
+                df.at[idx, "status"] = "LOSS"
+                df.at[idx, "exit_time"] = now_str
+                updated = True
+                send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHit SL at `{sl:.2f}`")
+            elif (decision == "BUY" and current_high >= tp2) or (decision == "SELL" and current_low <= tp2):
+                df.at[idx, "status"] = "WIN_TP2"
+                df.at[idx, "exit_time"] = now_str
+                updated = True
+                send_telegram_alert(f"🎯 *TRADE TARGET REACHED (WIN)*\nID: `{trade_id}`\nHit TP2 at `{tp2:.2f}`")
+    if updated: df.to_csv(TRADE_HISTORY_FILE, index=False)
+
+def print_monthly_report():
+    if not os.path.exists(TRADE_HISTORY_FILE): return
+    df = pd.read_csv(TRADE_HISTORY_FILE)
+    if df.empty: return
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["Month"] = df["timestamp"].dt.to_period("M")
+    print("\n📊 MONTHLY PERFORMANCE REPORT")
+    for month, group in df.groupby("Month"):
+        total = len(group[group["status"] != "PENDING"])
+        wins = len(group[group["status"].str.contains("WIN", na=False)])
+        losses = len(group[group["status"] == "LOSS"])
+        print(f"🗓️ {month} | Trades: {total} | Win: {wins} | Loss: {losses} | Win Rate: {(wins/total*100 if total>0 else 0):.1f}%")
 
 def find_smc_swings(df: pd.DataFrame, window: int = 2):
-    """Identifies verified SMC Fractal Swing Highs and Swing Lows."""
-    swing_highs = []
-    swing_lows = []
-
-    for i in range(window, len(df) - window):
-        is_high = all(
-            df["high"].iloc[i] > df["high"].iloc[i - j] for j in range(1, window + 1)
-        ) and all(
-            df["high"].iloc[i] >= df["high"].iloc[i + j] for j in range(1, window + 1)
-        )
-        if is_high:
-            swing_highs.append(df["high"].iloc[i])
-
-        is_low = all(
-            df["low"].iloc[i] < df["low"].iloc[i - j] for j in range(1, window + 1)
-        ) and all(
-            df["low"].iloc[i] <= df["low"].iloc[i + j] for j in range(1, window + 1)
-        )
-        if is_low:
-            swing_lows.append(df["low"].iloc[i])
-
+    swing_highs = [df["high"].iloc[i] for i in range(window, len(df)-window) if all(df["high"].iloc[i] > df["high"].iloc[i-j] for j in range(1, window+1)) and all(df["high"].iloc[i] >= df["high"].iloc[i+j] for j in range(1, window+1))]
+    swing_lows = [df["low"].iloc[i] for i in range(window, len(df)-window) if all(df["low"].iloc[i] < df["low"].iloc[i-j] for j in range(1, window+1)) and all(df["low"].iloc[i] <= df["low"].iloc[i+j] for j in range(1, window+1))]
     active_sh = swing_highs[-1] if swing_highs else df["high"].max()
     active_sl = swing_lows[-1] if swing_lows else df["low"].min()
-
-    if active_sh < df["close"].iloc[-1] and len(swing_highs) > 1:
-        active_sh = max(swing_highs[-3:])
-
     return active_sh, active_sl
 
-
 def fetch_realtime_data(symbol: str) -> dict:
-    """Fetches real-time multi-timeframe data via Twelve Data in UTC and converts to IST."""
-    ts_15m = td.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC")
-    df_15m = ts_15m.as_pandas()
-
-    ts_1m = td.time_series(symbol=symbol, interval="1min", outputsize=100, timezone="UTC")
-    df_1m = ts_1m.as_pandas()
-
-    if df_15m is None or df_1m is None or df_15m.empty or df_1m.empty:
-        raise ValueError(f"No data returned from Twelve Data for '{symbol}'")
-
-    for df in [df_15m, df_1m]:
-        df.index = pd.to_datetime(df.index)
-        df.sort_index(inplace=True)
-        for col in ["open", "high", "low", "close"]:
-            df[col] = df[col].astype(float)
-
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC").tz_convert(IST)
-        else:
-            df.index = df.index.tz_convert(IST)
-
-    df_1h = df_15m.resample("1h").agg({
-        "open": "first", "high": "max", "low": "min", "close": "last"
-    }).dropna()
-
-    df_4h = df_15m.resample("4h").agg({
-        "open": "first", "high": "max", "low": "min", "close": "last"
-    }).dropna()
-
-    return {"4H": df_4h, "1H": df_1h, "15M": df_15m, "1M": df_1m}
-
+    ts_15m = td.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC").as_pandas()
+    ts_1m = td.time_series(symbol=symbol, interval="1min", outputsize=100, timezone="UTC").as_pandas()
+    for df in [ts_15m, ts_1m]:
+        df.index = pd.to_datetime(df.index).tz_convert(IST)
+        for col in ["open", "high", "low", "close"]: df[col] = df[col].astype(float)
+    return {"4H": ts_15m.resample("4h").agg({"open":"first", "high":"max", "low":"min", "close":"last"}), 
+            "1H": ts_15m.resample("1h").agg({"open":"first", "high":"max", "low":"min", "close":"last"}), 
+            "1M": ts_1m}
 
 def run_scanner():
     engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=1.0)
-    last_signal_key = None
-
-    print("==================================================")
-    print("  SMC GOLD SCANNER - OPTION B (1:30 PM-3:30 AM IST)")
-    print("==================================================")
-
-    send_telegram_alert(
-        "🚀 *SMC Gold Scanner Started*\n"
-        "Session Window: 1:30 PM to 3:30 AM IST\n"
-        "API Mode: Safe Tier (672 Credits/Day)"
-    )
+    initialize_trade_history()
+    print("🚀 SMC GOLD SCANNER ACTIVE")
 
     while True:
         now_ist = datetime.now(IST)
-
-        # Check Active Session Window
+        
+        if NEWS_PAUSE:
+            print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] 🛑 NEWS PAUSE ACTIVE. Idling...")
+            time.sleep(IDLE_SLEEP_SECONDS)
+            continue
+            
         if not is_active_session(now_ist):
-            print(
-                f"[{now_ist.strftime('%I:%M:%S %p IST')}] 😴 Asian Session Idle (Outside 1:30 PM - 3:30 AM IST). Pausing API calls..."
-            )
+            print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] 😴 Session Closed. Idling...")
             time.sleep(IDLE_SLEEP_SECONDS)
             continue
 
-        now_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p IST")
-
-        for symbol in TICKERS:
-            try:
-                data = fetch_realtime_data(symbol)
-
-                # Higher Timeframe Structure
-                h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
-                eq_4h = (h4_sh + h4_sl) / 2
-                h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
-
-                result = engine.analyze(data)
-                decision = result.get("decision", "NO_TRADE")
-                reason = result.get("reason", "Setup validated")
-                bias = result.get("bias_4h", "N/A")
-                latest_price = data["1M"]["close"].iloc[-1]
-
-                print("\n==================================================")
-                print(f"📊 LIVE SMC SCANNER STATUS ({symbol})")
-                print(f"⏰ Scan Time (IST):  {now_str}")
-                print(f"💲 Live Price:       {latest_price:.2f}")
-                print(f"🚦 Engine Decision:  {decision} ({reason})")
-                print("==================================================")
-                print("1️⃣  4H DEALING RANGE & BIAS")
-                print(f"   • 4H Swing High:  {h4_sh:.2f}")
-                print(f"   • 4H Swing Low:   {h4_sl:.2f}")
-                print(f"   • Equilibrium:    {eq_4h:.2f}")
-                print(f"   • Overall Bias:   {bias}")
-                print("--------------------------------------------------")
-                print("2️⃣  1H LIQUIDITY LEVELS")
-                print(f"   • Buy-Side Liquidity (BSL):  {h1_bsl:.2f}")
-                print(f"   • Sell-Side Liquidity (SSL): {h1_ssl:.2f}")
-                print("--------------------------------------------------")
-                print("4️⃣  ACTIONABLE EXECUTION PLAN (ENLARGED RANGE)")
-
-                if latest_price > eq_4h:
-                    planned_entry = h1_bsl
-                    planned_sl = h1_bsl + SL_BUFFER
-                    planned_tp1 = eq_4h
-                    planned_tp2 = h4_sl
-                    risk = planned_sl - planned_entry
-                    reward_tp2 = planned_entry - planned_tp2
-                    rr_tp2 = reward_tp2 / risk if risk > 0 else 0
-
-                    print("   • Direction:       SHORT (Bearish Reversal from Premium)")
-                    print(f"   • Trigger:         Sweep 1H BSL ({h1_bsl:.2f}) + 1M Bearish CHoCH")
-                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H Buy-Side Liquidity Sweep)")
-                    print(f"   • Planned SL:      {planned_sl:.2f} (+${SL_BUFFER:.2f} / 60 Pips Above High)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium)")
-                    print(f"   • Target 2 (4H SL):{planned_tp2:.2f} (Major 4H Low) -> R:R {rr_tp2:.2f}R")
-                else:
-                    planned_entry = h1_ssl
-                    planned_sl = h1_ssl - SL_BUFFER
-                    planned_tp1 = eq_4h
-                    planned_tp2 = h4_sh
-                    risk = planned_entry - planned_sl
-                    reward_tp2 = planned_tp2 - planned_entry
-                    rr_tp2 = reward_tp2 / risk if risk > 0 else 0
-
-                    print("   • Direction:       LONG (Bullish Reversal from Discount)")
-                    print(f"   • Trigger:         Sweep 1H SSL ({h1_ssl:.2f}) + 1M Bullish CHoCH")
-                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H Sell-Side Liquidity Sweep)")
-                    print(f"   • Planned SL:      {planned_sl:.2f} (-${SL_BUFFER:.2f} / 60 Pips Below Low)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium)")
-                    print(f"   • Target 2 (4H SH):{planned_tp2:.2f} (Major 4H High) -> R:R {rr_tp2:.2f}R")
-
-                print("==================================================")
-
-                # Telegram Alert Dispatch Logic
-                if decision in ["BUY", "SELL"]:
-                    current_signal_key = (
-                        f"{decision}_{latest_price:.1f}_{now_ist.strftime('%H%M')}"
-                    )
-
-                    if current_signal_key != last_signal_key:
-                        last_signal_key = current_signal_key
-                        params = result.get("trade_params", {})
-
-                        msg = (
-                            f"🚨 *SMC TRADE SIGNAL: {symbol}*\n\n"
-                            f"• *Decision:* `{decision}`\n"
-                            f"• *Entry:* `{params.get('entry', latest_price)}`\n"
-                            f"• *Stop Loss:* `{params.get('sl', planned_sl):.2f}`\n"
-                            f"• *Target 1 (EQ):* `{planned_tp1:.2f}`\n"
-                            f"• *Target 2 (4H):* `{planned_tp2:.2f}`\n"
-                            f"• *4H Bias:* `{bias}`\n"
-                            f"• *Time (IST):* `{now_str}`"
-                        )
-                        send_telegram_alert(msg)
-
-            except Exception as e:
-                print(f"[{symbol}] Error fetching data: {e}")
-
+        try:
+            data = fetch_realtime_data("XAU/USD")
+            evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], now_ist.strftime("%Y-%m-%d %H:%M:%S"))
+            
+            result = engine.analyze(data)
+            decision = result.get("decision", "NO_TRADE")
+            if decision in ["BUY", "SELL"]:
+                h4_sh, h4_sl = find_smc_swings(data["4H"])
+                h1_bsl, h1_ssl = find_smc_swings(data["1H"])
+                planned_entry = h1_bsl if decision == "SELL" else h1_ssl
+                msg = f"🚨 *SMC SIGNAL:* `{decision}` | *Entry:* `{planned_entry:.2f}`"
+                send_telegram_alert(msg)
+                log_new_trade(f"XAU_{now_ist.strftime('%Y%m%d_%H%M')}", now_ist.strftime('%Y-%m-%d %H:%M:%S'), "XAU/USD", decision, planned_entry, planned_entry+(SL_BUFFER if decision=="SELL" else -SL_BUFFER), (h4_sh+h4_sl)/2, h4_sl if decision=="SELL" else h4_sh)
+            
+            print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] Scan complete. Decision: {decision}")
+        except Exception as e: print(f"Error: {e}")
         time.sleep(SCAN_INTERVAL_SECONDS)
-
 
 if __name__ == "__main__":
     run_scanner()
