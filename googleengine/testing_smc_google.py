@@ -259,7 +259,7 @@ def run_scanner():
     initialize_trade_history()
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + FULL RISK ENGINE v2.1       ")
+    print("  SMC GOLD SCANNER + VISIBILITY ENGINE v2.2      ")
     print("==================================================")
 
     while True:
@@ -314,7 +314,7 @@ def run_scanner():
                 print(f"   • Overall Bias:   {bias}")
                 print(f"   • 1H ATR (Noise): {atr_val:.2f}")
                 print("--------------------------------------------------")
-                print("2️⃣  LOGICAL EXECUTION & RISK PLAN")
+                print("2️⃣  PREDICTIVE EXECUTION & CHART VISIBILITY MAP")
 
                 if latest_price > eq_4h:
                     # SHORT SETUP
@@ -328,8 +328,9 @@ def run_scanner():
                     rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
 
                     print("   • Direction:       SHORT (Bearish Reversal from Premium)")
-                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H BSL Sweep)")
-                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural High + 0.5*ATR)")
+                    print(f"   • Target Entry:    {planned_entry:.2f} (1H BSL Fractal High Sweep)")
+                    print(f"   • 📈 CHART TIP:    Draw horizontal line at {planned_entry:.2f} on your 1H chart to watch the sweep!")
+                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural Ceiling + 0.5*ATR)")
                     print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
                     print(f"   • Target 2 (4H SL):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
                 else:
@@ -344,8 +345,9 @@ def run_scanner():
                     rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
 
                     print("   • Direction:       LONG (Bullish Reversal from Discount)")
-                    print(f"   • Planned Entry:   {planned_entry:.2f} (1H SSL Sweep)")
-                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural Low - 0.5*ATR)")
+                    print(f"   • Target Entry:    {planned_entry:.2f} (1H SSL Fractal Low Sweep)")
+                    print(f"   • 📈 CHART TIP:    Draw horizontal line at {planned_entry:.2f} on your 1H chart to watch the sweep!")
+                    print(f"   • Logical SL:      {planned_sl:.2f} (Structural Floor - 0.5*ATR)")
                     print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
                     print(f"   • Target 2 (4H SH):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
 
@@ -371,7 +373,7 @@ def run_scanner():
                 print("==================================================")
 
                 if decision in ["BUY", "SELL"]:
-                    # CRITICAL FIX: Ensure no duplicate trades are taken while one is already PENDING
+                    # Check if an active PENDING trade already exists to block duplicates
                     has_active_trade = False
                     if os.path.exists(TRADE_HISTORY_FILE):
                         df_check = pd.read_csv(TRADE_HISTORY_FILE)
@@ -386,7 +388,7 @@ def run_scanner():
                             f"🚨 *SMC STRUCTURAL TRADE SIGNAL ({trade_id})*\n\n"
                             f"• *Decision:* `{decision}`\n"
                             f"• *Current Live Price:* `{latest_price:.2f}`\n"
-                            f"• *Entry:* `{planned_entry:.2f}`\n"
+                            f"• *Target Entry Coordinate:* `{planned_entry:.2f}`\n"
                             f"• *Logical SL:* `{planned_sl:.2f}`\n"
                             f"• *Target 1 (EQ):* `{planned_tp1:.2f}`\n"
                             f"• *Target 2 (4H):* `{planned_tp2:.2f}`\n"
