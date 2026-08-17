@@ -17,9 +17,8 @@ if not TWELVE_DATA_API_KEY:
     print("Ensure you ran: export TWELVE_DATA_API_KEY='your_api_key'")
     sys.exit(1)
 
-# Single Target Asset
 TICKERS = ["XAU/USD"]
-SCAN_INTERVAL_SECONDS = 60  # Scan every 60 seconds
+SCAN_INTERVAL_SECONDS = 60
 IST = ZoneInfo("Asia/Kolkata")
 
 td = TDClient(apikey=TWELVE_DATA_API_KEY)
@@ -57,10 +56,7 @@ def find_smc_swings(df: pd.DataFrame, window: int = 2):
 
 
 def fetch_realtime_data(symbol: str) -> dict:
-    """
-    Fetches real-time multi-timeframe data via Twelve Data in UTC and converts to IST.
-    Uses 15M candles for accurate higher timeframe resamples (1H, 4H) and 1M for entries.
-    """
+    """Fetches real-time multi-timeframe data via Twelve Data in UTC and converts to IST."""
     ts_15m = td.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC")
     df_15m = ts_15m.as_pandas()
 
@@ -101,14 +97,16 @@ def run_scanner():
 
     while True:
         now_ist = datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
-        print(f"\n--- SCAN CYCLE AT {now_ist} ---")
 
         for symbol in TICKERS:
             try:
                 data = fetch_realtime_data(symbol)
 
+                # Structure & Liquidity Levels
                 h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
                 eq_4h = (h4_sh + h4_sl) / 2
+
+                h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
 
                 result = engine.analyze(data)
 
@@ -117,24 +115,68 @@ def run_scanner():
                 bias = result.get("bias_4h", "N/A")
                 latest_price = data["1M"]["close"].iloc[-1]
 
+                print("\n==================================================")
+                print(f"📊 LIVE SMC SCANNER STATUS ({symbol})")
+                print(f"⏰ Scan Time (IST):  {now_ist}")
+                print(f"💲 Live Price:       {latest_price:.2f}")
+                print(f"🚦 Engine Decision:  {decision} ({reason})")
+                print("==================================================")
+                print("1️⃣  4H DEALING RANGE & BIAS")
+                print(f"   • 4H Swing High:  {h4_sh:.2f}")
+                print(f"   • 4H Swing Low:   {h4_sl:.2f}")
+                print(f"   • Equilibrium:    {eq_4h:.2f}")
+                print(f"   • Overall Bias:   {bias}")
+                print("--------------------------------------------------")
+                print("2️⃣  1H LIQUIDITY LEVELS")
+                print(f"   • Buy-Side Liquidity (BSL):  {h1_bsl:.2f}")
+                print(f"   • Sell-Side Liquidity (SSL): {h1_ssl:.2f}")
+                print("--------------------------------------------------")
+                print("4️⃣  ACTIONABLE EXECUTION PLAN")
+
+                if latest_price > eq_4h:
+                    # Bearish Reversal Plan (Premium Zone)
+                    planned_entry = h1_bsl
+                    planned_sl = h1_bsl + 2.50
+                    planned_tp1 = eq_4h
+                    planned_tp2 = h1_ssl
+                    risk = planned_sl - planned_entry
+                    reward = planned_entry - planned_tp1
+                    rr_ratio = reward / risk if risk > 0 else 0
+
+                    print(f"   • Direction:       SHORT (Bearish Reversal from Premium)")
+                    print(f"   • Trigger:         Sweep 1H BSL ({h1_bsl:.2f}) + 1M Bearish CHoCH")
+                    print(f"   • Planned Entry:   {planned_entry:.2f} (or 15M Supply/FVG after sweep)")
+                    print(f"   • Planned SL:      {planned_sl:.2f} (Buffer above BSL Sweep)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (4H Equilibrium)")
+                    print(f"   • Target 2 (SSL):  {planned_tp2:.2f} (1H Sell-Side Liquidity)")
+                    print(f"   • Est. R:R Ratio:  {rr_ratio:.2f}R")
+                else:
+                    # Bullish Reversal Plan (Discount Zone)
+                    planned_entry = h1_ssl
+                    planned_sl = h1_ssl - 2.50
+                    planned_tp1 = eq_4h
+                    planned_tp2 = h1_bsl
+                    risk = planned_entry - planned_sl
+                    reward = planned_tp1 - planned_entry
+                    rr_ratio = reward / risk if risk > 0 else 0
+
+                    print(f"   • Direction:       LONG (Bullish Reversal from Discount)")
+                    print(f"   • Trigger:         Sweep 1H SSL ({h1_ssl:.2f}) + 1M Bullish CHoCH")
+                    print(f"   • Planned Entry:   {planned_entry:.2f} (or 15M Demand/FVG after sweep)")
+                    print(f"   • Planned SL:      {planned_sl:.2f} (Buffer below SSL Sweep)")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (4H Equilibrium)")
+                    print(f"   • Target 2 (BSL):  {planned_tp2:.2f} (1H Buy-Side Liquidity)")
+                    print(f"   • Est. R:R Ratio:  {rr_ratio:.2f}R")
+
+                print("==================================================")
+
                 if decision in ["BUY", "SELL"]:
                     params = result.get("trade_params", {})
-                    print("\n" + "=" * 45)
-                    print(f"🚨 [GOLD TRADE SIGNAL DETECTED: {symbol}] 🚨")
-                    print(f"   Time (IST):        {now_ist}")
-                    print(f"   Live Price:        {latest_price:.2f}")
-                    print(f"   Decision:          {decision}")
-                    print(f"   4H Bias:           {bias}")
-                    print(f"   4H Swing Range:    {h4_sl:.2f} - {h4_sh:.2f} (EQ: {eq_4h:.2f})")
-                    print(f"   Entry:             {params.get('entry')}")
-                    print(f"   Stop Loss:         {params.get('sl')}")
-                    print(f"   Take Profit:       {params.get('tp')}")
-                    print(f"   R:R Ratio:         {params.get('rr')}")
-                    print("=" * 45 + "\n")
-                else:
-                    print(
-                        f"[{symbol:<8}] Price: {latest_price:<8.2f} | Status: {decision:<8} | 4H Bias: {bias:<8} | EQ: {eq_4h:<8.2f} | Reason: {reason}"
-                    )
+                    print("\n🚨 [LIVE TRADE SIGNAL TRIGGERED] 🚨")
+                    print(f"   Entry:       {params.get('entry')}")
+                    print(f"   Stop Loss:   {params.get('sl')}")
+                    print(f"   Take Profit: {params.get('tp')}")
+                    print(f"   R:R Ratio:   {params.get('rr')}\n")
 
             except Exception as e:
                 print(f"[{symbol}] Error fetching data: {e}")
