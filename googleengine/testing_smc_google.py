@@ -261,7 +261,7 @@ def run_scanner():
     initialize_trade_history()
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + MACRO RANGE ENGINE v2.4     ")
+    print("  SMC GOLD SCANNER + MACRO RANGE ENGINE v2.6     ")
     print("==================================================")
 
     while True:
@@ -292,7 +292,6 @@ def run_scanner():
 
                 evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str)
 
-                # Macro 4H Dealing Range (50-bar structural lookback) & 1H fractal swings
                 h4_sh, h4_sl = find_macro_4h_range(data["4H"], lookback=50)
                 eq_4h = (h4_sh + h4_sl) / 2
                 h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
@@ -325,6 +324,7 @@ def run_scanner():
                     planned_tp1 = eq_4h
                     planned_tp2 = h4_sl
                     risk_points = planned_sl - planned_entry
+                    reward_tp1 = planned_entry - planned_tp1
                     reward_tp2 = planned_entry - planned_tp2
                     rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
 
@@ -342,6 +342,7 @@ def run_scanner():
                     planned_tp1 = eq_4h
                     planned_tp2 = h4_sh
                     risk_points = planned_entry - planned_sl
+                    reward_tp1 = planned_tp1 - planned_entry
                     reward_tp2 = planned_tp2 - planned_entry
                     rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
 
@@ -351,6 +352,19 @@ def run_scanner():
                     print(f"   • Logical SL:      {planned_sl:.2f} (Structural Floor - 0.5*ATR)")
                     print(f"   • Target 1 (EQ):   {planned_tp1:.2f}")
                     print(f"   • Target 2 (4H SH):{planned_tp2:.2f} -> R:R {rr_tp2:.2f}R")
+
+                # MULTI-LOT SCENARIO SIMULATOR TABLE (CONSOLE)
+                print("--------------------------------------------------")
+                print("💰 MULTI-LOT SCENARIO SIMULATOR (SL vs TP1 vs TP2)")
+                print("==================================================")
+                print("   Lot Size   |   SL Loss    |   TP1 Profit (EQ) |   TP2 Profit")
+                print("--------------------------------------------------")
+                for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
+                    sl_loss = lot * risk_points * CONTRACT_SIZE_GOLD
+                    tp1_prof = lot * reward_tp1 * CONTRACT_SIZE_GOLD
+                    tp2_prof = lot * reward_tp2 * CONTRACT_SIZE_GOLD
+                    print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}      |   +${tp2_prof:.2f}")
+                print("==================================================")
 
                 if rr_tp2 < MIN_REQUIRED_RR:
                     print(f"   ❌ REJECTED: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R. Skipping execution.")
@@ -382,6 +396,15 @@ def run_scanner():
                         trade_id = f"XAU_{now_ist.strftime('%Y%m%d_%H%M%S')}"
                         log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
 
+                        # Build Multi-Lot Telegram Table
+                        telegram_table_lines = []
+                        for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
+                            s_loss = lot * risk_points * CONTRACT_SIZE_GOLD
+                            t1_prof = lot * reward_tp1 * CONTRACT_SIZE_GOLD
+                            t2_prof = lot * reward_tp2 * CONTRACT_SIZE_GOLD
+                            telegram_table_lines.append(f"`{lot:.2f}L | -${s_loss:.2f} | +${t1_prof:.2f} | +${t2_prof:.2f}`")
+                        table_string = "\n".join(telegram_table_lines)
+
                         msg = (
                             f"🚨 *SMC STRUCTURAL TRADE SIGNAL ({trade_id})*\n\n"
                             f"• *Decision:* `{decision}`\n"
@@ -392,7 +415,9 @@ def run_scanner():
                             f"• *Target 2 (4H):* `{planned_tp2:.2f}`\n"
                             f"• *Recommended Lots:* `{recommended_lots}`\n"
                             f"• *Max Risk:* `${actual_dollar_risk:.2f}`\n"
-                            f"• *Risk R:R:* `{rr_tp2:.2f}R`\n"
+                            f"• *Risk R:R:* `{rr_tp2:.2f}R`\n\n"
+                            f"💰 *Multi-Lot Breakdown (Lot | SL | TP1 | TP2):*\n"
+                            f"{table_string}\n\n"
                             f"• *Time (IST):* `{now_str}`"
                         )
                         send_telegram_alert(msg)
