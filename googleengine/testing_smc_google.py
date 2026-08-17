@@ -1,29 +1,60 @@
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 import pandas as pd
+import requests
 from twelvedata import TDClient
 from googlesmc import SMCTradingEngine
 
 # ==========================================
-# ENVIRONMENT & CONFIGURATION
+# CONFIGURATION & ENVIRONMENT SETUP
 # ==========================================
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 if not TWELVE_DATA_API_KEY:
     print("❌ Error: TWELVE_DATA_API_KEY environment variable is not set.")
-    print("Ensure you ran: export TWELVE_DATA_API_KEY='your_api_key'")
     sys.exit(1)
 
-# Single Target Asset & Parameters
 TICKERS = ["XAU/USD"]
-SCAN_INTERVAL_SECONDS = 60
-SL_BUFFER = 6.00  # $6.00 buffer (60 pips) to prevent prematurely getting stopped out
+SCAN_INTERVAL_SECONDS = 150  # 2.5 minutes (336 cycles = 672 API credits/day)
+IDLE_SLEEP_SECONDS = 300     # Check clock every 5 minutes during Asian session
+SL_BUFFER = 6.00             # $6.00 buffer (60 pips) for Gold
 IST = ZoneInfo("Asia/Kolkata")
 
 td = TDClient(apikey=TWELVE_DATA_API_KEY)
+
+
+def send_telegram_alert(message: str):
+    """Sends formatted alert message to Telegram."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ Telegram token/chat_id not set. Skipping Telegram notification.")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+    }
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"⚠️ Failed to send Telegram alert: {e}")
+
+
+def is_active_session(now_dt: datetime) -> bool:
+    """Checks if current time is within London/NY active window (1:30 PM to 3:30 AM IST)."""
+    current_time = now_dt.time()
+    start_time = dtime(13, 30)  # 1:30 PM IST
+    end_time = dtime(3, 30)     # 3:30 AM IST
+
+    if current_time >= start_time or current_time < end_time:
+        return True
+    return False
 
 
 def find_smc_swings(df: pd.DataFrame, window: int = 2):
@@ -92,26 +123,41 @@ def fetch_realtime_data(symbol: str) -> dict:
 
 def run_scanner():
     engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=1.0)
+    last_signal_key = None
 
     print("==================================================")
-    print("   SMC GOLD REAL-TIME SCANNER (TWELVE DATA - IST) ")
+    print("  SMC GOLD SCANNER - OPTION B (1:30 PM-3:30 AM IST)")
     print("==================================================")
+
+    send_telegram_alert(
+        "🚀 *SMC Gold Scanner Started*\n"
+        "Session Window: 1:30 PM to 3:30 AM IST\n"
+        "API Mode: Safe Tier (672 Credits/Day)"
+    )
 
     while True:
-        now_ist = datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
+        now_ist = datetime.now(IST)
+
+        # Check Active Session Window
+        if not is_active_session(now_ist):
+            print(
+                f"[{now_ist.strftime('%I:%M:%S %p IST')}] 😴 Asian Session Idle (Outside 1:30 PM - 3:30 AM IST). Pausing API calls..."
+            )
+            time.sleep(IDLE_SLEEP_SECONDS)
+            continue
+
+        now_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p IST")
 
         for symbol in TICKERS:
             try:
                 data = fetch_realtime_data(symbol)
 
-                # Higher Timeframe Levels
+                # Higher Timeframe Structure
                 h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
                 eq_4h = (h4_sh + h4_sl) / 2
-
                 h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
 
                 result = engine.analyze(data)
-
                 decision = result.get("decision", "NO_TRADE")
                 reason = result.get("reason", "Setup validated")
                 bias = result.get("bias_4h", "N/A")
@@ -119,7 +165,7 @@ def run_scanner():
 
                 print("\n==================================================")
                 print(f"📊 LIVE SMC SCANNER STATUS ({symbol})")
-                print(f"⏰ Scan Time (IST):  {now_ist}")
+                print(f"⏰ Scan Time (IST):  {now_str}")
                 print(f"💲 Live Price:       {latest_price:.2f}")
                 print(f"🚦 Engine Decision:  {decision} ({reason})")
                 print("==================================================")
@@ -136,60 +182,63 @@ def run_scanner():
                 print("4️⃣  ACTIONABLE EXECUTION PLAN (ENLARGED RANGE)")
 
                 if latest_price > eq_4h:
-                    # Bearish Reversal Plan (Premium Zone)
                     planned_entry = h1_bsl
                     planned_sl = h1_bsl + SL_BUFFER
                     planned_tp1 = eq_4h
                     planned_tp2 = h4_sl
-
                     risk = planned_sl - planned_entry
-                    reward_tp1 = planned_entry - planned_tp1
                     reward_tp2 = planned_entry - planned_tp2
-
-                    rr_tp1 = reward_tp1 / risk if risk > 0 else 0
                     rr_tp2 = reward_tp2 / risk if risk > 0 else 0
 
                     print("   • Direction:       SHORT (Bearish Reversal from Premium)")
                     print(f"   • Trigger:         Sweep 1H BSL ({h1_bsl:.2f}) + 1M Bearish CHoCH")
                     print(f"   • Planned Entry:   {planned_entry:.2f} (1H Buy-Side Liquidity Sweep)")
                     print(f"   • Planned SL:      {planned_sl:.2f} (+${SL_BUFFER:.2f} / 60 Pips Above High)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium) -> R:R {rr_tp1:.2f}R")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium)")
                     print(f"   • Target 2 (4H SL):{planned_tp2:.2f} (Major 4H Low) -> R:R {rr_tp2:.2f}R")
                 else:
-                    # Bullish Reversal Plan (Discount Zone)
                     planned_entry = h1_ssl
                     planned_sl = h1_ssl - SL_BUFFER
                     planned_tp1 = eq_4h
                     planned_tp2 = h4_sh
-
                     risk = planned_entry - planned_sl
-                    reward_tp1 = planned_tp1 - planned_entry
                     reward_tp2 = planned_tp2 - planned_entry
-
-                    rr_tp1 = reward_tp1 / risk if risk > 0 else 0
                     rr_tp2 = reward_tp2 / risk if risk > 0 else 0
 
                     print("   • Direction:       LONG (Bullish Reversal from Discount)")
                     print(f"   • Trigger:         Sweep 1H SSL ({h1_ssl:.2f}) + 1M Bullish CHoCH")
                     print(f"   • Planned Entry:   {planned_entry:.2f} (1H Sell-Side Liquidity Sweep)")
                     print(f"   • Planned SL:      {planned_sl:.2f} (-${SL_BUFFER:.2f} / 60 Pips Below Low)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium) -> R:R {rr_tp1:.2f}R")
+                    print(f"   • Target 1 (EQ):   {planned_tp1:.2f} (Equilibrium)")
                     print(f"   • Target 2 (4H SH):{planned_tp2:.2f} (Major 4H High) -> R:R {rr_tp2:.2f}R")
 
                 print("==================================================")
 
+                # Telegram Alert Dispatch Logic
                 if decision in ["BUY", "SELL"]:
-                    params = result.get("trade_params", {})
-                    print("\n🚨 [LIVE TRADE SIGNAL TRIGGERED] 🚨")
-                    print(f"   Entry:       {params.get('entry')}")
-                    print(f"   Stop Loss:   {params.get('sl')}")
-                    print(f"   Take Profit: {params.get('tp')}")
-                    print(f"   R:R Ratio:   {params.get('rr')}\n")
+                    current_signal_key = (
+                        f"{decision}_{latest_price:.1f}_{now_ist.strftime('%H%M')}"
+                    )
+
+                    if current_signal_key != last_signal_key:
+                        last_signal_key = current_signal_key
+                        params = result.get("trade_params", {})
+
+                        msg = (
+                            f"🚨 *SMC TRADE SIGNAL: {symbol}*\n\n"
+                            f"• *Decision:* `{decision}`\n"
+                            f"• *Entry:* `{params.get('entry', latest_price)}`\n"
+                            f"• *Stop Loss:* `{params.get('sl', planned_sl):.2f}`\n"
+                            f"• *Target 1 (EQ):* `{planned_tp1:.2f}`\n"
+                            f"• *Target 2 (4H):* `{planned_tp2:.2f}`\n"
+                            f"• *4H Bias:* `{bias}`\n"
+                            f"• *Time (IST):* `{now_str}`"
+                        )
+                        send_telegram_alert(msg)
 
             except Exception as e:
                 print(f"[{symbol}] Error fetching data: {e}")
 
-        print(f"\nWaiting {SCAN_INTERVAL_SECONDS} seconds for next cycle...")
         time.sleep(SCAN_INTERVAL_SECONDS)
 
 
