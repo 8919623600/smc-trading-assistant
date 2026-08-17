@@ -14,10 +14,11 @@ from googlesmc import SMCTradingEngine
 # ==========================================
 NEWS_PAUSE = False                      # Set to True to halt scanning during high-impact news
 
-# Risk Parameters for Lot Sizing (Strictly $10 or below max loss)
+# Risk Parameters for Lot Sizing & Safety
 MAX_DOLLAR_RISK = 10.0                  # Maximum allowed loss in USD per trade
 CONTRACT_SIZE_GOLD = 100                # Standard Gold contract size (1 lot = 100 oz)
 MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
+MAX_DAILY_LOSSES = 2                    # Circuit breaker limit: stop trading after X losses in a day
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -32,6 +33,7 @@ SCAN_INTERVAL_SECONDS = 150  # 2.5 minutes
 IDLE_SLEEP_SECONDS = 300     # 5 minutes
 IST = ZoneInfo("Asia/Kolkata")
 TRADE_HISTORY_FILE = "trade_history.csv"
+MISTAKE_JOURNAL_FILE = "mistake_journal.csv"
 LOG_FILE = "scanner.log"
 
 td = TDClient(apikey=TWELVE_DATA_API_KEY)
@@ -64,20 +66,36 @@ def is_active_session(now_dt: datetime) -> bool:
 
 
 def initialize_trade_history():
-    """Initializes the CSV file for tracking trade outcomes and prints historical stats."""
+    """Initializes trade history CSV and prints historical stats on boot."""
     if not os.path.exists(TRADE_HISTORY_FILE):
         pd.DataFrame(columns=[
-            "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time"
+            "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time", "be_active"
         ]).to_csv(TRADE_HISTORY_FILE, index=False)
     else:
         df = pd.read_csv(TRADE_HISTORY_FILE)
         closed_trades = df[df["status"] != "PENDING"]
         if not closed_trades.empty:
-            wins = len(closed_trades[closed_trades["status"] == "WIN_TP2"])
+            wins = len(closed_trades[closed_trades["status"] == "WIN"])
             losses = len(closed_trades[closed_trades["status"] == "LOSS"])
             total = len(closed_trades)
             win_rate = (wins / total) * 100 if total > 0 else 0
             print(f"📈 [PERFORMANCE REVIEW] Total Closed: {total} | Wins: {wins} | Losses: {losses} | Win Rate: {win_rate:.1f}%")
+
+
+def check_daily_circuit_breaker() -> bool:
+    """Returns True if MAX_DAILY_LOSSES has been reached today, halting new trades."""
+    if not os.path.exists(TRADE_HISTORY_FILE):
+        return False
+    today_str = datetime.now(IST).strftime("%Y-%m-%d")
+    df = pd.read_csv(TRADE_HISTORY_FILE)
+    if "exit_time" not in df.columns or "status" not in df.columns:
+        return False
+    
+    losses_today = df[(df["status"] == "LOSS") & (df["exit_time"].str.startswith(today_str, na=False))]
+    if len(losses_today) >= MAX_DAILY_LOSSES:
+        print(f"🔴 [CIRCUIT BREAKER] {len(losses_today)} losses recorded today. Halting new trade executions.")
+        return True
+    return False
 
 
 def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2, lots):
@@ -86,30 +104,100 @@ def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2, lo
     df = pd.read_csv(TRADE_HISTORY_FILE)
     new_row = {
         "trade_id": trade_id, "timestamp": timestamp, "symbol": symbol, "decision": decision,
-        "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "lots": lots, "status": "PENDING", "exit_time": "N/A"
+        "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "lots": lots, "status": "PENDING", "exit_time": "N/A", "be_active": 0
     }
     pd.concat([df, pd.DataFrame([new_row])], ignore_index=True).to_csv(TRADE_HISTORY_FILE, index=False)
 
 
-def evaluate_pending_trades(current_high: float, current_low: float, now_str: str):
-    """Checks active pending trades against current price action to see if SL or TP2 was hit."""
+def log_trade_mistake(trade_id, symbol, decision, entry, sl, exit_price, atr_val, now_str):
+    """Logs detailed autopsy data for a losing trade into mistake_journal.csv for future analysis."""
+    file_exists = os.path.exists(MISTAKE_JOURNAL_FILE)
+    points_lost = abs(exit_price - entry)
+    
+    row_data = {
+        "trade_id": trade_id,
+        "timestamp": now_str,
+        "symbol": symbol,
+        "decision": decision,
+        "entry_price": entry,
+        "stop_loss": sl,
+        "exit_price": exit_price,
+        "atr_at_entry": atr_val,
+        "points_lost": round(points_lost, 2)
+    }
+    
+    df_new = pd.DataFrame([row_data])
+    if not file_exists:
+        df_new.to_csv(MISTAKE_JOURNAL_FILE, index=False)
+    else:
+        df_new.to_csv(MISTAKE_JOURNAL_FILE, mode='a', header=False, index=False)
+    print(f"📝 [MISTAKE JOURNAL] Logged autopsy for failed trade ID: {trade_id}")
+
+
+def evaluate_pending_trades(current_high: float, current_low: float, atr_val: float, now_str: str):
+    """Monitors pending trades, manages Breakeven activation, checks SL/TP hits, and logs losses."""
     if not os.path.exists(TRADE_HISTORY_FILE):
         return
     df = pd.read_csv(TRADE_HISTORY_FILE)
     updated = False
+
     for idx, row in df.iterrows():
         if row["status"] == "PENDING":
-            decision, sl, tp2, trade_id = row["decision"], float(row["sl"]), float(row["tp2"]), row["trade_id"]
-            if (decision == "BUY" and current_low <= sl) or (decision == "SELL" and current_high >= sl):
-                df.at[idx, "status"] = "LOSS"
-                df.at[idx, "exit_time"] = now_str
-                updated = True
-                send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHit structural SL at `{sl:.2f}`")
-            elif (decision == "BUY" and current_high >= tp2) or (decision == "SELL" and current_low <= tp2):
-                df.at[idx, "status"] = "WIN_TP2"
-                df.at[idx, "exit_time"] = now_str
-                updated = True
-                send_telegram_alert(f"🎯 *TRADE TARGET REACHED (WIN)*\nID: `{trade_id}`\nHit TP2 at `{tp2:.2f}`")
+            decision = row["decision"]
+            entry = float(row["entry"])
+            sl = float(row["sl"])
+            tp1 = float(row["tp1"])
+            tp2 = float(row["tp2"])
+            trade_id = row["trade_id"]
+            symbol = row["symbol"]
+            be_active = int(row.get("be_active", 0))
+
+            if decision == "BUY":
+                # 1. Breakeven Activation Check (Price reaches Target 1 / EQ)
+                if current_high >= tp1 and be_active == 0:
+                    df.at[idx, "sl"] = entry
+                    df.at[idx, "be_active"] = 1
+                    updated = True
+                    send_telegram_alert(f"🛡️ *Breakeven Activated* for BUY (`{trade_id}`).\nStop Loss moved to entry price: `{entry:.2f}`")
+
+                # 2. Check Stop Loss Hit
+                if current_low <= float(df.at[idx, "sl"]):
+                    df.at[idx, "status"] = "LOSS"
+                    df.at[idx, "exit_time"] = now_str
+                    updated = True
+                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl']):.2f}`")
+                    log_trade_mistake(trade_id, symbol, decision, entry, sl, current_low, atr_val, now_str)
+
+                # 3. Check Final Target Hit
+                elif current_high >= tp2:
+                    df.at[idx, "status"] = "WIN"
+                    df.at[idx, "exit_time"] = now_str
+                    updated = True
+                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)*\nID: `{trade_id}`\nHitting TP2 at `{tp2:.2f}`")
+
+            elif decision == "SELL":
+                # 1. Breakeven Activation Check (Price reaches Target 1 / EQ)
+                if current_low <= tp1 and be_active == 0:
+                    df.at[idx, "sl"] = entry
+                    df.at[idx, "be_active"] = 1
+                    updated = True
+                    send_telegram_alert(f"🛡️ *Breakeven Activated* for SELL (`{trade_id}`).\nStop Loss moved to entry price: `{entry:.2f}`")
+
+                # 2. Check Stop Loss Hit
+                if current_high >= float(df.at[idx, "sl"]):
+                    df.at[idx, "status"] = "LOSS"
+                    df.at[idx, "exit_time"] = now_str
+                    updated = True
+                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)*\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl']):.2f}`")
+                    log_trade_mistake(trade_id, symbol, decision, entry, sl, current_high, atr_val, now_str)
+
+                # 3. Check Final Target Hit
+                elif current_low <= tp2:
+                    df.at[idx, "status"] = "WIN"
+                    df.at[idx, "exit_time"] = now_str
+                    updated = True
+                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)*\nID: `{trade_id}`\nHitting TP2 at `{tp2:.2f}`")
+
     if updated:
         df.to_csv(TRADE_HISTORY_FILE, index=False)
 
@@ -172,7 +260,7 @@ def run_scanner():
     last_signal_key = None
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + $10 MAX LOSS RISK MODEL     ")
+    print("  SMC GOLD SCANNER + FULL RISK ENGINE v2.0       ")
     print("==================================================")
 
     while True:
@@ -189,18 +277,25 @@ def run_scanner():
             time.sleep(IDLE_SLEEP_SECONDS)
             continue
 
+        # Daily Circuit Breaker Check
+        if check_daily_circuit_breaker():
+            time.sleep(IDLE_SLEEP_SECONDS)
+            continue
+
         now_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p IST")
 
         for symbol in TICKERS:
             try:
                 data = fetch_realtime_data(symbol)
                 latest_price = data["1M"]["close"].iloc[-1]
-                evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], now_str)
+                atr_val = calculate_atr(data["1H"], period=14)
+
+                # Evaluate Pending Trades & Breakeven/Autopsy triggers
+                evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str)
 
                 h4_sh, h4_sl = find_smc_swings(data["4H"], window=2)
                 eq_4h = (h4_sh + h4_sl) / 2
                 h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
-                atr_val = calculate_atr(data["1H"], period=14)
 
                 result = engine.analyze(data)
                 decision = result.get("decision", "NO_TRADE")
@@ -262,7 +357,7 @@ def run_scanner():
                 else:
                     print(f"   ✔ APPROVED: High-asymmetry setup verified.")
 
-                    # POSITION SIZING ONLY IF APPROVED
+                    # POSITION SIZING (MAX $10 RISK)
                     risk_per_lot = risk_points * CONTRACT_SIZE_GOLD
                     if risk_per_lot > 0:
                         exact_lots = MAX_DOLLAR_RISK / risk_per_lot
@@ -272,9 +367,6 @@ def run_scanner():
                         recommended_lots = 0.01
 
                     actual_dollar_risk = recommended_lots * risk_per_lot
-                    if recommended_lots == 0.01 and actual_dollar_risk > MAX_DOLLAR_RISK:
-                        print(f"   ⚠️ NOTE: Broker min size (0.01) pushes risk to ${actual_dollar_risk:.2f} (exceeds ${MAX_DOLLAR_RISK:.2f} cap due to wide SL).")
-
                     print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
 
                 print("==================================================")

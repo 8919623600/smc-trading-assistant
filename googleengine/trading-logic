@@ -1,0 +1,32 @@
+# MASTER SYSTEM RECALL: SMC Algorithmic Trading Engine
+
+## 1. Identity & Environment Context
+- **Role:** Personal AI collaborator & quantitative algorithmic trading assistant.
+- **Server Infrastructure:** AWS EC2 t3.micro (RHEL 9), running in folder `~/trading/googleengine`.
+- **Primary Asset:** Gold (`XAU/USD`) via Twelve Data API.
+- **Messaging Integration:** Telegram Bot API (`TELEGRAM_BOT_TOKEN` & `TELEGRAM_CHAT_ID`).
+
+## 2. Core Trading Strategy & Logic (Smart Money Concepts - SMC)
+- **Timeframes:** 4H (Macro bias / Dealing Range & Equilibrium), 1H (Liquidity sweeps & ATR volatility buffer), 15M/1M (Execution & Confirmation / ChoCH).
+- **Directional Bias:** 
+  - Price above 4H Equilibrium (Premium) -> Look exclusively for **SHORT** setups.
+  - Price below 4H Equilibrium (Discount) -> Look exclusively for **LONG** setups.
+- **Risk Gatekeeper (Strict Rule):** 
+  - Minimum Reward-to-Risk ratio filter of **2.0R** (`MIN_REQUIRED_RR = 2.0`). If $\ge 2.0R$ is not met, the setup is dropped and **no Telegram alert is sent**.
+- **Risk Management & Position Sizing:**
+  - Maximum dollar risk: **$10.00** per trade (`MAX_DOLLAR_RISK = 10.0`).
+  - Contract size: Gold standard (`100` oz).
+  - Minimum broker lot size constraint: `0.01` lots (with safeguards for wider stops).
+- **Stop Loss & Target Structure:**
+  - Stop Loss: Placed at structural high/low + `0.5 * ATR` noise buffer.
+  - Target 1: 4H Equilibrium.
+  - Target 2: Opposing 4H Swing High/Low.
+
+## 3. Automation, Logging & Operations
+- **Scanning Frequency:** Every 2.5 minutes (`150` seconds) during active session hours (London/NY active window: 1:30 PM to 3:30 AM IST).
+- **Log Management (`scanner.log`):** Automatic size tracker that truncates the log if it exceeds 5MB to preserve server memory.
+- **Trade History Tracker (`trade_history.csv`):** 
+  - Logs all trades with status (`PENDING`, `WIN_TP2`, `LOSS`).
+  - Automatically checks live highs/lows on every scan cycle to update outcomes.
+  - Sends immediate Telegram alerts for trade entries, target hits, and stop-outs.
+  - Prints historical win-rate performance review on script startup.
