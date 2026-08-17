@@ -257,10 +257,9 @@ def fetch_realtime_data(symbol: str) -> dict:
 def run_scanner():
     engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=1.0)
     initialize_trade_history()
-    last_signal_key = None
 
     print("==================================================")
-    print("  SMC GOLD SCANNER + FULL RISK ENGINE v2.0       ")
+    print("  SMC GOLD SCANNER + FULL RISK ENGINE v2.1       ")
     print("==================================================")
 
     while True:
@@ -372,10 +371,15 @@ def run_scanner():
                 print("==================================================")
 
                 if decision in ["BUY", "SELL"]:
-                    current_signal_key = f"{decision}_{latest_price:.1f}_{now_ist.strftime('%H%M')}"
-                    if current_signal_key != last_signal_key:
-                        last_signal_key = current_signal_key
-                        trade_id = f"XAU_{now_ist.strftime('%Y%m%d_%H%M')}"
+                    # CRITICAL FIX: Ensure no duplicate trades are taken while one is already PENDING
+                    has_active_trade = False
+                    if os.path.exists(TRADE_HISTORY_FILE):
+                        df_check = pd.read_csv(TRADE_HISTORY_FILE)
+                        if not df_check.empty and "status" in df_check.columns:
+                            has_active_trade = not df_check[df_check["status"] == "PENDING"].empty
+
+                    if not has_active_trade:
+                        trade_id = f"XAU_{now_ist.strftime('%Y%m%d_%H%M%S')}"
                         log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
 
                         msg = (
@@ -392,6 +396,8 @@ def run_scanner():
                             f"• *Time (IST):* `{now_str}`"
                         )
                         send_telegram_alert(msg)
+                    else:
+                        print(f"   ⏳ [DUPLICATE BLOCKED] An active PENDING trade already exists. Skipping new entry.")
 
             except Exception as e:
                 print(f"[{symbol}] Error fetching data: {e}")
