@@ -238,24 +238,26 @@ def run_scanner():
 
                 # STRICT R:R FILTER CHECK
                 if rr_tp2 < MIN_REQUIRED_RR:
-                    print(f"   ❌ REJECTED: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R.")
+                    print(f"   ❌ REJECTED: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R. Skipping execution.")
                     decision = "WAIT"
                 else:
                     print(f"   ✔ APPROVED: High-asymmetry setup verified.")
 
-                # STRICT $10 MAX LOSS LOT SIZING CALCULATION
-                risk_per_lot = risk_points * CONTRACT_SIZE_GOLD
-                if risk_per_lot > 0:
-                    exact_lots = MAX_DOLLAR_RISK / risk_per_lot
-                    # Floor to 2 decimal places to guarantee risk never exceeds $10 due to rounding
-                    recommended_lots = math.floor(exact_lots * 100) / 100
-                    recommended_lots = max(0.01, recommended_lots)
-                else:
-                    recommended_lots = 0.01
+                    # POSITION SIZING ONLY IF APPROVED
+                    risk_per_lot = risk_points * CONTRACT_SIZE_GOLD
+                    if risk_per_lot > 0:
+                        exact_lots = MAX_DOLLAR_RISK / risk_per_lot
+                        recommended_lots = math.floor(exact_lots * 100) / 100
+                        recommended_lots = max(0.01, recommended_lots)
+                    else:
+                        recommended_lots = 0.01
 
-                actual_dollar_risk = recommended_lots * risk_per_lot
+                    actual_dollar_risk = recommended_lots * risk_per_lot
+                    if recommended_lots == 0.01 and actual_dollar_risk > MAX_DOLLAR_RISK:
+                        print(f"   ⚠️ NOTE: Broker min size (0.01) pushes risk to ${actual_dollar_risk:.2f} (exceeds ${MAX_DOLLAR_RISK:.2f} cap due to wide SL).")
 
-                print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
+                    print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
+
                 print("==================================================")
 
                 if decision in ["BUY", "SELL"]:
