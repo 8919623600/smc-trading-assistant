@@ -379,7 +379,7 @@ def run_scanner():
                 print("==================================================")
                 print("   Lot Size   |   SL Loss    |   TP1 Profit (EQ) |   TP2 Profit")
                 print("--------------------------------------------------")
-                for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
+                for lot in [0.01, 0.02, 0.03, 0.05, 0.10, 0.50]:
                     if quote_usd:
                         sl_loss = lot * risk_points * contract_size
                         tp1_prof = lot * reward_tp1 * contract_size
@@ -431,7 +431,7 @@ def run_scanner():
                         log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
 
                         telegram_table_lines = []
-                        for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
+                        for lot in [0.01, 0.02, 0.03, 0.05, 0.10, 0.50]:
                             if quote_usd:
                                 s_loss = lot * risk_points * contract_size
                                 t1_prof = lot * reward_tp1 * contract_size
