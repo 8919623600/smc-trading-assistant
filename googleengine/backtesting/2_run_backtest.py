@@ -28,7 +28,7 @@ def sanitize_df(df):
 
 def run_offline_backtest():
     print("==================================================")
-    print("🚀 STARTING OPTIMIZED SMC BACKTEST (3.5 RR & 1.5R BE)")
+    print("🚀 STARTING 15M STRUCTURE-TRAILING SMC BACKTEST")
     print("==================================================")
     
     try:
@@ -62,7 +62,10 @@ def run_offline_backtest():
             current_day = current_time.date()
             trades_today = 0
 
-        # --- MANAGE OPEN TRADES ---
+        # Slice 15M data up to current time for structure trailing
+        df_15m_current = df_15m_full[df_15m_full["datetime"] <= current_time]
+
+        # --- MANAGE OPEN TRADES WITH 15M STRUCTURE TRAILING ---
         if active_trade is not None:
             c_high = current_bar['high']
             c_low = current_bar['low']
@@ -71,7 +74,7 @@ def run_offline_backtest():
             if current_time.hour >= 20:
                 pnl_check = (current_bar['close'] - active_trade['entry']) if active_trade['type'] == 'BUY' else (active_trade['entry'] - current_bar['close'])
                 if pnl_check > 0:
-                    account_balance += pnl_check * (50.0 / abs(active_trade['entry'] - active_trade['sl']))
+                    account_balance += pnl_check * (50.0 / abs(active_trade['entry'] - active_trade['initial_sl']))
                     winning_trades += 1
                 else:
                     account_balance -= 50.0
@@ -82,41 +85,48 @@ def run_offline_backtest():
             hit_tp = False
             hit_sl = False
             
-            risk_dist = abs(active_trade['entry'] - active_trade['sl'])
-            
+            # Dynamic Structure Trailing SL based on recent 15M Lows/Highs
+            if len(df_15m_current) >= 10:
+                if active_trade['type'] == 'BUY':
+                    # Find recent 15M swing low to trail stop loss behind
+                    recent_15m_low = df_15m_current['low'].iloc[-5:].min()
+                    if recent_15m_low > active_trade['sl'] and recent_15m_low < current_bar['close']:
+                        active_trade['sl'] = recent_15m_low  # Ratchet SL up
+                elif active_trade['type'] == 'SELL':
+                    # Find recent 15M swing high to trail stop loss behind
+                    recent_15m_high = df_15m_current['high'].iloc[-5:].max()
+                    if recent_15m_high < active_trade['sl'] and recent_15m_high > current_bar['close']:
+                        active_trade['sl'] = recent_15m_high  # Ratchet SL down
+
             if active_trade['type'] == 'BUY':
-                # Delayed Breakeven: move SL to entry only after reaching 1.5R profit
-                if c_high >= (active_trade['entry'] + (risk_dist * 1.5)) and active_trade['sl'] < active_trade['entry']:
-                    active_trade['sl'] = active_trade['entry']
-                
                 if c_high >= active_trade['tp']:
                     hit_tp = True
                 if c_low <= active_trade['sl']:
                     hit_sl = True
-                    
             elif active_trade['type'] == 'SELL':
-                if c_low <= (active_trade['entry'] - (risk_dist * 1.5)) and active_trade['sl'] > active_trade['entry']:
-                    active_trade['sl'] = active_trade['entry']
-                
                 if c_low <= active_trade['tp']:
                     hit_tp = True
                 if c_high >= active_trade['sl']:
                     hit_sl = True
                     
-            if hit_sl and hit_tp:
-                account_balance -= 50.0  
-                losing_trades += 1
-                active_trade = None
-            elif hit_sl:
-                loss_cost = 0.0 if active_trade['sl'] == active_trade['entry'] else 50.0
-                account_balance -= loss_cost
-                if loss_cost > 0:
-                    losing_trades += 1
+            if hit_sl:
+                # Calculate final PnL based on where SL was finally hit (could be profitable if trailed past entry)
+                pnl_pips = (active_trade['sl'] - active_trade['entry']) if active_trade['type'] == 'BUY' else (active_trade['entry'] - active_trade['sl'])
+                initial_risk = abs(active_trade['entry'] - active_trade['initial_sl'])
+                
+                trade_pnl = (pnl_pips / initial_risk) * 50.0
+                account_balance += trade_pnl
+                
+                if trade_pnl > 0:
+                    winning_trades += 1
                 else:
-                    total_trades -= 1
+                    losing_trades += 1
                 active_trade = None
+                
             elif hit_tp:
-                account_balance += (50.0 * active_trade['rr'])
+                initial_risk = abs(active_trade['entry'] - active_trade['initial_sl'])
+                reward_pips = abs(active_trade['tp'] - active_trade['entry'])
+                account_balance += (50.0 * (reward_pips / initial_risk))
                 winning_trades += 1
                 active_trade = None
                 
@@ -143,7 +153,7 @@ def run_offline_backtest():
         data_dict = {
             "4H": df_4h_full[df_4h_full["datetime"] <= current_time].tail(50),
             "1H": df_1h_full[df_1h_full["datetime"] <= current_time].tail(50),
-            "15M": df_15m_full[df_15m_full["datetime"] <= current_time].tail(50),
+            "15M": df_15m_current.tail(50),
             "1M": df_1m_slice
         }
 
@@ -154,21 +164,15 @@ def run_offline_backtest():
         if decision in ["BUY", "SELL"] and params:
             entry = params.get("entry")
             sl = params.get("sl")
+            tp = params.get("tp")
             
             if entry and sl:
-                # Force target to 3.5 Risk-to-Reward ratio
-                risk = abs(entry - sl)
-                if decision == "BUY":
-                    tp = entry + (risk * 3.5)
-                else:
-                    tp = entry - (risk * 3.5)
-                
                 active_trade = {
                     "type": decision,
                     "entry": entry,
+                    "initial_sl": sl,
                     "sl": sl,
-                    "tp": tp,
-                    "rr": 3.5
+                    "tp": tp
                 }
                 trades_today += 1
                 total_trades += 1
@@ -178,7 +182,7 @@ def run_offline_backtest():
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
 
     print("\n" + "="*50)
-    print("💰 OPTIMIZED PERFORMANCE REPORT")
+    print("💰 STRUCTURE TRAILING PERFORMANCE REPORT")
     print("="*50)
     print(f"Starting Balance:  ${starting_balance:,.2f}")
     print(f"Ending Balance:    ${account_balance:,.2f}")
