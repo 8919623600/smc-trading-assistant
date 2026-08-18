@@ -438,7 +438,7 @@ def run_scanner():
                 print(f"   • Target Entry:    {planned_entry}")
                 print(f"   • Logical SL:      {planned_sl}")
                 print(f"   • Target 1 (EQ):   {planned_tp1}")
-                print(f"   • Target 2 (4H):   {planned_tp2} -> R:R {rr_tp2:.2f}R")
+                print(f"   • Target 2 (1H):   {planned_tp2} -> R:R {rr_tp2:.2f}R")  # Updated label to 1H
                 print("--------------------------------------------------\n")
 
                 print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
