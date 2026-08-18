@@ -166,18 +166,28 @@ def run_scanner_loop():
       choch_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
       fvg_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
 
-      # Safely extract trade parameters if present in engine response (even during WAIT states if calculated)
+      # Extract trade params if available, otherwise fallback preview calculation using current_price if possible
       trade_params = analysis_result.get("trade_params")
-      if trade_params:
+      if trade_params and trade_params.get("entry"):
         entry = trade_params["entry"]
         sl = trade_params["sl"]
         tp = trade_params["tp2"]
         rr = trade_params["rr"]
       else:
-        entry = "N/A"
-        sl = "N/A"
-        tp = "N/A"
-        rr = "N/A"
+        entry = current_price if current_price != "N/A" else "N/A"
+        # Create a mock SL / TP preview distance based on asset type if engine hasn't outputted exact ones yet
+        if current_price != "N/A":
+          if "EUR" in symbol:
+            sl = round(current_price - 0.0020, 4)
+            tp = round(current_price + 0.0040, 4)
+          else:
+            sl = round(current_price - 5.0, 2)
+            tp = round(current_price + 10.0, 2)
+          rr = "2.0 (Estimated)"
+        else:
+          sl = "N/A"
+          tp = "N/A"
+          rr = "N/A"
 
       # ----------------------------------------------------
       # TERMINAL MONITOR FORMAT
@@ -195,9 +205,9 @@ def run_scanner_loop():
       print(f"• 1M Confirmation (Sweep / CHoCH / FVG): {sweep_1m} / {choch_1m} / {fvg_1m}")
       print("\nTrade & Price Info")
       print(f"• Current Price: {current_price}")
-      print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | TP: {tp} | RR: {f'1:{rr}' if rr != 'N/A' else 'N/A'})")
+      print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | TP: {tp} | RR: {rr})")
 
-      # Print Lot P&L Breakdown whenever numerical trade parameters exist
+      # Estimated / Live P&L Breakdown
       if entry != "N/A" and sl != "N/A" and tp != "N/A":
         pnl_data = calculate_lot_pnl(symbol, entry, sl, tp, lot_sizes)
         print("\nEstimated P&L Breakdown Across Lots:")
@@ -213,7 +223,6 @@ def run_scanner_loop():
 
       print("==================================================\n")
 
-      # Stagger buffer between assets to clear the per-minute limit
       if i < len(ASSETS) - 1:
         print("⏳ Rate-limit cooldown: pausing 30 seconds before next asset...")
         time.sleep(30)
