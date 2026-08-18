@@ -24,12 +24,19 @@ ASSET_CONFIG = {
     "EUR/USD": {"contract_size": 100000, "quote_usd": True, "name": "Euro / US Dollar"}
 }
 
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+# Dual-Key Failover System Setup
+TWELVE_DATA_API_KEY_1 = os.getenv("TWELVE_DATA_API_KEY_1")
+TWELVE_DATA_API_KEY_2 = os.getenv("TWELVE_DATA_API_KEY_2")
+
+# Backward compatibility fallback if user only set the old generic key name
+if not TWELVE_DATA_API_KEY_1:
+    TWELVE_DATA_API_KEY_1 = os.getenv("TWELVE_DATA_API_KEY")
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-if not TWELVE_DATA_API_KEY:
-    print("❌ Error: TWELVE_DATA_API_KEY environment variable is not set.")
+if not TWELVE_DATA_API_KEY_1:
+    print("❌ Error: TWELVE_DATA_API_KEY_1 or TWELVE_DATA_API_KEY environment variable is not set.")
     sys.exit(1)
 
 TICKERS = ["XAU/USD", "EUR/USD"]
@@ -41,7 +48,41 @@ TRADE_HISTORY_FILE = "trade_history.csv"
 MISTAKE_JOURNAL_FILE = "mistake_journal.csv"
 LOG_FILE = "scanner.log"
 
-td = TDClient(apikey=TWELVE_DATA_API_KEY)
+# Active API Key Tracking State
+current_api_key_index = 1
+active_td_client = TDClient(apikey=TWELVE_DATA_API_KEY_1)
+
+
+def switch_twelve_data_key():
+    """Switches to the secondary Twelve Data API key upon hitting rate limits."""
+    global current_api_key_index, active_td_client
+    if current_api_key_index == 1 and TWELVE_DATA_API_KEY_2:
+        current_api_key_index = 2
+        active_td_client = TDClient(apikey=TWELVE_DATA_API_KEY_2)
+        print("🔄 [API FAILOVER] Primary key hit daily credit limit. Successfully switched to TWELVE_DATA_API_KEY_2!")
+        send_telegram_alert("🔄 *API FAILOVER NOTICE*\nPrimary Twelve Data key hit credit limits. Successfully rotated to **Key #2**.")
+        return True
+    elif current_api_key_index == 2:
+        print("⚠️ [API FAILOVER] Both keys are currently exhausted or encountering errors.")
+        return False
+    else:
+        print("⚠️ [API FAILOVER] Second API key is not configured in environment variables.")
+        return False
+
+
+def execute_with_failover(func, *args, **kwargs):
+    """Executes a Twelve Data API call, automatically handling credit limits and failing over."""
+    global active_td_client
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "credit" in err_msg or "limit" in err_msg or "rate" in err_msg or "exhausted" in err_msg:
+            print(f"⚠️ Twelve Data Rate Limit / Credit error detected: {e}")
+            if switch_twelve_data_key():
+                # Retry once with the new key
+                return func(*args, **kwargs)
+        raise e
 
 
 def manage_log_size():
@@ -305,8 +346,12 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
 
 
 def fetch_realtime_data(symbol: str) -> dict:
-    ts_15m = td.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC").as_pandas()
-    ts_1m = td.time_series(symbol=symbol, interval="1min", outputsize=100, timezone="UTC").as_pandas()
+    def _fetch():
+        ts_15m = active_td_client.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC").as_pandas()
+        ts_1m = active_td_client.time_series(symbol=symbol, interval="1min", outputsize=100, timezone="UTC").as_pandas()
+        return ts_15m, ts_1m
+
+    ts_15m, ts_1m = execute_with_failover(_fetch)
 
     if ts_15m is None or ts_1m is None or ts_15m.empty or ts_1m.empty:
         raise ValueError(f"No data returned from Twelve Data for '{symbol}'")
