@@ -14,8 +14,7 @@ from googlesmc import SMCTradingEngine
 # ==========================================
 NEWS_PAUSE = False                      # Set to True to halt scanning during high-impact news
 
-# Risk Parameters for Lot Sizing & Safety
-MAX_DOLLAR_RISK = 10.0                  # Maximum allowed loss in USD per trade
+# Risk Parameters for Flexible Sizing & Safety
 MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
 MAX_DAILY_LOSSES = 2                    # Circuit breaker limit: stop trading after X losses in a day
 
@@ -330,7 +329,7 @@ def fetch_realtime_data(symbol: str) -> dict:
 
 
 def run_scanner():
-    engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.3)
+    engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.5)
     initialize_trade_history()
 
     print("==================================================")
@@ -380,19 +379,15 @@ def run_scanner():
                 reason = result.get("reason", "Setup validated")
                 trade_params = result.get("trade_params")
 
-                # Updated institutional logic for fallback execution map when engine is in WAIT mode
+                # Fallback execution map when engine is in WAIT mode
                 if not trade_params:
                     is_bearish = "SELL" in reason.upper() or "BEARISH" in reason.upper() or "NOT YET IN" in reason.upper()
                     
                     if is_bearish:
-                        # LTF structural swing high stop loss (tight 0.5 ATR risk)
                         sim_sl = latest_price + (atr_val * 0.5)
-                        # TP1: 15M internal structural target for partials
                         sim_tp1 = latest_price - (atr_val * 1.2)
-                        # TP2: 1H external liquidity pool / opposing structural extreme
                         sim_tp2 = latest_price - (atr_val * 3.0)
                     else:
-                        # LTF structural swing low stop loss
                         sim_sl = latest_price - (atr_val * 0.5)
                         sim_tp1 = latest_price + (atr_val * 1.2)
                         sim_tp2 = latest_price + (atr_val * 3.0)
@@ -407,7 +402,6 @@ def run_scanner():
                         "rr": round(sim_rr, 2)
                     }
 
-                # Always print the main scan report block and multi-lot simulator matching your production logs
                 print("==================================================")
                 print(f"🎯 PROCESSING TRADE ASSET: {symbol} ({asset_name})")
                 print("==================================================")
@@ -444,11 +438,12 @@ def run_scanner():
                 print(f"   • Target 2 (1H):   {planned_tp2} -> R:R {rr_tp2}R")
                 print("--------------------------------------------------\n")
 
-                print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
+                # Risk & Lot Sizing Scenario Matrix (Informational for discretion)
+                print(f"💰 RISK & LOT SIZING MATRIX [Trade: {symbol} - {asset_name}]")
                 print("==================================================")
-                print("   Lot Size   |   SL Loss    |   TP1 Profit (EQ) |   TP2 Profit")
+                print("   Lot Size   |   SL Loss    |   TP1 Profit (1.2x)|   TP2 Profit")
                 print("--------------------------------------------------")
-                for lot in [0.01, 0.02, 0.03, 0.05, 0.10, 0.50]:
+                for lot in [0.01, 0.02, 0.05, 0.10, 0.50, 1.00]:
                     if quote_usd:
                         sl_loss = lot * risk_points * contract_size
                         tp1_prof = lot * reward_tp1 * contract_size
@@ -457,31 +452,21 @@ def run_scanner():
                         sl_loss = lot * contract_size * (risk_points / latest_price)
                         tp1_prof = lot * contract_size * (reward_tp1 / latest_price)
                         tp2_prof = lot * contract_size * (reward_tp2 / latest_price)
-                    print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}      |   +${tp2_prof:.2f}")
+                    print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}       |   +${tp2_prof:.2f}")
                 print("==================================================\n")
 
                 if decision in ["BUY", "SELL"]:
-                    if quote_usd:
-                        risk_per_lot_min = risk_points * contract_size * 0.01
-                    else:
-                        risk_per_lot_min = contract_size * (risk_points / latest_price) * 0.01
-
-                    if risk_per_lot_min > MAX_DOLLAR_RISK:
-                        print(f"   ❌ REJECTED [{symbol}]: Minimum 0.01 lot risk (${risk_per_lot_min:.2f}) exceeds MAX_DOLLAR_RISK (${MAX_DOLLAR_RISK:.2f}).")
-                    elif rr_tp2 < MIN_REQUIRED_RR:
+                    if rr_tp2 < MIN_REQUIRED_RR:
                         print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2}R) is below minimum required {MIN_REQUIRED_RR}R.")
                     else:
+                        default_lots = 0.01
                         if quote_usd:
-                            risk_per_lot = risk_points * contract_size
+                            actual_dollar_risk = default_lots * risk_points * contract_size
                         else:
-                            risk_per_lot = contract_size * (risk_points / latest_price)
+                            actual_dollar_risk = default_lots * contract_size * (risk_points / latest_price)
 
-                        exact_lots = MAX_DOLLAR_RISK / risk_per_lot if risk_per_lot > 0 else 0.01
-                        recommended_lots = math.floor(exact_lots * 100) / 100
-                        recommended_lots = max(0.01, recommended_lots)
-                        actual_dollar_risk = recommended_lots * risk_per_lot
-                        print(f"   ✔ APPROVED [{symbol}]: Tight stop-loss setup verified within risk parameters.")
-                        print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
+                        print(f"   ✔ APPROVED [{symbol}]: Structural setup verified within SMC criteria.")
+                        print(f"   • Baseline Execution: {default_lots} Lot (SL Risk: ${actual_dollar_risk:.2f} | R:R: {rr_tp2}R)")
 
                         has_active_trade = False
                         if os.path.exists(TRADE_HISTORY_FILE):
@@ -491,7 +476,18 @@ def run_scanner():
 
                         if not has_active_trade:
                             trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
-                            log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
+                            log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, default_lots)
+                            
+                            alert_msg = (
+                                f"🚨 *SMC TRADE TRIGGERED* [{symbol}]\n\n"
+                                f"• *Direction:* `{decision}`\n"
+                                f"• *Entry:* `{planned_entry}`\n"
+                                f"• *Structural SL:* `{planned_sl}`\n"
+                                f"• *TP1 (1.2x ATR):* `{planned_tp1}`\n"
+                                f"• *TP2 (1H Liquidity):* `{planned_tp2}` (`{rr_tp2}R`)\n"
+                                f"• *Baseline Risk (0.01 Lot):* `${actual_dollar_risk:.2f}`"
+                            )
+                            send_telegram_alert(alert_msg)
                 else:
                     print(f"   ⏳ STATUS: Monitoring structure. Awaiting valid liquidity sweep for execution.")
 
