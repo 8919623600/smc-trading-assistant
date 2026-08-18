@@ -1,32 +1,408 @@
-# MASTER SYSTEM RECALL: SMC Algorithmic Trading Engine
+🏛️ SMC Institutional Trading Engine — Complete Architecture & Logic Reference1. Core Philosophy & Strategy OverviewThe Smart Money Concepts (SMC) trading engine is designed to mirror institutional accumulation, manipulation, and distribution cycles. Rather than trading retail indicators, the engine scans the market for multi-timeframe liquidity pools, waits for market makers to sweep those pools, identifies institutional order flow through Optimal Trade Entry (OTE) zones and Displacement, and executes precise entries on lower timeframes with defined risk-to-reward ratios.2. Multi-Timeframe Hierarchy & Top-Down Cascade┌─────────────────────────────────────────────────────────┐
+│ 4H Timeframe: Macro Range, 50% Equilibrium & OTE Zone   │
+└────────────────────────────┬────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────┐
+│ 1H Timeframe: Liquidity Sweep (BSL / SSL)               │
+└────────────────────────────┬────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────┐
+│ 15M Timeframe: Order Block / FVG POI & Displacement     │
+└────────────────────────────┬────────────────────────────┘
+                             ▼
+┌─────────────────────────────────────────────────────────┐
+│ 1M Timeframe: Precision Entry, ATR Stop Loss & Targets  │
+└─────────────────────────────────────────────────────────┘
+3. Deep-Dive into Institutional UpgradesUpgrade B: Optimal Trade Entry (OTE) Zone (0.618 – 0.79 Fib Retracement)The Concept: Institutional traders rarely buy at the exact high or sell at the exact low of a dealing range. They wait for a deep pullback into the discount array (for bullish setups) or premium array (for bearish setups).The Math:Total Range ($\text{Span}$) = $\text{Recent High} - \text{Recent Low}$Bullish OTE Zone: Retracement between 61.8% and 79.0% down from the high.$$\text{OTE Bullish High} = \text{Recent High} - (\text{Span} \times 0.618)$$$$\text{OTE Bullish Low} = \text{Recent High} - (\text{Span} \times 0.790)$$Bearish OTE Zone: Retracement between 61.8% and 79.0% up from the low.Execution Gate: If price has not retraced deep enough into this sweet spot, the engine flags WAIT to prevent entering too early while price is still bleeding.Upgrade C: True Institutional Displacement FilterThe Concept: Not all breakouts or structure shifts are genuine. Retail breakouts often trap traders on tiny-bodied candles with massive wicks (showing rejection). Institutional displacement must look aggressive.The Logic:The engine calculates the average body size of the last 15 candles on the 15-minute timeframe.The latest candle body must be at least 1.3x larger than the historical average body size.If the candle has a tiny body and a large rejection wick, the engine rejects the trade instantly (WAIT).4. Full Script ModulesModule A: googlesmc.py (The Core Engine)Pythonfrom datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import numpy as np
+import pandas as pd
 
-## 1. Identity & Environment Context
-- **Role:** Personal AI collaborator & quantitative algorithmic trading assistant.
-- **Server Infrastructure:** AWS EC2 t3.micro (RHEL 9), running in folder `~/trading/googleengine`.
-- **Primary Asset:** Gold (`XAU/USD`) via Twelve Data API.
-- **Messaging Integration:** Telegram Bot API (`TELEGRAM_BOT_TOKEN` & `TELEGRAM_CHAT_ID`).
+# Global IST Timezone Definition
+IST = ZoneInfo("Asia/Kolkata")
 
-## 2. Core Trading Strategy & Logic (Smart Money Concepts - SMC)
-- **Timeframes:** 4H (Macro bias / Dealing Range & Equilibrium), 1H (Liquidity sweeps & ATR volatility buffer), 15M/1M (Execution & Confirmation / ChoCH).
-- **Directional Bias:** 
-  - Price above 4H Equilibrium (Premium) -> Look exclusively for **SHORT** setups.
-  - Price below 4H Equilibrium (Discount) -> Look exclusively for **LONG** setups.
-- **Risk Gatekeeper (Strict Rule):** 
-  - Minimum Reward-to-Risk ratio filter of **2.0R** (`MIN_REQUIRED_RR = 2.0`). If $\ge 2.0R$ is not met, the setup is dropped and **no Telegram alert is sent**.
-- **Risk Management & Position Sizing:**
-  - Maximum dollar risk: **$10.00** per trade (`MAX_DOLLAR_RISK = 10.0`).
-  - Contract size: Gold standard (`100` oz).
-  - Minimum broker lot size constraint: `0.01` lots (with safeguards for wider stops).
-- **Stop Loss & Target Structure:**
-  - Stop Loss: Placed at structural high/low + `0.5 * ATR` noise buffer.
-  - Target 1: 4H Equilibrium.
-  - Target 2: Opposing 4H Swing High/Low.
+def get_current_ist_time():
+    return datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
 
-## 3. Automation, Logging & Operations
-- **Scanning Frequency:** Every 2.5 minutes (`150` seconds) during active session hours (London/NY active window: 1:30 PM to 3:30 AM IST).
-- **Log Management (`scanner.log`):** Automatic size tracker that truncates the log if it exceeds 5MB to preserve server memory.
-- **Trade History Tracker (`trade_history.csv`):** 
-  - Logs all trades with status (`PENDING`, `WIN_TP2`, `LOSS`).
-  - Automatically checks live highs/lows on every scan cycle to update outcomes.
-  - Sends immediate Telegram alerts for trade entries, target hits, and stop-outs.
-  - Prints historical win-rate performance review on script startup.
+class SMCTradingEngine:
+    def __init__(self, min_rr=1.5, max_rr=8.0, atr_multiplier=0.3, news_buffer_mins=15):
+        self.min_rr = min_rr
+        self.max_rr = max_rr
+        self.atr_multiplier = atr_multiplier
+        self.news_buffer_mins = news_buffer_mins
+
+    @staticmethod
+    def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+        high_low = df["high"] - df["low"]
+        high_close = (df["high"] - df["close"].shift()).abs()
+        low_close = (df["low"] - df["close"].shift()).abs()
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = ranges.max(axis=1)
+        return true_range.rolling(period).mean()
+
+    @staticmethod
+    def find_pivots(df: pd.DataFrame, length: int = 2):
+        df = df.copy()
+        df["pivot_high"] = np.nan
+        df["pivot_low"] = np.nan
+
+        for i in range(length, len(df) - length):
+            window = df.iloc[i - length : i + length + 1]
+            if df["high"].iloc[i] == window["high"].max():
+                df.iloc[i, df.columns.get_loc("pivot_high")] = df["high"].iloc[i]
+            if df["low"].iloc[i] == window["low"].min():
+                df.iloc[i, df.columns.get_loc("pivot_low")] = df["low"].iloc[i]
+        return df
+
+    @staticmethod
+    def check_displacement(df_15m: pd.DataFrame) -> bool:
+        """UPGRADE C: Validates institutional momentum vs. retail trap wicks."""
+        if len(df_15m) < 10:
+            return True
+        bodies = (df_15m["close"] - df_15m["open"]).abs()
+        avg_body = bodies.iloc[-15:-1].mean()
+        latest_body = bodies.iloc[-1]
+        return latest_body >= (1.3 * avg_body)
+
+    def get_4h_bias_and_ote(self, df_4h: pd.DataFrame) -> dict:
+        """UPGRADE B: 4H Market Bias & 0.618 - 0.79 OTE Zone Analysis."""
+        df = self.find_pivots(df_4h, length=5)
+        recent_high = df["pivot_high"].dropna().iloc[-1] if not df["pivot_high"].dropna().empty else df["high"].max()
+        recent_low = df["pivot_low"].dropna().iloc[-1] if not df["pivot_low"].dropna().empty else df["low"].min()
+
+        total_range = recent_high - recent_low
+        equilibrium = (recent_high + recent_low) / 2
+        current_close = df["close"].iloc[-1]
+
+        # OTE Zone Boundaries
+        ote_bullish_high = recent_high - (total_range * 0.618)
+        ote_bullish_low = recent_high - (total_range * 0.790)
+        ote_bearish_low = recent_low + (total_range * 0.618)
+        ote_bearish_high = recent_low + (total_range * 0.790)
+
+        in_bullish_ote = ote_bullish_low <= current_close <= ote_bullish_high
+        in_bearish_ote = ote_bearish_low <= current_close <= ote_bearish_high
+
+        if current_close < equilibrium:
+            bias = "BULLISH"
+            in_ote = in_bullish_ote
+        elif current_close > equilibrium:
+            bias = "BEARISH"
+            in_ote = in_bearish_ote
+        else:
+            bias = "NEUTRAL"
+            in_ote = False
+
+        return {
+            "bias": bias,
+            "in_ote": in_ote,
+            "recent_high": recent_high,
+            "recent_low": recent_low,
+            "equilibrium": equilibrium,
+        }
+
+    def check_1h_liquidity_sweep(self, df_1h: pd.DataFrame, bias: str) -> dict:
+        df = self.find_pivots(df_1h, length=2)
+        swing_highs = df["pivot_high"].dropna()
+        swing_lows = df["pivot_low"].dropna()
+
+        last_low = swing_lows.iloc[-1] if not swing_lows.empty else df["low"].min()
+        last_high = swing_highs.iloc[-1] if not swing_highs.empty else df["high"].max()
+        current_bar = df.iloc[-1]
+
+        swept, sweep_type, sweep_level = False, "NONE", None
+
+        if bias == "BULLISH" and last_low:
+            if current_bar["low"] < last_low and current_bar["close"] > last_low:
+                swept, sweep_type, sweep_level = True, "BULLISH", current_bar["low"]
+        elif bias == "BEARISH" and last_high:
+            if current_bar["high"] > last_high and current_bar["close"] < last_high:
+                swept, sweep_type, sweep_level = True, "BEARISH", current_bar["high"]
+
+        return {"swept": swept, "type": sweep_type, "sweep_level": sweep_level, "h1_sh": last_high, "h1_sl": last_low}
+
+    def detect_15m_poi(self, df_15m: pd.DataFrame, sweep_info: dict) -> dict:
+        if not sweep_info["swept"]:
+            return {"valid_poi": False}
+
+        df = self.find_pivots(df_15m, length=2)
+        m15_sh = df["pivot_high"].dropna().iloc[-1] if not df["pivot_high"].dropna().empty else df["high"].max()
+        m15_sl = df["pivot_low"].dropna().iloc[-1] if not df["pivot_low"].dropna().empty else df["low"].min()
+
+        fvg_found, fvg_top, fvg_bottom = False, None, None
+        start_idx = len(df) - 3
+        end_idx = max(2, len(df) - 10)
+
+        for i in range(start_idx, end_idx, -1):
+            if sweep_info["type"] == "BULLISH" and df["low"].iloc[i] > df["high"].iloc[i - 2]:
+                fvg_found, fvg_top, fvg_bottom = True, df["low"].iloc[i], df["high"].iloc[i - 2]
+                break
+            elif sweep_info["type"] == "BEARISH" and df["high"].iloc[i] < df["low"].iloc[i - 2]:
+                fvg_found, fvg_top, fvg_bottom = True, df["low"].iloc[i - 2], df["high"].iloc[i]
+                break
+
+        retested = fvg_found and ((sweep_info["type"] == "BULLISH" and df["low"].iloc[-1] <= fvg_top) or 
+                                  (sweep_info["type"] == "BEARISH" and df["high"].iloc[-1] >= fvg_bottom))
+
+        return {"valid_poi": retested, "fvg_top": fvg_top, "fvg_bottom": fvg_bottom, "m15_sh": m15_sh, "m15_sl": m15_sl}
+
+    def evaluate_1m_entry(self, df_1m: pd.DataFrame, sweep_info: dict, poi_info: dict) -> dict:
+        if not poi_info["valid_poi"]:
+            return {"action": "NO_TRADE", "reason": "No valid 15M POI retest"}
+
+        df = df_1m.copy()
+        df["atr"] = self.calculate_atr(df, 14)
+        current_bar = df.iloc[-1]
+        atr_val = current_bar["atr"] if not pd.isna(current_bar["atr"]) else 0.0001
+        entry_price = current_bar["close"]
+
+        if sweep_info["type"] == "BULLISH":
+            stop_loss = min(poi_info["m15_sl"], sweep_info["h1_sl"]) - (atr_val * self.atr_multiplier)
+            risk = entry_price - stop_loss
+            if risk <= 0: return {"action": "WAIT", "reason": "Invalid risk"}
+            tp1 = entry_price + (risk * 1.5)
+            tp2 = sweep_info["h1_sh"] if sweep_info["h1_sh"] > entry_price else entry_price + (risk * 2.0)
+            rr_tp2 = (tp2 - entry_price) / risk
+            if self.min_rr <= rr_tp2 <= self.max_rr:
+                return {"action": "BUY", "entry": round(entry_price, 5), "sl": round(stop_loss, 5), "tp1": round(tp1, 5), "tp2": round(tp2, 5), "rr": round(rr_tp2, 2)}
+
+        elif sweep_info["type"] == "BEARISH":
+            stop_loss = max(poi_info["m15_sh"], sweep_info["h1_sh"]) + (atr_val * self.atr_multiplier)
+            risk = stop_loss - entry_price
+            if risk <= 0: return {"action": "WAIT", "reason": "Invalid risk"}
+            tp1 = entry_price - (risk * 1.5)
+            tp2 = sweep_info["h1_sl"] if sweep_info["h1_sl"] < entry_price else entry_price - (risk * 2.0)
+            rr_tp2 = (entry_price - tp2) / risk
+            if self.min_rr <= rr_tp2 <= self.max_rr:
+                return {"action": "SELL", "entry": round(entry_price, 5), "sl": round(stop_loss, 5), "tp1": round(tp1, 5), "tp2": round(tp2, 5), "rr": round(rr_tp2, 2)}
+
+        return {"action": "WAIT", "reason": "R:R out of bounds"}
+
+    def analyze(self, data_dict: dict, news_events: list = None) -> dict:
+        df_1m = data_dict["1M"]
+        df_15m = data_dict["15M"]
+        current_time = df_1m.index[-1] if "time" not in df_1m.columns else df_1m.iloc[-1]["time"]
+
+        market_context = self.get_4h_bias_and_ote(data_dict["4H"])
+        bias = market_context["bias"]
+        if bias == "NEUTRAL": return {"decision": "NO_TRADE", "reason": "4H Neutral"}
+
+        if not market_context["in_ote"]:
+            return {"decision": "WAIT", "reason": "Price not in 0.618-0.79 OTE Zone"}
+
+        sweep = self.check_1h_liquidity_sweep(data_dict["1H"], bias)
+        if not sweep["swept"]: return {"decision": "WAIT", "reason": "No 1H Liquidity Sweep"}
+
+        poi = self.detect_15m_poi(df_15m, sweep)
+        if not poi["valid_poi"]: return {"decision": "WAIT", "reason": "15M POI unconfirmed"}
+
+        if not self.check_displacement(df_15m):
+            return {"decision": "WAIT", "reason": "Blocked: Lacks institutional displacement momentum"}
+
+        entry = self.evaluate_1m_entry(df_1m, sweep, poi)
+        return {
+            "decision": entry["action"],
+            "bias_4h": bias,
+            "liquidity_sweep": sweep["type"],
+            "trade_params": entry if entry["action"] in ["BUY", "SELL"] else None,
+            "timestamp": str(current_time)
+        }
+Module B: testing_smc_google.py (The Execution & Management Runner)Pythonimport os
+import sys
+import time
+import math
+from datetime import datetime, time as dtime
+from zoneinfo import ZoneInfo
+import pandas as pd
+import requests
+from twelvedata import TDClient
+from googlesmc import SMCTradingEngine
+
+NEWS_PAUSE = False
+MAX_DOLLAR_RISK = 10.0
+MIN_REQUIRED_RR = 2.0
+MAX_DAILY_LOSSES = 2
+
+ASSET_CONFIG = {
+    "XAU/USD": {"contract_size": 100, "quote_usd": True, "name": "Gold"},
+    "EUR/USD": {"contract_size": 100000, "quote_usd": True, "name": "Euro / US Dollar"}
+}
+
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+if not TWELVE_DATA_API_KEY:
+    print("❌ Error: TWELVE_DATA_API_KEY environment variable is not set.")
+    sys.exit(1)
+
+TICKERS = ["XAU/USD", "EUR/USD"]
+SCAN_INTERVAL_SECONDS = 180
+API_THROTTLE_SECONDS = 15
+IDLE_SLEEP_SECONDS = 300
+IST = ZoneInfo("Asia/Kolkata")
+TRADE_HISTORY_FILE = "trade_history.csv"
+MISTAKE_JOURNAL_FILE = "mistake_journal.csv"
+LOG_FILE = "scanner.log"
+
+td = TDClient(apikey=TWELVE_DATA_API_KEY)
+
+def send_telegram_alert(message: str):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    try: requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}, timeout=5)
+    except Exception as e: print(f"⚠️ Telegram alert failed: {e}")
+
+def is_active_session(now_dt: datetime) -> bool:
+    current_time = now_dt.time()
+    return current_time >= dtime(13, 30) or current_time < dtime(3, 30)
+
+def initialize_trade_history():
+    if not os.path.exists(TRADE_HISTORY_FILE):
+        pd.DataFrame(columns=["trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time", "be_active"]).to_csv(TRADE_HISTORY_FILE, index=False)
+
+def check_daily_circuit_breaker() -> bool:
+    if not os.path.exists(TRADE_HISTORY_FILE): return False
+    today_str = datetime.now(IST).strftime("%Y-%m-%d")
+    df = pd.read_csv(TRADE_HISTORY_FILE)
+    if "exit_time" not in df.columns or "status" not in df.columns: return False
+    losses_today = df[(df["status"] == "LOSS") & (df["exit_time"].str.startswith(today_str, na=False))]
+    if len(losses_today) >= MAX_DAILY_LOSSES:
+        print(f"🔴 [CIRCUIT BREAKER] {len(losses_today)} losses recorded today. Halting.")
+        return True
+    return False
+
+def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2, lots):
+    initialize_trade_history()
+    df = pd.read_csv(TRADE_HISTORY_FILE)
+    new_row = {"trade_id": trade_id, "timestamp": timestamp, "symbol": symbol, "decision": decision, "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "lots": lots, "status": "PENDING", "exit_time": "N/A", "be_active": 0}
+    pd.concat([df, pd.DataFrame([new_row])], ignore_index=True).to_csv(TRADE_HISTORY_FILE, index=False)
+
+def evaluate_pending_trades(current_high: float, current_low: float, atr_val: float, now_str: str):
+    if not os.path.exists(TRADE_HISTORY_FILE): return
+    df = pd.read_csv(TRADE_HISTORY_FILE)
+    updated = False
+
+    for idx, row in df.iterrows():
+        if row["status"] == "PENDING":
+            decision, entry, sl, tp1, tp2, trade_id, symbol, be_active = row["decision"], float(row["entry"]), float(row["sl"]), float(row["tp1"]), float(row["tp2"]), row["trade_id"], row["symbol"], int(row.get("be_active", 0))
+
+            if decision == "BUY":
+                if current_high >= tp1 and be_active == 0:
+                    df.at[idx, "sl"] = entry
+                    df.at[idx, "be_active"] = 1
+                    updated = True
+                    send_telegram_alert(f"🛡️ *Breakeven Activated* for {symbol} BUY (`{trade_id}`).")
+                if current_low <= float(df.at[idx, "sl"]):
+                    df.at[idx, "status"] = "LOSS"
+                    df.at[idx, "exit_time"] = now_str
+                    updated = True
+                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)* [{symbol}] ID: `{trade_id}`")
+                elif current_high >= tp2:
+                    df.at[idx, "status"] = "WIN"
+                    df.at[idx, "exit_time"] = now_str
+                    updated = True
+                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [{symbol}] ID: `{trade_id}`")
+
+            elif decision == "SELL":
+                if current_low <= tp1 and be_active == 0:
+                    df.at[idx, "sl"] = entry
+                    df.at[idx, "be_active"] = 1
+                    updated = True
+                    send_telegram_alert(f"🛡️ *Breakeven Activated* for {symbol} SELL (`{trade_id}`).")
+                if current_high >= float(df.at[idx, "sl"]):
+                    df.at[idx, "status"] = "LOSS"
+                    df.at[idx, "exit_time"] = now_str
+                    updated = True
+                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)* [{symbol}] ID: `{trade_id}`")
+                elif current_low <= tp2:
+                    df.at[idx, "status"] = "WIN"
+                    df.at[idx, "exit_time"] = now_str
+                    updated = True
+                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [{symbol}] ID: `{trade_id}`")
+
+    if updated: df.to_csv(TRADE_HISTORY_FILE, index=False)
+
+def fetch_realtime_data(symbol: str) -> dict:
+    ts_15m = td.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC").as_pandas()
+    ts_1m = td.time_series(symbol=symbol, interval="1min", outputsize=100, timezone="UTC").as_pandas()
+    for df in [ts_15m, ts_1m]:
+        df.index = pd.to_datetime(df.index)
+        df.sort_index(inplace=True)
+        for col in ["open", "high", "low", "close"]: df[col] = df[col].astype(float)
+        df.index = df.index.tz_localize("UTC").tz_convert(IST) if df.index.tz is None else df.index.tz_convert(IST)
+
+    df_1h = ts_15m.resample("1h").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+    df_4h = ts_15m.resample("4h").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+    return {"4H": df_4h, "1H": df_1h, "15M": ts_15m, "1M": ts_1m}
+
+def run_scanner():
+    engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.3)
+    initialize_trade_history()
+    print("🚀 SMC Institutional Engine Active...")
+
+    while True:
+        now_ist = datetime.now(IST)
+        if NEWS_PAUSE or not is_active_session(now_ist) or check_daily_circuit_breaker():
+            time.sleep(IDLE_SLEEP_SECONDS)
+            continue
+
+        now_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p IST")
+        for idx, symbol in enumerate(TICKERS):
+            try:
+                cfg = ASSET_CONFIG[symbol]
+                data = fetch_realtime_data(symbol)
+                latest_price = data["1M"]["close"].iloc[-1]
+                
+                # Evaluate active trades
+                atr_val = (data["15M"]["high"] - data["15M"]["low"]).rolling(14).mean().iloc[-1]
+                evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str)
+
+                # Engine Analysis
+                result = engine.analyze(data)
+                decision, reason = result.get("decision", "NO_TRADE"), result.get("reason", "")
+                trade_params = result.get("trade_params")
+
+                if decision in ["BUY", "SELL"] and trade_params:
+                    planned_entry, planned_sl, planned_tp1, planned_tp2, rr_tp2 = trade_params["entry"], trade_params["sl"], trade_params["tp1"], trade_params["tp2"], trade_params["rr"]
+                    risk_points = abs(planned_entry - planned_sl)
+                    
+                    risk_per_lot = risk_points * cfg["contract_size"] if cfg["quote_usd"] else cfg["contract_size"] * (risk_points / latest_price)
+                    exact_lots = MAX_DOLLAR_RISK / risk_per_lot if risk_per_lot > 0 else 0.01
+                    recommended_lots = max(0.01, math.floor(exact_lots * 100) / 100)
+                    actual_dollar_risk = recommended_lots * risk_per_lot
+
+                    if rr_tp2 >= MIN_REQUIRED_RR and actual_dollar_risk <= MAX_DOLLAR_RISK:
+                        df_check = pd.read_csv(TRADE_HISTORY_FILE) if os.path.exists(TRADE_HISTORY_FILE) else pd.DataFrame()
+                        has_active = not df_check.empty and not df_check[(df_check["status"] == "PENDING") & (df_check["symbol"] == symbol)].empty
+
+                        if not has_active:
+                            trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
+                            log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
+                            send_telegram_alert(f"🚨 *SMC SIGNAL: {symbol}* (`{trade_id}`)\n• *Action:* `{decision}`\n• *Entry:* `{planned_entry}`\n• *SL:* `{planned_sl}`\n• *TP2:* `{planned_tp2}`\n• *Lots:* `{recommended_lots}`")
+
+            except Exception as e:
+                print(f"[{symbol}] Error: {e}")
+            if idx < len(TICKERS) - 1: time.sleep(API_THROTTLE_SECONDS)
+        time.sleep(SCAN_INTERVAL_SECONDS)
+
+if __name__ == "__main__":
+    run_scanner()
+    
+
+Yes, the trade_history.csv creation, auto-logging, and live P&L tracking were included inside Module B (testing_smc_google.py).However, to give you the complete end-to-end production setup for your EC2 instance (including a dedicated script to cleanly restart your scanner without leaving zombie processes), here are the two crucial helper files to complete your toolkit:1. The Restart Automation Script (restart_scanner.sh)Save this file in the same directory as your Python scripts. It safely stops any running background instances of your scanner and launches a fresh instance with logging enabled.Bash#!/bin/bash
+# restart_scanner.sh - Cleanly stops and restarts the SMC Trading Engine
+
+echo "🛑 Stopping existing SMC scanner processes..."
+pkill -f testing_smc_google.py
+
+echo "⏳ Waiting for processes to terminate..."
+sleep 2
+
+echo "🚀 Starting SMC Trading Engine in background..."
+nohup python3 testing_smc_google.py > scanner.log 2>&1 &
+
+echo "✅ SMC Engine restarted successfully!"
+echo "📋 Live monitoring command: tail -f scanner.log"
+Make it executable on your Linux/EC2 terminal by running:Bashchmod +x restart_scanner.sh
+To restart your scanner anytime, just run: ./restart_scanner.sh2. How trade_history.csv Auto-Manages ItselfYour script automatically creates and maintains trade_history.csv with these columns:trade_id: Unique identifier (e.g., XAUUSD_20260818_143000)timestamp: Exact IST timestamp of signal generationsymbol: Asset (XAU/USD, EUR/USD)decision: BUY or SELLentry, sl, tp1, tp2: Execution levelslots: Position sizing based on your $10 maximum dollar risk constraintstatus: Dynamically updates from PENDING $\rightarrow$ WIN or LOSSexit_time: Timestamp when TP2 or SL was hitbe_active: Tracks whether Breakeven (moving SL to entry after TP1) has been triggered ($\text{0} = \text{No}, \text{1} = \text{Yes}$)
