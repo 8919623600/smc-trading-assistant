@@ -10,7 +10,7 @@ from smc_engine import SMCTradingEngine
 
 def run_offline_backtest():
   print("==================================================")
-  print("🚀 STARTING $1,000 ACCOUNT BACKTEST WITH DEBUG MODE")
+  print("🚀 STARTING $1,000 ACCOUNT BACKTEST WITH RELAXED FILTERS")
   print("==================================================")
 
   starting_balance = 1000.0
@@ -28,7 +28,13 @@ def run_offline_backtest():
     print(f"❌ Error: Missing cached files. Run `1_download_data.py` first! {e}")
     return
 
-  engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.4)
+  # --- RELAXED ENGINE PARAMETERS FOR BACKTESTING ---
+  # Lowered min_rr to 1.5 and adjusted multiplier to catch more setups
+  engine = SMCTradingEngine(min_rr=1.5, max_rr=10.0, atr_multiplier=0.3)
+
+  # Optional flags if supported by your engine class to bypass strict filters:
+  # engine.require_strict_ote = False
+  # engine.bypass_1h_sweep = True
 
   start_index = 200
   total_bars = len(df_1m_full)
@@ -83,7 +89,7 @@ def run_offline_backtest():
         risk_distance = abs(entry - sl)
         reward_distance = abs(tp - entry)
         rr_ratio = (
-            reward_distance / risk_distance if risk_distance > 0 else 2.0
+            reward_distance / risk_distance if risk_distance > 0 else 1.5
         )
 
         trade_pnl = (
@@ -102,6 +108,13 @@ def run_offline_backtest():
             f"   🏁 Trade Closed [{outcome}] | PnL: ${trade_pnl:+.2f} | New"
             f" Balance: ${account_balance:.2f}"
         )
+
+        if account_balance <= 0:
+          print(
+              "⚠️ ACCOUNT BLOWOUT: Balance reached $0.00. Stopping backtest."
+          )
+          break
+
         active_trade = None
 
       i += 1
@@ -125,7 +138,6 @@ def run_offline_backtest():
     decision = analysis_result["decision"]
     reason = analysis_result.get("reason", "No reason provided")
 
-    # Print debug info every 500 bars so you know it's actively scanning
     if i % 500 == 0:
       print(f"[{current_time}] 🔍 Scanning... Engine Reason: {reason}")
 
@@ -167,6 +179,13 @@ def run_offline_backtest():
       f" ({(account_balance - starting_balance) / starting_balance * 100:+.2f}%)"
   )
   print(f"• Total Trades:     {len(trades_executed)}")
+
+  if len(trades_executed) > 0:
+    wins = len([t for t in trades_executed if t["outcome"] == "WIN"])
+    losses = len(trades_executed) - wins
+    print(f"• Win/Loss Breakdown: {wins} Wins / {losses} Losses")
+    print(f"• Win Rate:         {(wins / len(trades_executed)) * 100:.2f}%")
+
   print("==================================================")
 
 
