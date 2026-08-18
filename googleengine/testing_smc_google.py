@@ -385,13 +385,13 @@ def run_scanner():
                     is_bearish = "SELL" in reason.upper() or "BEARISH" in reason.upper() or "NOT YET IN" in reason.upper()
                     
                     if is_bearish:
-                        # Wider SL and TPs to avoid spread noise and give the trade room
                         sim_sl = latest_price + (atr_val * 1.0)
-                        sim_tp1 = max(eq_4h, latest_price - (atr_val * 1.2))
+                        # Fixed distance multipliers so TP1 gives a solid 1.5R partial and TP2 gives 2.5R
+                        sim_tp1 = latest_price - (atr_val * 1.5)
                         sim_tp2 = latest_price - (atr_val * 2.5)
                     else:
                         sim_sl = latest_price - (atr_val * 1.0)
-                        sim_tp1 = min(eq_4h, latest_price + (atr_val * 1.2))
+                        sim_tp1 = latest_price + (atr_val * 1.5)
                         sim_tp2 = latest_price + (atr_val * 2.5)
                         
                     sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 2.5
