@@ -28,7 +28,7 @@ def sanitize_df(df):
 
 def run_offline_backtest():
     print("==================================================")
-    print("🚀 STARTING STRICT-FILTERED SMC BACKTEST")
+    print("🚀 STARTING OPTIMIZED SMC BACKTEST (3.5 RR & 1.5R BE)")
     print("==================================================")
     
     try:
@@ -82,9 +82,11 @@ def run_offline_backtest():
             hit_tp = False
             hit_sl = False
             
+            risk_dist = abs(active_trade['entry'] - active_trade['sl'])
+            
             if active_trade['type'] == 'BUY':
-                risk_dist = abs(active_trade['entry'] - active_trade['sl'])
-                if c_high >= (active_trade['entry'] + risk_dist) and active_trade['sl'] < active_trade['entry']:
+                # Delayed Breakeven: move SL to entry only after reaching 1.5R profit
+                if c_high >= (active_trade['entry'] + (risk_dist * 1.5)) and active_trade['sl'] < active_trade['entry']:
                     active_trade['sl'] = active_trade['entry']
                 
                 if c_high >= active_trade['tp']:
@@ -93,8 +95,7 @@ def run_offline_backtest():
                     hit_sl = True
                     
             elif active_trade['type'] == 'SELL':
-                risk_dist = abs(active_trade['sl'] - active_trade['entry'])
-                if c_low <= (active_trade['entry'] - risk_dist) and active_trade['sl'] > active_trade['entry']:
+                if c_low <= (active_trade['entry'] - (risk_dist * 1.5)) and active_trade['sl'] > active_trade['entry']:
                     active_trade['sl'] = active_trade['entry']
                 
                 if c_low <= active_trade['tp']:
@@ -122,22 +123,22 @@ def run_offline_backtest():
             continue
 
         # Filters: Session hours & daily cap
-        if not (8 <= current_time.hour <= 17):  # Restricted to peak London/NY hours only
+        if not (8 <= current_time.hour <= 17):
             continue
             
-        if trades_today >= 2:  # Stricter cap: max 2 trades per day
+        if trades_today >= 2:
             continue
 
         df_1m_slice = df_1m_full.iloc[i-200:i].copy()
         
-        # Volatility check: skip if 1M range is excessively erratic
+        # Volatility check
         df_1m_slice['tr'] = np.maximum(df_1m_slice['high'] - df_1m_slice['low'], 
                                        np.maximum(abs(df_1m_slice['high'] - df_1m_slice['close'].shift(1)), 
                                                   abs(df_1m_slice['low'] - df_1m_slice['close'].shift(1))))
         rolling_atr = df_1m_slice['tr'].rolling(14).mean().iloc[-1]
         mean_atr = df_1m_slice['tr'].rolling(50).mean().iloc[-1]
         if not pd.isna(rolling_atr) and not pd.isna(mean_atr) and rolling_atr > (mean_atr * 2.0):
-            continue  # Skip high noise periods
+            continue
 
         data_dict = {
             "4H": df_4h_full[df_4h_full["datetime"] <= current_time].tail(50),
@@ -153,19 +154,21 @@ def run_offline_backtest():
         if decision in ["BUY", "SELL"] and params:
             entry = params.get("entry")
             sl = params.get("sl")
-            tp = params.get("tp")
             
-            if entry and sl and tp:
+            if entry and sl:
+                # Force target to 3.5 Risk-to-Reward ratio
                 risk = abs(entry - sl)
-                reward = abs(tp - entry)
-                rr = reward / risk if risk > 0 else 2.5
+                if decision == "BUY":
+                    tp = entry + (risk * 3.5)
+                else:
+                    tp = entry - (risk * 3.5)
                 
                 active_trade = {
                     "type": decision,
                     "entry": entry,
                     "sl": sl,
                     "tp": tp,
-                    "rr": rr
+                    "rr": 3.5
                 }
                 trades_today += 1
                 total_trades += 1
@@ -175,7 +178,7 @@ def run_offline_backtest():
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
 
     print("\n" + "="*50)
-    print("💰 STRICT FILTERED PERFORMANCE REPORT")
+    print("💰 OPTIMIZED PERFORMANCE REPORT")
     print("="*50)
     print(f"Starting Balance:  ${starting_balance:,.2f}")
     print(f"Ending Balance:    ${account_balance:,.2f}")
