@@ -18,7 +18,7 @@ class SMCTradingEngine:
         self,
         min_rr=1.5,
         max_rr=8.0,
-        atr_multiplier=0.3,
+        atr_multiplier=0.5,  # Updated from 0.3 to 0.5 for a tight structural swing buffer
         news_buffer_mins=15,
     ):
         self.min_rr = min_rr
@@ -206,7 +206,7 @@ class SMCTradingEngine:
     def evaluate_1m_entry(
         self, df_1m: pd.DataFrame, sweep_info: dict, poi_info: dict
     ) -> dict:
-        """Step 4: 1M Entry, Tight SL with ATR buffer, TP1 (1.5R), and TP2 (1H Liquidity Pool)."""
+        """Step 4: 1M Entry, Tight SL with ATR buffer, TP1 (1.2x ATR / internal structural target), and TP2 (1H Liquidity Pool)."""
         if not poi_info["valid_poi"]:
             return {"action": "NO_TRADE", "reason": "No valid 15M POI retest"}
 
@@ -229,13 +229,15 @@ class SMCTradingEngine:
             if risk <= 0:
                 return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-            tp1 = entry_price + (risk * 1.5)
+            # TP1: 15M internal structural target for partials (approx 1.2x ATR or structural offset)
+            tp1 = entry_price + (atr_val * 1.2)
+            # TP2: 1H external liquidity pool / opposing structural extreme
             tp2 = h1_sh
             if tp2 <= entry_price:
-                tp2 = entry_price + (risk * 2.0)
+                tp2 = entry_price + (risk * 3.0)
 
             reward_tp2 = tp2 - entry_price
-            rr_tp2 = reward_tp2 / risk
+            rr_tp2 = reward_tp2 / risk if risk > 0 else 0.0
 
             if self.min_rr <= rr_tp2 <= self.max_rr:
                 return {
@@ -255,13 +257,15 @@ class SMCTradingEngine:
             if risk <= 0:
                 return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-            tp1 = entry_price - (risk * 1.5)
+            # TP1: 15M internal structural target for partials
+            tp1 = entry_price - (atr_val * 1.2)
+            # TP2: 1H external liquidity pool / opposing structural extreme
             tp2 = h1_sl
             if tp2 >= entry_price:
-                tp2 = entry_price - (risk * 2.0)
+                tp2 = entry_price - (risk * 3.0)
 
             reward_tp2 = entry_price - tp2
-            rr_tp2 = reward_tp2 / risk
+            rr_tp2 = reward_tp2 / risk if risk > 0 else 0.0
 
             if self.min_rr <= rr_tp2 <= self.max_rr:
                 return {

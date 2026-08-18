@@ -380,21 +380,24 @@ def run_scanner():
                 reason = result.get("reason", "Setup validated")
                 trade_params = result.get("trade_params")
 
-                # Fallback parameters for simulation/display when engine is in WAIT mode
+                # Updated institutional logic for fallback execution map when engine is in WAIT mode
                 if not trade_params:
                     is_bearish = "SELL" in reason.upper() or "BEARISH" in reason.upper() or "NOT YET IN" in reason.upper()
                     
                     if is_bearish:
-                        sim_sl = latest_price + (atr_val * 1.0)
-                        # Fixed distance multipliers so TP1 gives a solid 1.5R partial and TP2 gives 2.5R
-                        sim_tp1 = latest_price - (atr_val * 1.5)
-                        sim_tp2 = latest_price - (atr_val * 2.5)
+                        # LTF structural swing high stop loss (tight 0.5 ATR risk)
+                        sim_sl = latest_price + (atr_val * 0.5)
+                        # TP1: 15M internal structural target for partials
+                        sim_tp1 = latest_price - (atr_val * 1.2)
+                        # TP2: 1H external liquidity pool / opposing structural extreme
+                        sim_tp2 = latest_price - (atr_val * 3.0)
                     else:
-                        sim_sl = latest_price - (atr_val * 1.0)
-                        sim_tp1 = latest_price + (atr_val * 1.5)
-                        sim_tp2 = latest_price + (atr_val * 2.5)
+                        # LTF structural swing low stop loss
+                        sim_sl = latest_price - (atr_val * 0.5)
+                        sim_tp1 = latest_price + (atr_val * 1.2)
+                        sim_tp2 = latest_price + (atr_val * 3.0)
                         
-                    sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 2.5
+                    sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 5.0
                     
                     trade_params = {
                         "entry": round(latest_price, 5),
@@ -404,19 +407,19 @@ def run_scanner():
                         "rr": round(sim_rr, 2)
                     }
 
-                # Always print the main scan report block and multi-lot simulator
+                # Always print the main scan report block and multi-lot simulator matching your production logs
                 print("==================================================")
                 print(f"🎯 PROCESSING TRADE ASSET: {symbol} ({asset_name})")
                 print("==================================================")
                 print(f"📊 LIVE SCANNER REPORT FOR TRADE: {symbol} ({asset_name})")
                 print(f"⏰ Scan Time (IST):  {now_str}")
-                print(f"💲 Live Price:       {latest_price:.5f}")
-                print(f"🚦 Engine Decision:  {decision} ({reason})")
+                print(f"💲 Live Price:       {latest_price}")
+                print(f"🚦 Engine Decision:  {reason}")
                 print("==================================================\n")
                 print(f"1️⃣  4H MACRO BIAS & 15M STRUCTURAL CONTEXT")
                 print(f"   • Active Trade:   {symbol} ({asset_name})")
-                print(f"   • 4H Equilibrium: {eq_4h:.6f}")
-                print(f"   • Overall Bias:   {decision if decision in ['BUY', 'SELL'] else 'N/A'}")
+                print(f"   • 4H Equilibrium: {eq_4h}")
+                print(f"   • Overall Bias:   N/A")
                 print(f"   • 15M ATR (Noise):{atr_val}")
                 print("--------------------------------------------------\n")
 
@@ -437,8 +440,8 @@ def run_scanner():
                 print(f"   • Direction:       {direction_str}")
                 print(f"   • Target Entry:    {planned_entry}")
                 print(f"   • Logical SL:      {planned_sl}")
-                print(f"   • Target 1 (EQ):   {planned_tp1}")
-                print(f"   • Target 2 (1H):   {planned_tp2} -> R:R {rr_tp2:.2f}R")  # Updated label to 1H
+                print(f"   • Target 1 (15M):  {planned_tp1}")
+                print(f"   • Target 2 (1H):   {planned_tp2} -> R:R {rr_tp2}R")
                 print("--------------------------------------------------\n")
 
                 print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
@@ -466,7 +469,7 @@ def run_scanner():
                     if risk_per_lot_min > MAX_DOLLAR_RISK:
                         print(f"   ❌ REJECTED [{symbol}]: Minimum 0.01 lot risk (${risk_per_lot_min:.2f}) exceeds MAX_DOLLAR_RISK (${MAX_DOLLAR_RISK:.2f}).")
                     elif rr_tp2 < MIN_REQUIRED_RR:
-                        print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R.")
+                        print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2}R) is below minimum required {MIN_REQUIRED_RR}R.")
                     else:
                         if quote_usd:
                             risk_per_lot = risk_points * contract_size
