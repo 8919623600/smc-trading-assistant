@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Define your script name
 SCRIPT_NAME="main.py"
 LOG_FILE="scanner.log"
 
@@ -8,7 +7,7 @@ echo "=================================================="
 echo "  RESTARTING SMC GOLD SCANNER                     "
 echo "=================================================="
 
-# 1. Kill any running instances of the scanner
+# 1. Kill any running instances
 if pgrep -f "$SCRIPT_NAME" > /dev/null; then
     echo "🛑 Stopping currently running scanner process(es)..."
     pkill -f "$SCRIPT_NAME"
@@ -18,7 +17,7 @@ else
     echo "ℹ️ No running scanner process found."
 fi
 
-# 2. Clean/clear the log file
+# 2. Clean/clear the log file (LOG_FILE, NOT main.py!)
 if [ -f "$LOG_FILE" ]; then
     echo "🧹 Cleaning $LOG_FILE..."
     > "$LOG_FILE"
@@ -27,7 +26,7 @@ else
     echo "ℹ️ $LOG_FILE does not exist yet. It will be created."
 fi
 
-# 3. Start the script fresh in the background
+# 3. Start main.py in the background
 echo "🚀 Starting $SCRIPT_NAME in the background..."
 nohup python3 -u "$SCRIPT_NAME" > "$LOG_FILE" 2>&1 &
 
