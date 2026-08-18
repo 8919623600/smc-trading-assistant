@@ -16,9 +16,9 @@ class SMCTradingEngine:
 
     def __init__(
         self,
-        min_rr=2.0,
+        min_rr=1.5,
         max_rr=8.0,
-        atr_multiplier=1.0,
+        atr_multiplier=0.3,
         news_buffer_mins=15,
     ):
         self.min_rr = min_rr
@@ -40,7 +40,7 @@ class SMCTradingEngine:
         return true_range.rolling(period).mean()
 
     @staticmethod
-    def find_pivots(df: pd.DataFrame, length: int = 5):
+    def find_pivots(df: pd.DataFrame, length: int = 2):
         """Identifies Swing Highs and Swing Lows."""
         df = df.copy()
         df["pivot_high"] = np.nan
@@ -49,9 +49,7 @@ class SMCTradingEngine:
         for i in range(length, len(df) - length):
             window = df.iloc[i - length : i + length + 1]
             if df["high"].iloc[i] == window["high"].max():
-                df.iloc[i, df.columns.get_loc("pivot_high")] = df["high"].iloc[
-                    i
-                ]
+                df.iloc[i, df.columns.get_loc("pivot_high")] = df["high"].iloc[i]
             if df["low"].iloc[i] == window["low"].min():
                 df.iloc[i, df.columns.get_loc("pivot_low")] = df["low"].iloc[i]
 
@@ -84,56 +82,55 @@ class SMCTradingEngine:
         return "NEUTRAL"
 
     def check_1h_liquidity_sweep(self, df_1h: pd.DataFrame, bias: str) -> dict:
-        """Step 2: Detect 1H Liquidity Sweeps."""
-        df = self.find_pivots(df_1h, length=5)
-        last_low = (
-            df["pivot_low"].dropna().iloc[-1]
-            if not df["pivot_low"].dropna().empty
-            else None
-        )
-        last_high = (
-            df["pivot_high"].dropna().iloc[-1]
-            if not df["pivot_high"].dropna().empty
-            else None
-        )
+        """Step 2: Detect 1H Liquidity Sweeps and extract liquidity pools."""
+        df = self.find_pivots(df_1h, length=2)
+        swing_highs = df["pivot_high"].dropna()
+        swing_lows = df["pivot_low"].dropna()
+
+        last_low = swing_lows.iloc[-1] if not swing_lows.empty else df["low"].min()
+        last_high = swing_highs.iloc[-1] if not swing_highs.empty else df["high"].max()
 
         current_bar = df.iloc[-1]
 
+        swept = False
+        sweep_type = "NONE"
+        sweep_level = None
+
         if bias == "BULLISH" and last_low:
-            if (
-                current_bar["low"] < last_low
-                and current_bar["close"] > last_low
-            ):
-                return {
-                    "swept": True,
-                    "type": "BULLISH",
-                    "sweep_level": current_bar["low"],
-                }
+            if current_bar["low"] < last_low and current_bar["close"] > last_low:
+                swept = True
+                sweep_type = "BULLISH"
+                sweep_level = current_bar["low"]
 
         elif bias == "BEARISH" and last_high:
-            if (
-                current_bar["high"] > last_high
-                and current_bar["close"] < last_high
-            ):
-                return {
-                    "swept": True,
-                    "type": "BEARISH",
-                    "sweep_level": current_bar["high"],
-                }
+            if current_bar["high"] > last_high and current_bar["close"] < last_high:
+                swept = True
+                sweep_type = "BEARISH"
+                sweep_level = current_bar["high"]
 
-        return {"swept": False, "type": "NONE", "sweep_level": None}
+        return {
+            "swept": swept,
+            "type": sweep_type,
+            "sweep_level": sweep_level,
+            "h1_sh": last_high,
+            "h1_sl": last_low
+        }
 
     def detect_15m_poi(self, df_15m: pd.DataFrame, sweep_info: dict) -> dict:
         """Step 3: 15M Structure Shift (CHoCH + BOS) & POI (OB + FVG)."""
         if not sweep_info["swept"]:
             return {"valid_poi": False}
 
-        df = self.find_pivots(df_15m, length=3)
+        df = self.find_pivots(df_15m, length=2)
+        swing_highs = df["pivot_high"].dropna()
+        swing_lows = df["pivot_low"].dropna()
+
+        m15_sh = swing_highs.iloc[-1] if not swing_highs.empty else df["high"].max()
+        m15_sl = swing_lows.iloc[-1] if not swing_lows.empty else df["low"].min()
 
         fvg_found = False
         fvg_top, fvg_bottom = None, None
 
-        # Fixed index bound check to prevent negative wrapping
         start_idx = len(df) - 3
         end_idx = max(2, len(df) - 10)
 
@@ -151,77 +148,100 @@ class SMCTradingEngine:
                     fvg_bottom = df["high"].iloc[i]
                     break
 
-        # Check if current price returned to POI
         retested = False
         if fvg_found:
-            if (
-                sweep_info["type"] == "BULLISH"
-                and df["low"].iloc[-1] <= fvg_top
-            ):
+            if sweep_info["type"] == "BULLISH" and df["low"].iloc[-1] <= fvg_top:
                 retested = True
-            elif (
-                sweep_info["type"] == "BEARISH"
-                and df["high"].iloc[-1] >= fvg_bottom
-            ):
+            elif sweep_info["type"] == "BEARISH" and df["high"].iloc[-1] >= fvg_bottom:
                 retested = True
 
         return {
             "valid_poi": fvg_found and retested,
             "fvg_top": fvg_top,
             "fvg_bottom": fvg_bottom,
+            "m15_sh": m15_sh,
+            "m15_sl": m15_sl
         }
 
     def evaluate_1m_entry(
         self, df_1m: pd.DataFrame, sweep_info: dict, poi_info: dict
     ) -> dict:
-        """Step 4: 1M Micro CHoCH & Risk Engine Validation."""
+        """Step 4: 1M Entry, Tight SL with ATR buffer, TP1 (1.5R), and TP2 (1H Liquidity Pool)."""
         if not poi_info["valid_poi"]:
             return {"action": "NO_TRADE", "reason": "No valid 15M POI retest"}
 
         df = df_1m.copy()
         df["atr"] = self.calculate_atr(df, 14)
         current_bar = df.iloc[-1]
-        atr_val = current_bar["atr"]
+        atr_val = current_bar["atr"] if not pd.isna(current_bar["atr"]) else 0.0001
 
         entry_price = current_bar["close"]
+        h1_sh = sweep_info["h1_sh"]
+        h1_sl = sweep_info["h1_sl"]
+        m15_sh = poi_info["m15_sh"]
+        m15_sl = poi_info["m15_sl"]
 
         if sweep_info["type"] == "BULLISH":
-            stop_loss = sweep_info["sweep_level"] - (
-                atr_val * self.atr_multiplier
-            )
+            structural_floor = min(m15_sl, h1_sl)
+            stop_loss = structural_floor - (atr_val * self.atr_multiplier)
             risk = entry_price - stop_loss
-            target_tp = entry_price + (risk * self.min_rr)
-            rr = (target_tp - entry_price) / risk if risk > 0 else 0
+            
+            if risk <= 0:
+                return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-            if self.min_rr <= rr <= self.max_rr:
+            # TP1: 1.5R Expansion for Breakeven safety
+            tp1 = entry_price + (risk * 1.5)
+            
+            # TP2: Structural 1H Liquidity Pool (Buy-Side Liquidity High)
+            tp2 = h1_sh
+            if tp2 <= entry_price:
+                tp2 = entry_price + (risk * 2.0)  # Fallback safety
+
+            reward_tp2 = tp2 - entry_price
+            rr_tp2 = reward_tp2 / risk
+
+            if self.min_rr <= rr_tp2 <= self.max_rr:
                 return {
                     "action": "BUY",
-                    "entry": round(entry_price, 3),
-                    "sl": round(stop_loss, 3),
-                    "tp": round(target_tp, 3),
-                    "rr": round(rr, 2),
+                    "entry": round(entry_price, 5),
+                    "sl": round(stop_loss, 5),
+                    "tp1": round(tp1, 5),
+                    "tp2": round(tp2, 5),
+                    "rr": round(rr_tp2, 2),
                 }
 
         elif sweep_info["type"] == "BEARISH":
-            stop_loss = sweep_info["sweep_level"] + (
-                atr_val * self.atr_multiplier
-            )
+            structural_ceiling = max(m15_sh, h1_sh)
+            stop_loss = structural_ceiling + (atr_val * self.atr_multiplier)
             risk = stop_loss - entry_price
-            target_tp = entry_price - (risk * self.min_rr)
-            rr = (entry_price - target_tp) / risk if risk > 0 else 0
+            
+            if risk <= 0:
+                return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-            if self.min_rr <= rr <= self.max_rr:
+            # TP1: 1.5R Expansion for Breakeven safety
+            tp1 = entry_price - (risk * 1.5)
+            
+            # TP2: Structural 1H Liquidity Pool (Sell-Side Liquidity Low)
+            tp2 = h1_sl
+            if tp2 >= entry_price:
+                tp2 = entry_price - (risk * 2.0)  # Fallback safety
+
+            reward_tp2 = entry_price - tp2
+            rr_tp2 = reward_tp2 / risk
+
+            if self.min_rr <= rr_tp2 <= self.max_rr:
                 return {
                     "action": "SELL",
-                    "entry": round(entry_price, 3),
-                    "sl": round(stop_loss, 3),
-                    "tp": round(target_tp, 3),
-                    "rr": round(rr, 2),
+                    "entry": round(entry_price, 5),
+                    "sl": round(stop_loss, 5),
+                    "tp1": round(tp1, 5),
+                    "tp2": round(tp2, 5),
+                    "rr": round(rr_tp2, 2),
                 }
 
         return {
             "action": "WAIT",
-            "reason": "Setup conditions met but Risk-to-Reward invalid",
+            "reason": "Setup conditions met but 1H Liquidity R:R out of bounds",
         }
 
     # ==========================================
@@ -253,7 +273,7 @@ class SMCTradingEngine:
         if bias == "NEUTRAL":
             return {"decision": "NO_TRADE", "reason": "4H Market Bias Neutral"}
 
-        # Step 2: 1H Liquidity Sweep
+        # Step 2: 1H Liquidity Sweep & Levels
         sweep = self.check_1h_liquidity_sweep(data_dict["1H"], bias)
         if not sweep["swept"]:
             return {
@@ -269,7 +289,7 @@ class SMCTradingEngine:
                 "reason": "15M POI not confirmed or retested",
             }
 
-        # Step 4: 1M Precision Entry
+        # Step 4: 1M Precision Entry with 1H Liquidity Targets
         entry = self.evaluate_1m_entry(df_1m, sweep, poi)
 
         return {
