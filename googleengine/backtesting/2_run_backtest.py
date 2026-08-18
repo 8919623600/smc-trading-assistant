@@ -28,7 +28,7 @@ def sanitize_df(df):
 
 def run_offline_backtest():
     print("==================================================")
-    print("🚀 STARTING PURE 2.0 RR SMC BACKTEST (NO BE)")
+    print("🚀 STARTING KILLZONE ORDER BLOCK SMC BACKTEST")
     print("==================================================")
     
     try:
@@ -67,11 +67,11 @@ def run_offline_backtest():
             c_high = current_bar['high']
             c_low = current_bar['low']
             
-            # Time-based exit (8 PM UTC)
+            # Time-based session cutoff exit (20:00 UTC)
             if current_time.hour >= 20:
                 pnl_check = (current_bar['close'] - active_trade['entry']) if active_trade['type'] == 'BUY' else (active_trade['entry'] - current_bar['close'])
                 if pnl_check > 0:
-                    account_balance += pnl_check * (50.0 / abs(active_trade['entry'] - active_trade['initial_sl']))
+                    account_balance += pnl_check * (50.0 / abs(active_trade['entry'] - active_trade['sl']))
                     winning_trades += 1
                 else:
                     account_balance -= 50.0
@@ -94,7 +94,6 @@ def run_offline_backtest():
                     hit_sl = True
                     
             if hit_sl and hit_tp:
-                # If both hit in the same bar candle, assume conservative loss
                 account_balance -= 50.0  
                 losing_trades += 1
                 active_trade = None
@@ -103,22 +102,23 @@ def run_offline_backtest():
                 losing_trades += 1
                 active_trade = None
             elif hit_tp:
-                account_balance += (50.0 * 2.0) # Full 2.0 RR reward
+                # Dynamic RR reward based on engine target calculation
+                initial_risk = abs(active_trade['entry'] - active_trade['sl'])
+                reward_distance = abs(active_trade['tp'] - active_trade['entry'])
+                rr_multiplier = reward_distance / initial_risk if initial_risk > 0 else 2.5
+                account_balance += (50.0 * rr_multiplier)
                 winning_trades += 1
                 active_trade = None
                 
             continue
 
-        # Filters: Session hours & daily cap
-        if not (8 <= current_time.hour <= 17):
-            continue
-            
+        # Daily trade capping (Max 2 trades per session/day)
         if trades_today >= 2:
             continue
 
         df_1m_slice = df_1m_full.iloc[i-200:i].copy()
         
-        # Volatility check
+        # Volatility spike safety filter
         df_1m_slice['tr'] = np.maximum(df_1m_slice['high'] - df_1m_slice['low'], 
                                        np.maximum(abs(df_1m_slice['high'] - df_1m_slice['close'].shift(1)), 
                                                   abs(df_1m_slice['low'] - df_1m_slice['close'].shift(1))))
@@ -141,15 +141,12 @@ def run_offline_backtest():
         if decision in ["BUY", "SELL"] and params:
             entry = params.get("entry")
             sl = params.get("sl")
+            tp = params.get("tp")
             
-            if entry and sl:
-                risk = abs(entry - sl)
-                tp = (entry + (risk * 2.0)) if decision == "BUY" else (entry - (risk * 2.0))
-                
+            if entry and sl and tp:
                 active_trade = {
                     "type": decision,
                     "entry": entry,
-                    "initial_sl": risk,
                     "sl": sl,
                     "tp": tp
                 }
@@ -161,7 +158,7 @@ def run_offline_backtest():
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
 
     print("\n" + "="*50)
-    print("💰 PURE 2.0 RR PERFORMANCE REPORT")
+    print("💰 KILLZONE ORDER BLOCK PERFORMANCE REPORT")
     print("="*50)
     print(f"Starting Balance:  ${starting_balance:,.2f}")
     print(f"Ending Balance:    ${account_balance:,.2f}")
