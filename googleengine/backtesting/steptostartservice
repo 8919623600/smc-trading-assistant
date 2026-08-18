@@ -1,0 +1,28 @@
+tep-by-Step Instructions for Tomorrow:
+Start and log into your EC2 instance via the AWS Console or your terminal.
+
+Navigate to the backtesting folder:
+
+Bash
+cd ~/trading/googleengine/backtesting
+Run your launcher script:
+
+Bash
+./run_scanner.sh
+Because your run_scanner.sh script uses GNU screen (screen -dmS smc_bot ...), it automatically launches the bot inside a detached background session. This means it will keep running indefinitely even after you close your terminal or log out.
+
+Useful Commands to Remember:
+To check live logs while it's running:
+
+Bash
+tail -f scanner.log
+To view/re-attach to the live bot terminal session:
+
+Bash
+screen -r smc_bot
+(Once attached, press Ctrl+A then D to detach and leave it running in the background again).
+
+To safely stop the bot later:
+
+Bash
+screen -S smc_bot -X quit
