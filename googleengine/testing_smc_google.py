@@ -387,13 +387,14 @@ def run_scanner():
                     if is_bearish:
                         sim_sl = latest_price + (atr_val * 0.4)
                         sim_tp1 = max(eq_4h, latest_price - (atr_val * 0.8))
-                        sim_tp2 = latest_price - (atr_val * 2.5)
+                        # Target 2 anchored closer using a 1H structural projection (e.g., 1.5x to 2x ATR expansion)
+                        sim_tp2 = latest_price - (atr_val * 1.8)
                     else:
                         sim_sl = latest_price - (atr_val * 0.4)
                         sim_tp1 = min(eq_4h, latest_price + (atr_val * 0.8))
-                        sim_tp2 = latest_price + (atr_val * 2.5)
+                        sim_tp2 = latest_price + (atr_val * 1.8)
                         
-                    sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 3.0
+                    sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 2.5
                     
                     trade_params = {
                         "entry": round(latest_price, 5),
