@@ -1,62 +1,77 @@
-from datetime import datetime
-import os
 import pandas as pd
-import requests
+import yfinance as yf
 
-# ==========================================
-# CONFIGURATION & API KEYS
-# ==========================================
-API_KEYS = [
-    os.getenv("TWELVE_DATA_API_KEY_1"),
-    os.getenv("TWELVE_DATA_API_KEY_2"),
-]
-API_KEYS = [key for key in API_KEYS if key]
 
-if not API_KEYS:
-  raise ValueError(
-      "❌ CRITICAL ERROR: No Twelve Data API keys found in environment variables."
+def download_and_cache_yf():
+  print("==================================================")
+  print(
+      "🚀 DOWNLOADING HISTORICAL DATA VIA YFINANCE (NO API LIMITS)"
+  )
+  print("==================================================")
+
+  # GC=F is Gold Futures on Yahoo Finance (closely tracks XAU/USD)
+  symbol = "GC=F"
+
+  print("📥 Downloading 1-minute data (last 7 days)...")
+  df_1m = yf.download(symbol, period="7d", interval="1m", progress=False)
+  df_1m = clean_yf_df(df_1m)
+  df_1m.to_parquet("XAU_USD_1min.parquet")
+  print(f"✅ Saved XAU_USD_1min.parquet ({len(df_1m)} candles)")
+
+  print("📥 Downloading 15-minute data (last 60 days)...")
+  df_15m = yf.download(symbol, period="60d", interval="15m", progress=False)
+  df_15m = clean_yf_df(df_15m)
+  df_15m.to_parquet("XAU_USD_15min.parquet")
+  print(f"✅ Saved XAU_USD_15min.parquet ({len(df_15m)} candles)")
+
+  print("📥 Downloading 1-hour data (history)...")
+  df_1h = yf.download(symbol, period="max", interval="1h", progress=False)
+  df_1h = clean_yf_df(df_1h)
+  df_1h.to_parquet("XAU_USD_1h.parquet")
+  print(f"✅ Saved XAU_USD_1h.parquet ({len(df_1h)} candles)")
+
+  print("📥 Generating 4-hour data from 1-hour resample...")
+  df_1h_indexed = df_1h.set_index("datetime")
+  df_4h = (
+      df_1h_indexed.resample("4H")
+      .agg(
+          {
+              "open": "first",
+              "high": "max",
+              "low": "min",
+              "close": "last",
+          }
+      )
+      .dropna()
+      .reset_index()
+  )
+  df_4h.to_parquet("XAU_USD_4h.parquet")
+  print(f"✅ Saved XAU_USD_4h.parquet ({len(df_4h)} candles)")
+
+  print(
+      "\n🎉 All historical data cached successfully using free Yahoo Finance"
+      " data!"
   )
 
 
-def download_and_cache(symbol, interval, outputsize=5000):
-  url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={API_KEYS[0]}&format=JSON"
+def clean_yf_df(df):
+  # Handle multi-index columns in newer yfinance versions
+  if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.get_level_values(0)
 
-  print(f"📥 Downloading {interval} data for {symbol}...")
-  response = requests.get(url, timeout=15)
-  data = response.json()
+  df = df.reset_index()
+  df.columns = [str(col).lower() for col in df.columns]
 
-  if "values" in data:
-    df = pd.DataFrame(data["values"])
-    df = df.iloc[::-1].reset_index(drop=True)
-    for col in ["open", "high", "low", "close"]:
-      if col in df.columns:
-        df[col] = df[col].astype(float)
-    df["datetime"] = pd.to_datetime(df["datetime"])
+  if "date" in df.columns and "datetime" not in df.columns:
+    df.rename(columns={"date": "datetime"}, inplace=True)
+  elif "index" in df.columns and "datetime" not in df.columns:
+    df.rename(columns={"index": "datetime"}, inplace=True)
 
-    # Clean symbol name for filename (e.g., XAU/USD -> XAU_USD)
-    clean_symbol = symbol.replace("/", "_")
-    filename = f"{clean_symbol}_{interval}.parquet"
-
-    # Save inside the current folder
-    df.to_parquet(filename)
-    print(f"✅ Successfully saved: {filename} ({len(df)} candles)")
-  else:
-    print(f"❌ Failed to fetch {interval} for {symbol}: {data}")
+  required_cols = ["datetime", "open", "high", "low", "close"]
+  available_cols = [c for c in required_cols if c in df.columns]
+  df = df[available_cols].dropna()
+  return df
 
 
 if __name__ == "__main__":
-  print("==================================================")
-  print("🚀 DOWNLOADING HISTORICAL DATA FOR BACKTESTING")
-  print("==================================================")
-
-  # Fetching XAU/USD across required timeframes
-  # Note: 5000 1min candles cover roughly ~3.5 days of active trading minutes.
-  # Adjust outputsize or use date ranges if you need a deeper history window.
-  target_symbol = "XAU/USD"
-
-  download_and_cache(target_symbol, "1min", outputsize=5000)
-  download_and_cache(target_symbol, "15min", outputsize=1000)
-  download_and_cache(target_symbol, "1h", outputsize=500)
-  download_and_cache(target_symbol, "4h", outputsize=200)
-
-  print("\n🎉 Download complete! You can now run your backtest script.")
+  download_and_cache_yf()
