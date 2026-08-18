@@ -108,7 +108,7 @@ def run_scanner_loop():
   print("⏰ Active Window Configured: 1:30 PM to 3:30 AM IST")
   print("==================================================")
 
-  # Initialize engine with min_rr=2.0 and max_rr=8.0 as validation filters for SMC liquidity targets
+  # Initialize engine enforcing 1M micro-structure SL logic and 2.0-8.0 RR validation filters
   engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.4)
   lot_sizes = [0.01, 0.02, 0.03, 0.5, 0.1, 0.2]
 
@@ -173,36 +173,37 @@ def run_scanner_loop():
       choch_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
       fvg_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
 
-      # Extract SMC liquidity-based targets (TP1: Internal Liquidity, TP2: HTF Liquidity, TP3: Major External Swing/Equal Highs-Lows)
+      # Extract execution parameters using strict 1M invalidation SL + Liquidity Target mapping
       trade_params = analysis_result.get("trade_params")
       if trade_params and trade_params.get("entry"):
         entry = trade_params["entry"]
-        sl = trade_params["sl"]
+        sl = trade_params["sl"]  # Derived from 1M swing invalidation + buffer via backend engine
         tps = {
             "TP1 (Internal Liq)": trade_params.get("tp1", trade_params.get("tp")),
             "TP2 (HTF Target)": trade_params.get("tp2", trade_params.get("tp")),
-            "TP3 (External Swing Runner)": trade_params.get("tp3", trade_params.get("tp"))
+            "TP3 (External Runner)": trade_params.get("tp3", trade_params.get("tp"))
         }
         tps = {k: v for k, v in tps.items() if v is not None}
         rr = trade_params.get("rr", "2.0 (Validated)")
       else:
         entry = current_price if current_price != "N/A" else "N/A"
+        # PREVIEW MODE ONLY FALLBACK (Never used for live execution)
         if current_price != "N/A":
           if "EUR" in symbol:
-            sl = round(current_price - 0.0020, 4)
+            sl = round(current_price - 0.0010, 4)  # Preview preview tighter 1M model scale
             tps = {
                 "TP1 (Internal Liq)": round(current_price + 0.0020, 4),
                 "TP2 (HTF Target)": round(current_price + 0.0040, 4),
-                "TP3 (External Swing Runner)": round(current_price + 0.0060, 4)
+                "TP3 (External Runner)": round(current_price + 0.0060, 4)
             }
           else:
-            sl = round(current_price - 5.0, 2)
+            sl = round(current_price - 2.5, 2)  # Preview tight 1M execution scale for Gold
             tps = {
                 "TP1 (Internal Liq)": round(current_price + 5.0, 2),
                 "TP2 (HTF Target)": round(current_price + 10.0, 2),
-                "TP3 (External Swing Runner)": round(current_price + 15.0, 2)
+                "TP3 (External Runner)": round(current_price + 15.0, 2)
             }
-          rr = "2.0 (SMC Target Filtered)"
+          rr = "2.0 (Preview Mode Filtered)"
         else:
           sl = "N/A"
           tps = {}
@@ -214,7 +215,7 @@ def run_scanner_loop():
       # TERMINAL MONITOR FORMAT
       # ----------------------------------------------------
       print("\n==================================================")
-      print("📊 SMC Trade Signal Report (Liquidity-Driven Targets)")
+      print("📊 SMC Trade Signal Report (1M Micro-SL & Liquidity Targets)")
       print("--------------------------------------------------")
       print("System & Status")
       print(f"• Asset: {symbol} | Time: {scan_time}")
@@ -226,12 +227,12 @@ def run_scanner_loop():
       print(f"• 1M Confirmation (Sweep / CHoCH / FVG): {sweep_1m} / {choch_1m} / {fvg_1m}")
       print("\nTrade & Price Info")
       print(f"• Current Price: {current_price}")
-      print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | {tp_str} | RR Filter: {rr})")
+      print(f"• Direction: {decision} (Entry: {entry} | 1M-SL: {sl} | {tp_str} | RR Filter: {rr})")
 
       # Multi-TP Liquidity P&L Breakdown
       if entry != "N/A" and sl != "N/A" and tps:
         pnl_data = calculate_lot_pnl_multi_tp(symbol, entry, sl, tps, lot_sizes)
-        print("\nEstimated P&L Breakdown Across Lots (Liquidity Targets):")
+        print("\nEstimated P&L Breakdown Across Lots (1M Risk Model):")
         for lot in lot_sizes:
           profits_desc = " | ".join([f"{tp_name.split(' ')[0]}: +${pnl_data[lot]['profits'][tp_name]}" for tp_name in tps])
           print(f"  • Lot {lot} -> Loss: -${pnl_data[lot]['loss']} | {profits_desc}")
