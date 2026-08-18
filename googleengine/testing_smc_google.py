@@ -65,10 +65,36 @@ def send_telegram_alert(message: str):
         print(f"⚠️ Telegram alert failed: {e}")
 
 
-def is_active_session(now_dt: datetime) -> bool:
-    """Checks if current time is within London/NY active window (1:30 PM to 3:30 AM IST)."""
+def is_active_session(symbol: str, now_dt: datetime) -> bool:
+    """
+    Validates if current IST time falls within the allowed trading sessions:
+    - EUR/USD: 1:30 PM to 12:00 AM IST
+    - Gold (XAU/USD): 1:30 PM to 5:00 PM AND 7:30 PM to 12:00 AM IST
+    """
     current_time = now_dt.time()
-    return current_time >= dtime(13, 30) or current_time < dtime(3, 30)
+    sym = symbol.upper().replace("/", "").replace("_", "")
+    
+    # EUR/USD: 1:30 PM (13:30) to 12:00 AM (00:00)
+    if "EURUSD" in sym:
+        start_time = dtime(13, 30)
+        end_time = dtime(0, 0)
+        if current_time >= start_time or current_time < end_time:
+            return True
+            
+    # Gold (XAU/USD): 1:30 PM - 5:00 PM AND 7:30 PM - 12:00 AM
+    elif "XAU" in sym or "GOLD" in sym:
+        s1_start = dtime(13, 30)
+        s1_end = dtime(17, 0)
+        
+        s2_start = dtime(19, 30)
+        s2_end = dtime(0, 0)
+        
+        if s1_start <= current_time <= s1_end:
+            return True
+        if current_time >= s2_start or current_time < s2_end:
+            return True
+            
+    return False
 
 
 def initialize_trade_history():
@@ -279,11 +305,6 @@ def run_scanner():
             time.sleep(IDLE_SLEEP_SECONDS)
             continue
 
-        if not is_active_session(now_ist):
-            print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] 😴 Session Closed. Idling...")
-            time.sleep(IDLE_SLEEP_SECONDS)
-            continue
-
         if check_daily_circuit_breaker():
             time.sleep(IDLE_SLEEP_SECONDS)
             continue
@@ -291,6 +312,13 @@ def run_scanner():
         now_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p IST")
 
         for idx, symbol in enumerate(TICKERS):
+            # Check active session per individual asset
+            if not is_active_session(symbol, now_ist):
+                print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] 😴 Session Closed for {symbol}. Skipping...")
+                if idx < len(TICKERS) - 1:
+                    time.sleep(API_THROTTLE_SECONDS)
+                continue
+
             try:
                 cfg = ASSET_CONFIG.get(symbol, {"contract_size": 100000, "quote_usd": True, "name": symbol})
                 contract_size = cfg["contract_size"]
