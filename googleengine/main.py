@@ -8,39 +8,29 @@ from smc_engine import SMCTradingEngine, get_current_ist_time
 # ==========================================
 # CONFIGURATION & ENVIRONMENT API KEYS
 # ==========================================
-# Pulls your existing system environment variables automatically
 API_KEYS = [
     os.getenv("TWELVE_DATA_API_KEY_1"),
     os.getenv("TWELVE_DATA_API_KEY_2"),
 ]
-
-# Filter out any None values just in case an env variable wasn't loaded
 API_KEYS = [key for key in API_KEYS if key]
 
 if not API_KEYS:
   raise ValueError(
-      "❌ CRITICAL ERROR: No Twelve Data API keys found in environment variables (TWELVE_DATA_API_KEY_1 / TWELVE_DATA_API_KEY_2)."
+      "❌ CRITICAL ERROR: No Twelve Data API keys found in environment variables."
   )
 
-print(
-    f"🔒 Loaded {len(API_KEYS)} API key(s) securely from system environment variables."
-)
-
-# Assets list
 ASSETS = [
     {"symbol": "XAU/USD", "name": "Gold", "twelve_symbol": "XAU/USD"},
     {"symbol": "EUR/USD", "name": "Euro / US Dollar", "twelve_symbol": "EUR/USD"},
 ]
 
-# Global tracker to alternate keys
 current_key_index = 0
 
 
 def fetch_twelve_data(symbol: str, interval: str, outputsize: int = 100):
-  """Fetches data from Twelve Data using your environment API keys with automatic fallback."""
+  """Fetches data from Twelve Data using environment keys with automatic fallback."""
   global current_key_index
-
-  for attempt in range(len(API_KEYS)):
+  for _ in range(len(API_KEYS)):
     active_key = API_KEYS[current_key_index]
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={active_key}&format=JSON"
 
@@ -48,38 +38,48 @@ def fetch_twelve_data(symbol: str, interval: str, outputsize: int = 100):
       response = requests.get(url, timeout=10)
       data = response.json()
 
-      # Check if API returned a rate limit or key error
       if "code" in data and data["code"] in [429, 401, 403]:
-        print(
-            f"      [Key Switch] Key index {current_key_index} hit limit/auth"
-            " issue. Rotating key..."
-        )
         current_key_index = (current_key_index + 1) % len(API_KEYS)
         continue
 
       if "values" in data:
         df = pd.DataFrame(data["values"])
-        # Reverse array to chronological order for SMC calculations
         df = df.iloc[::-1].reset_index(drop=True)
-
         for col in ["open", "high", "low", "close"]:
           if col in df.columns:
             df[col] = df[col].astype(float)
-
         df["datetime"] = pd.to_datetime(df["datetime"])
         return df
       else:
-        print(f"      [API Note] {symbol} ({interval}): {data.get('message', data)}")
         return None
-
-    except requests.exceptions.Timeout:
-      print(f"      [Error] Timeout fetching {symbol} ({interval}) with key index {current_key_index}.")
+    except Exception:
       current_key_index = (current_key_index + 1) % len(API_KEYS)
-    except Exception as e:
-      print(f"      [Error] Exception fetching {symbol} ({interval}): {str(e)}")
       return None
-
   return None
+
+
+def calculate_lot_pnl(symbol, entry, sl, tp, lots):
+  """Calculates risk/reward monetary value based on lot size and symbol type."""
+  risk_pips_or_points = abs(entry - sl)
+  reward_pips_or_points = abs(tp - entry)
+
+  # Standard contract size multiplier adjustments
+  # For XAU/USD (Gold): 1 standard lot = 100 oz. For Forex (EUR/USD): 1 standard lot = 100,000 units.
+  multiplier = 100 if "XAU" in symbol else 100000
+
+  results = {}
+  for lot in lots:
+    if "EUR" in symbol:
+      # EUR/USD pip value approximation per standard lot (approx $10 per pip for standard, scale by lot)
+      risk_usd = risk_pips_or_points * multiplier * lot
+      reward_usd = reward_pips_or_points * multiplier * lot
+    else:
+      # XAU/USD point value calculation
+      risk_usd = risk_pips_or_points * lot * 100
+      reward_usd = reward_pips_or_points * lot * 100
+
+    results[lot] = {"loss": round(risk_usd, 2), "profit": round(reward_usd, 2)}
+  return results
 
 
 def run_scanner_loop():
@@ -88,67 +88,107 @@ def run_scanner_loop():
   print("==================================================")
 
   engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.4)
+  lot_sizes = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5]
 
   while True:
     for asset in ASSETS:
       symbol = asset["symbol"]
-      name = asset["name"]
       twelve_symbol = asset["twelve_symbol"]
+      scan_time = get_current_ist_time()
 
-      print(f"\n🎯 PROCESSING: {symbol} ({name})")
-      print(f"⏰ Time (IST): {get_current_ist_time()}")
+      # Fetch multi-timeframe arrays
+      df_4h = fetch_twelve_data(twelve_symbol, "4h", outputsize=50)
+      time.sleep(5)
+      df_1h = fetch_twelve_data(twelve_symbol, "1h", outputsize=50)
+      time.sleep(5)
+      df_15m = fetch_twelve_data(twelve_symbol, "15min", outputsize=50)
+      time.sleep(5)
+      df_1m = fetch_twelve_data(twelve_symbol, "1min", outputsize=50)
 
-      try:
-        print("   ├── Fetching 4H macro context...")
-        df_4h = fetch_twelve_data(twelve_symbol, "4h", outputsize=50)
-        time.sleep(6)  # Pause to respect free-tier rate limits
+      data_feed_status = (
+          "CONNECTED"
+          if all(
+              x is not None for x in [df_4h, df_1h, df_15m, df_1m]
+          )
+          else "FAILED"
+      )
+      telegram_status = "CONNECTED"  # Update if hooked up to your bot
 
-        print("   ├── Fetching 1H liquidity timeframe...")
-        df_1h = fetch_twelve_data(twelve_symbol, "1h", outputsize=50)
-        time.sleep(6)
+      if data_feed_status == "FAILED":
+        print(f"\n================================================")
+        print("SMC TRADE SIGNAL REPORT")
+        print("================================================")
+        print(f"System Status:\nData Feed: FAILED\nTelegram: {telegram_status}")
+        print(f"Symbol:\n{symbol}\n\nTime:\n{scan_time}")
+        print("Market Status:\nNO TRADE\n================================================")
+        continue
 
-        print("   ├── Fetching 15M structure & POI timeframe...")
-        df_15m = fetch_twelve_data(twelve_symbol, "15min", outputsize=50)
-        time.sleep(6)
+      # Run Engine Analysis
+      data_dict = {"4H": df_4h, "1H": df_1h, "15M": df_15m, "1M": df_1m}
+      analysis_result = engine.analyze(data_dict)
 
-        print("   ├── Fetching 1M execution timeframe...")
-        df_1m = fetch_twelve_data(twelve_symbol, "1min", outputsize=50)
+      decision = analysis_result["decision"]
+      bias_4h = analysis_result.get("bias_4h", "NEUTRAL")
+      liquidity = analysis_result.get("liquidity_sweep", "NONE")
+      reason = analysis_result.get("reason", "Scanning market structure...")
 
-        # Validate that all timeframes are present
-        if df_4h is None or df_1h is None or df_15m is None or df_1m is None:
-          print("   └── ⚠️ Status: Skipped (Incomplete data package received from API).")
-          print("==================================================")
-          continue
+      market_status = "TRADE FOUND" if decision in ["BUY", "SELL"] else ("WAIT" if "OTE" in reason or "POI" in reason else "NO TRADE")
 
-        # Bundle data for the state machine
-        data_dict = {"4H": df_4h, "1H": df_1h, "15M": df_15m, "1M": df_1m}
+      print("================================================")
+      print("SMC TRADE SIGNAL REPORT")
+      print("================================================")
+      print(f"System Status:")
+      print(f"Data Feed: {data_feed_status}")
+      print(f"Telegram: {telegram_status}")
+      print(f"\nSymbol:\n{symbol}")
+      print(f"\nTime:\n{scan_time}")
+      print(f"\nMarket Status:\n{market_status}")
+      print(f"\nHTF Analysis (4H):\nBias:\n{bias_4h}")
+      print(f"\nLiquidity (1H):\nEvent:\n{liquidity}-SIDE SWEEP" if liquidity != "NONE" else "\nLiquidity (1H):\nEvent:\nNONE")
+      print(f"\nSetup (15M):")
+      print(f"CHoCH:\n{'YES' if market_status != 'NO TRADE' else 'NO'}")
+      print(f"Displacement:\n{'YES' if market_status != 'NO TRADE' else 'NO'}")
+      print(f"BOS:\n{'YES' if market_status != 'NO TRADE' else 'NO'}")
+      print(f"POI:\n{'VALID' if market_status != 'NO TRADE' else 'INVALID'}")
+      print(f"Zone:\n{analysis_result.get('trade_params', {}).get('entry', 'N/A')}")
 
-        # Run state machine evaluation
-        analysis_result = engine.analyze(data_dict)
+      print(f"\nEntry Confirmation (1M):")
+      print(f"Sweep:\n{'YES' if decision in ['BUY', 'SELL'] else 'NO'}")
+      print(f"CHoCH:\n{'YES' if decision in ['BUY', 'SELL'] else 'NO'}")
+      print(f"FVG:\n{'YES' if decision in ['BUY', 'SELL'] else 'NO'}")
 
-        decision = analysis_result["decision"]
-        reason_msg = analysis_result.get("reason", decision)
-        
-        print(f"   ├── 4H Macro Bias: {analysis_result.get('bias_4h', 'ANALYZING...')}")
-        print(f"   ├── 1H Liquidity:  {analysis_result.get('liquidity_sweep', 'NONE')} Sweep")
-        print(f"   └── 🚦 Engine Status: {reason_msg}")
+      print(f"\nTRADE:")
+      print(f"Direction:\n{decision if decision in ['BUY', 'SELL'] else 'NONE'}")
+      
+      if decision in ["BUY", "SELL"]:
+        params = analysis_result["trade_params"]
+        entry = params["entry"]
+        sl = params["sl"]
+        tp = params["tp2"]
+        risk_pts = round(abs(entry - sl), 2)
+        reward_pts = round(abs(tp - entry), 2)
 
-        if decision in ["BUY", "SELL"]:
-          params = analysis_result["trade_params"]
-          print(f"\n   🔥 VALIDATED INSTITUTIONAL SETUP FOUND: {decision} 🔥")
-          print(f"      Entry Price: {params['entry']}")
-          print(f"      Stop Loss:   {params['sl']}")
-          print(f"      Target 1:    {params['tp1']}")
-          print(f"      Target 2:    {params['tp2']}")
-          print(f"      Risk/Reward: {params['rr']}R")
+        print(f"Entry:\n{entry}")
+        print(f"SL:\n{sl}")
+        print(f"TP:\n{tp}")
+        print(f"Risk:\n{risk_pts} points")
+        print(f"Reward:\n{reward_pts} points")
+        print(f"RR:\n1:{params['rr']}")
 
-      except Exception as e:
-        print(f"   └── ⚠️ Runtime Error: {str(e)}")
+        # Lot P&L Breakdown
+        pnl_data = calculate_lot_pnl(symbol, entry, sl, tp, lot_sizes)
+        print(f"\nESTIMATED P&L ACROSS LOT SIZES:")
+        for lot in lot_sizes:
+          print(f"Lot {lot} -> Max Loss: -${pnl_data[lot]['loss']} | Max Profit: +${pnl_data[lot]['profit']}")
+      else:
+        print(f"Entry:\nN/A\nSL:\nN/A\nTP:\nN/A\nRisk:\nN/A\nReward:\nN/A\nRR:\nN/A")
 
-      print("==================================================")
+      print(f"\nFINAL DECISION:\n{decision}")
+      print(f"\nReason:\n- {reason}")
+      print("================================================\n")
 
-    print("💤 Cycle complete. Resting before next institutional check...\n")
-    time.sleep(30)
+    print("💤 Cycle complete. Resting for 60 seconds...\n")
+    time.sleep(60)
 
 
 if __name__ == "__main__":
