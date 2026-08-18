@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 from twelvedata import TDClient
-from googlesmc import SMCTradingEngine
+from smc_engine import SMCTradingEngine
 
 # ==========================================
 # CONFIGURATION & ACCOUNT SETTINGS
