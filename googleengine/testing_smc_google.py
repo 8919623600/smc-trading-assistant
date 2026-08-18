@@ -1,473 +1,379 @@
-import os
-import sys
-import time
-import math
-from datetime import datetime, time as dtime
+from datetime import datetime, time
 from zoneinfo import ZoneInfo
+import os
+import time as t_time
+import numpy as np
 import pandas as pd
 import requests
-from twelvedata import TDClient
-from googlesmc import SMCTradingEngine
 
-# ==========================================
-# CONFIGURATION & ACCOUNT SETTINGS
-# ==========================================
-NEWS_PAUSE = False                      # Set to True to halt scanning during high-impact news
-
-# Risk Parameters for Lot Sizing & Safety
-MAX_DOLLAR_RISK = 10.0                  # Maximum allowed loss in USD per trade
-MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
-MAX_DAILY_LOSSES = 2                    # Circuit breaker limit: stop trading after X losses in a day
-
-# Multi-Asset Configuration (EUR/USD and XAU/USD)
-ASSET_CONFIG = {
-    "XAU/USD": {"contract_size": 100, "quote_usd": True, "name": "Gold"},
-    "EUR/USD": {"contract_size": 100000, "quote_usd": True, "name": "Euro / US Dollar"}
-}
-
-TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-if not TWELVE_DATA_API_KEY:
-    print("❌ Error: TWELVE_DATA_API_KEY environment variable is not set.")
-    sys.exit(1)
-
-TICKERS = ["XAU/USD", "EUR/USD"]
-SCAN_INTERVAL_SECONDS = 180  # 3 minutes cycle rotation
-API_THROTTLE_SECONDS = 15    # Pause between tickers to respect Twelve Data limits
-IDLE_SLEEP_SECONDS = 300     # 5 minutes
+# Global IST Timezone Definition
 IST = ZoneInfo("Asia/Kolkata")
-TRADE_HISTORY_FILE = "trade_history.csv"
-MISTAKE_JOURNAL_FILE = "mistake_journal.csv"
-LOG_FILE = "scanner.log"
-
-td = TDClient(apikey=TWELVE_DATA_API_KEY)
 
 
-def manage_log_size():
-    """Prevents scanner.log from bloating server memory/disk (Max 5MB limit)."""
-    if os.path.exists(LOG_FILE):
-        if os.path.getsize(LOG_FILE) > 5 * 1024 * 1024:
-            with open(LOG_FILE, "w") as f:
-                f.write(f"[{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')}] Log rotated due to size limit.\n")
+def get_current_ist_time():
+    """Utility helper to return current formatted IST time string."""
+    return datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
 
 
-def send_telegram_alert(message: str):
-    """Sends formatted alert message to Telegram."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=payload, timeout=5)
-    except Exception as e:
-        print(f"⚠️ Telegram alert failed: {e}")
-
-
-def is_active_session(now_dt: datetime) -> bool:
-    """Checks if current time is within London/NY active window (1:30 PM to 3:30 AM IST)."""
-    current_time = now_dt.time()
-    return current_time >= dtime(13, 30) or current_time < dtime(3, 30)
-
-
-def initialize_trade_history():
-    """Initializes trade history CSV and prints historical stats on boot."""
-    if not os.path.exists(TRADE_HISTORY_FILE):
-        pd.DataFrame(columns=[
-            "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time", "be_active"
-        ]).to_csv(TRADE_HISTORY_FILE, index=False)
-    else:
-        df = pd.read_csv(TRADE_HISTORY_FILE)
-        closed_trades = df[df["status"] != "PENDING"]
-        if not closed_trades.empty:
-            wins = len(closed_trades[closed_trades["status"] == "WIN"])
-            losses = len(closed_trades[closed_trades["status"] == "LOSS"])
-            total = len(closed_trades)
-            win_rate = (wins / total) * 100 if total > 0 else 0
-            print(f"📈 [PERFORMANCE REVIEW] Total Closed: {total} | Wins: {wins} | Losses: {losses} | Win Rate: {win_rate:.1f}%")
-
-
-def check_daily_circuit_breaker() -> bool:
-    """Returns True if MAX_DAILY_LOSSES has been reached today, halting new trades."""
-    if not os.path.exists(TRADE_HISTORY_FILE):
-        return False
-    today_str = datetime.now(IST).strftime("%Y-%m-%d")
-    df = pd.read_csv(TRADE_HISTORY_FILE)
-    if "exit_time" not in df.columns or "status" not in df.columns:
-        return False
+def is_within_trading_hours(symbol: str) -> bool:
+    """
+    Validates if the current IST time falls within the allowed trading sessions:
+    - EUR/USD: 1:30 PM to 12:00 AM IST
+    - Gold (XAU/USD): 1:30 PM to 5:00 PM AND 7:30 PM to 12:00 AM IST
+    """
+    now = datetime.now(IST)
+    current_time = now.time()
     
-    losses_today = df[(df["status"] == "LOSS") & (df["exit_time"].str.startswith(today_str, na=False))]
-    if len(losses_today) >= MAX_DAILY_LOSSES:
-        print(f"🔴 [CIRCUIT BREAKER] {len(losses_today)} losses recorded today. Halting new trade executions.")
-        return True
+    sym = symbol.upper().replace("/", "").replace("_", "")
+    
+    # EUR/USD: 1:30 PM (13:30) to 12:00 AM (00:00)
+    if "EURUSD" in sym:
+        start_time = time(13, 30)
+        end_time = time(0, 0)
+        if current_time >= start_time or current_time < end_time:
+            return True
+            
+    # Gold (XAU/USD): 1:30 PM - 5:00 PM AND 7:30 PM - 12:00 AM
+    elif "XAU" in sym or "GOLD" in sym:
+        s1_start = time(13, 30)
+        s1_end = time(17, 0)
+        
+        s2_start = time(19, 30)
+        s2_end = time(0, 0)
+        
+        if s1_start <= current_time <= s1_end:
+            return True
+        if current_time >= s2_start or current_time < s2_end:
+            return True
+            
     return False
 
 
-def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2, lots):
-    """Logs a newly triggered trade into trade_history.csv."""
-    initialize_trade_history()
-    df = pd.read_csv(TRADE_HISTORY_FILE)
-    new_row = {
-        "trade_id": trade_id, "timestamp": timestamp, "symbol": symbol, "decision": decision,
-        "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "lots": lots, "status": "PENDING", "exit_time": "N/A", "be_active": 0
-    }
-    pd.concat([df, pd.DataFrame([new_row])], ignore_index=True).to_csv(TRADE_HISTORY_FILE, index=False)
-
-
-def log_trade_mistake(trade_id, symbol, decision, entry, sl, exit_price, atr_val, now_str):
-    """Logs detailed autopsy data for a losing trade into mistake_journal.csv for future analysis."""
-    file_exists = os.path.exists(MISTAKE_JOURNAL_FILE)
-    points_lost = abs(exit_price - entry)
+def send_telegram_alert(message: str):
+    """Sends notification alerts directly to Telegram."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
-    row_data = {
-        "trade_id": trade_id,
-        "timestamp": now_str,
-        "symbol": symbol,
-        "decision": decision,
-        "entry_price": entry,
-        "stop_loss": sl,
-        "exit_price": exit_price,
-        "atr_at_entry": atr_val,
-        "points_lost": round(points_lost, 5)
-    }
-    
-    df_new = pd.DataFrame([row_data])
-    if not file_exists:
-        df_new.to_csv(MISTAKE_JOURNAL_FILE, index=False)
-    else:
-        df_new.to_csv(MISTAKE_JOURNAL_FILE, mode='a', header=False, index=False)
-    print(f"📝 [MISTAKE JOURNAL] Logged autopsy for failed trade ID: {trade_id} ({symbol})")
-
-
-def evaluate_pending_trades(current_high: float, current_low: float, atr_val: float, now_str: str):
-    """Monitors pending trades, manages Breakeven activation, checks SL/TP hits, and logs losses."""
-    if not os.path.exists(TRADE_HISTORY_FILE):
+    if not token or not chat_id:
+        print("Telegram credentials not found in environment variables.")
         return
-    df = pd.read_csv(TRADE_HISTORY_FILE)
-    updated = False
 
-    for idx, row in df.iterrows():
-        if row["status"] == "PENDING":
-            decision = row["decision"]
-            entry = float(row["entry"])
-            sl = float(row["sl"])
-            tp1 = float(row["tp1"])
-            tp2 = float(row["tp2"])
-            trade_id = row["trade_id"]
-            symbol = row["symbol"]
-            be_active = int(row.get("be_active", 0))
-
-            if decision == "BUY":
-                if current_high >= tp1 and be_active == 0:
-                    df.at[idx, "sl"] = entry
-                    df.at[idx, "be_active"] = 1
-                    updated = True
-                    send_telegram_alert(f"🛡️ *Breakeven Activated* for Trade **{symbol}** BUY (`{trade_id}`).\nStop Loss moved to entry price: `{entry}`")
-
-                if current_low <= float(df.at[idx, "sl"]):
-                    df.at[idx, "status"] = "LOSS"
-                    df.at[idx, "exit_time"] = now_str
-                    updated = True
-                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl'])}`")
-                    log_trade_mistake(trade_id, symbol, decision, entry, sl, current_low, atr_val, now_str)
-
-                elif current_high >= tp2:
-                    df.at[idx, "status"] = "WIN"
-                    df.at[idx, "exit_time"] = now_str
-                    updated = True
-                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting TP2 at `{tp2}`")
-
-            elif decision == "SELL":
-                if current_low <= tp1 and be_active == 0:
-                    df.at[idx, "sl"] = entry
-                    df.at[idx, "be_active"] = 1
-                    updated = True
-                    send_telegram_alert(f"🛡️ *Breakeven Activated* for Trade **{symbol}** SELL (`{trade_id}`).\nStop Loss moved to entry price: `{entry}`")
-
-                if current_high >= float(df.at[idx, "sl"]):
-                    df.at[idx, "status"] = "LOSS"
-                    df.at[idx, "exit_time"] = now_str
-                    updated = True
-                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl'])}`")
-                    log_trade_mistake(trade_id, symbol, decision, entry, sl, current_high, atr_val, now_str)
-
-                elif current_low <= tp2:
-                    df.at[idx, "status"] = "WIN"
-                    df.at[idx, "exit_time"] = now_str
-                    updated = True
-                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting TP2 at `{tp2}`")
-
-    if updated:
-        df.to_csv(TRADE_HISTORY_FILE, index=False)
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        if not response.json().get("ok"):
+            print(f"Failed to send Telegram alert: {response.text}")
+    except Exception as e:
+        print(f"Error sending Telegram alert: {e}")
 
 
-def find_macro_4h_range(df: pd.DataFrame, lookback: int = 50):
-    """Identifies the true macro 4H Dealing Range for equilibrium context."""
-    macro_df = df.tail(lookback)
-    macro_sh = macro_df["high"].max()
-    macro_sl = macro_df["low"].min()
-    return macro_sh, macro_sl
+class SMCTradingEngine:
 
+    def __init__(
+        self,
+        min_rr=1.5,
+        max_rr=8.0,
+        atr_multiplier=0.3,
+        news_buffer_mins=15,
+    ):
+        self.min_rr = min_rr
+        self.max_rr = max_rr
+        self.atr_multiplier = atr_multiplier
+        self.news_buffer_mins = news_buffer_mins
 
-def find_smc_swings(df: pd.DataFrame, window: int = 2):
-    """Identifies verified Fractal Swing Highs and Swing Lows for liquidity sweeps."""
-    swing_highs = [
-        df["high"].iloc[i] for i in range(window, len(df) - window)
-        if all(df["high"].iloc[i] > df["high"].iloc[i - j] for j in range(1, window + 1)) and
-           all(df["high"].iloc[i] >= df["high"].iloc[i + j] for j in range(1, window + 1))
-    ]
-    swing_lows = [
-        df["low"].iloc[i] for i in range(window, len(df) - window)
-        if all(df["low"].iloc[i] < df["low"].iloc[i - j] for j in range(1, window + 1)) and
-           all(df["low"].iloc[i] <= df["low"].iloc[i + j] for j in range(1, window + 1))
-    ]
-    active_sh = swing_highs[-1] if swing_highs else df["high"].max()
-    active_sl = swing_lows[-1] if swing_lows else df["low"].min()
-    return active_sh, active_sl
+    # ==========================================
+    # HELPER FUNCTIONS & INDICATORS
+    # ==========================================
+    @staticmethod
+    def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Calculates Average True Range (ATR) for dynamic stop-loss buffer."""
+        high_low = df["high"] - df["low"]
+        high_close = (df["high"] - df["close"].shift()).abs()
+        low_close = (df["low"] - df["close"].shift()).abs()
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = ranges.max(axis=1)
+        return true_range.rolling(period).mean()
 
+    @staticmethod
+    def find_pivots(df: pd.DataFrame, length: int = 2):
+        """Identifies Swing Highs and Swing Lows."""
+        df = df.copy()
+        df["pivot_high"] = np.nan
+        df["pivot_low"] = np.nan
 
-def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
-    """Calculates Average True Range for dynamic structural noise buffer."""
-    high_low = df['high'] - df['low']
-    high_close = (df['high'] - df['close'].shift()).abs()
-    low_close = (df['low'] - df['close'].shift()).abs()
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)
-    return float(true_range.rolling(period).mean().iloc[-1])
+        for i in range(length, len(df) - length):
+            window = df.iloc[i - length : i + length + 1]
+            if df["high"].iloc[i] == window["high"].max():
+                df.iloc[i, df.columns.get_loc("pivot_high")] = df["high"].iloc[i]
+            if df["low"].iloc[i] == window["low"].min():
+                df.iloc[i, df.columns.get_loc("pivot_low")] = df["low"].iloc[i]
 
+        return df
 
-def fetch_realtime_data(symbol: str) -> dict:
-    """Fetches real-time multi-timeframe data via Twelve Data in UTC and converts to IST."""
-    ts_15m = td.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC").as_pandas()
-    ts_1m = td.time_series(symbol=symbol, interval="1min", outputsize=100, timezone="UTC").as_pandas()
+    # ==========================================
+    # TIMEFRAME ANALYSIS STEPS
+    # ==========================================
+    def get_4h_bias(self, df_4h: pd.DataFrame) -> str:
+        """Step 1: 4H Market Bias & Dealing Range (Premium/Discount)."""
+        df = self.find_pivots(df_4h, length=5)
+        recent_high = (
+            df["pivot_high"].dropna().iloc[-1]
+            if not df["pivot_high"].dropna().empty
+            else df["high"].max()
+        )
+        recent_low = (
+            df["pivot_low"].dropna().iloc[-1]
+            if not df["pivot_low"].dropna().empty
+            else df["low"].min()
+        )
 
-    if ts_15m is None or ts_1m is None or ts_15m.empty or ts_1m.empty:
-        raise ValueError(f"No data returned from Twelve Data for '{symbol}'")
+        equilibrium = (recent_high + recent_low) / 2
+        current_close = df["close"].iloc[-1]
 
-    for df in [ts_15m, ts_1m]:
-        df.index = pd.to_datetime(df.index)
-        df.sort_index(inplace=True)
-        for col in ["open", "high", "low", "close"]:
-            df[col] = df[col].astype(float)
+        if current_close > equilibrium:
+            return "BEARISH"  # In Premium: Look for Shorts
+        elif current_close < equilibrium:
+            return "BULLISH"  # In Discount: Look for Longs
+        return "NEUTRAL"
 
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC").tz_convert(IST)
-        else:
-            df.index = df.index.tz_convert(IST)
+    def check_1h_liquidity_sweep(self, df_1h: pd.DataFrame, bias: str) -> dict:
+        """Step 2: Detect 1H Liquidity Sweeps and extract liquidity pools."""
+        df = self.find_pivots(df_1h, length=2)
+        swing_highs = df["pivot_high"].dropna()
+        swing_lows = df["pivot_low"].dropna()
 
-    df_1h = ts_15m.resample("1h").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
-    df_4h = ts_15m.resample("4h").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+        last_low = swing_lows.iloc[-1] if not swing_lows.empty else df["low"].min()
+        last_high = swing_highs.iloc[-1] if not swing_highs.empty else df["high"].max()
 
-    return {"4H": df_4h, "1H": df_1h, "15M": ts_15m, "1M": ts_1m}
+        current_bar = df.iloc[-1]
 
+        swept = False
+        sweep_type = "NONE"
+        sweep_level = None
 
-def run_scanner():
-    engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=1.0)
-    initialize_trade_history()
+        if bias == "BULLISH" and last_low:
+            if current_bar["low"] < last_low and current_bar["close"] > last_low:
+                swept = True
+                sweep_type = "BULLISH"
+                sweep_level = current_bar["low"]
 
-    print("==================================================")
-    print("  TIGHTER 15M EXECUTION SMC SCANNER (EUR/USD & XAU/USD)")
-    print("==================================================")
+        elif bias == "BEARISH" and last_high:
+            if current_bar["high"] > last_high and current_bar["close"] < last_high:
+                swept = True
+                sweep_type = "BEARISH"
+                sweep_level = current_bar["high"]
 
-    while True:
-        manage_log_size()
-        now_ist = datetime.now(IST)
+        return {
+            "swept": swept,
+            "type": sweep_type,
+            "sweep_level": sweep_level,
+            "h1_sh": last_high,
+            "h1_sl": last_low
+        }
 
-        if NEWS_PAUSE:
-            print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] 🛑 NEWS PAUSE ACTIVE. Idling...")
-            time.sleep(IDLE_SLEEP_SECONDS)
-            continue
+    def detect_15m_poi(self, df_15m: pd.DataFrame, sweep_info: dict) -> dict:
+        """Step 3: 15M Structure Shift & POI (OB + FVG)."""
+        if not sweep_info["swept"]:
+            return {"valid_poi": False}
 
-        if not is_active_session(now_ist):
-            print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] 😴 Session Closed. Idling...")
-            time.sleep(IDLE_SLEEP_SECONDS)
-            continue
+        df = self.find_pivots(df_15m, length=2)
+        swing_highs = df["pivot_high"].dropna()
+        swing_lows = df["pivot_low"].dropna()
 
-        if check_daily_circuit_breaker():
-            time.sleep(IDLE_SLEEP_SECONDS)
-            continue
+        m15_sh = swing_highs.iloc[-1] if not swing_highs.empty else df["high"].max()
+        m15_sl = swing_lows.iloc[-1] if not swing_lows.empty else df["low"].min()
 
-        now_str = now_ist.strftime("%Y-%m-%d %I:%M:%S %p IST")
+        fvg_found = False
+        fvg_top, fvg_bottom = None, None
 
-        for idx, symbol in enumerate(TICKERS):
-            try:
-                cfg = ASSET_CONFIG.get(symbol, {"contract_size": 100000, "quote_usd": True, "name": symbol})
-                contract_size = cfg["contract_size"]
-                quote_usd = cfg["quote_usd"]
-                asset_name = cfg["name"]
+        start_idx = len(df) - 3
+        end_idx = max(2, len(df) - 10)
 
-                print("\n==================================================")
-                print(f"🎯 PROCESSING TRADE ASSET: {symbol} ({asset_name})")
-                print("==================================================")
+        for i in range(start_idx, end_idx, -1):
+            if sweep_info["type"] == "BULLISH":
+                if df["low"].iloc[i] > df["high"].iloc[i - 2]:  # Bullish FVG
+                    fvg_found = True
+                    fvg_top = df["low"].iloc[i]
+                    fvg_bottom = df["high"].iloc[i - 2]
+                    break
+            elif sweep_info["type"] == "BEARISH":
+                if df["high"].iloc[i] < df["low"].iloc[i - 2]:  # Bearish FVG
+                    fvg_found = True
+                    fvg_top = df["low"].iloc[i - 2]
+                    fvg_bottom = df["high"].iloc[i]
+                    break
 
-                data = fetch_realtime_data(symbol)
-                latest_price = data["1M"]["close"].iloc[-1]
-                
-                # Use 15M timeframe volatility & internal swings for tighter structural placement
-                atr_val = calculate_atr(data["15M"], period=14)
+        retested = False
+        if fvg_found:
+            if sweep_info["type"] == "BULLISH" and df["low"].iloc[-1] <= fvg_top:
+                retested = True
+            elif sweep_info["type"] == "BEARISH" and df["high"].iloc[-1] >= fvg_bottom:
+                retested = True
 
-                evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str)
+        return {
+            "valid_poi": fvg_found and retested,
+            "fvg_top": fvg_top,
+            "fvg_bottom": fvg_bottom,
+            "m15_sh": m15_sh,
+            "m15_sl": m15_sl
+        }
 
-                h4_sh, h4_sl = find_macro_4h_range(data["4H"], lookback=50)
-                eq_4h = (h4_sh + h4_sl) / 2
-                
-                # Tighter 15M Internal Structure Swings for entry & tight SL
-                m15_sh, m15_sl = find_smc_swings(data["15M"], window=2)
-                h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
+    def evaluate_1m_entry(
+        self, df_1m: pd.DataFrame, sweep_info: dict, poi_info: dict
+    ) -> dict:
+        """Step 4: 1M Entry, Tight SL with ATR buffer, TP1 (1.5R), and TP2 (1H Liquidity Pool)."""
+        if not poi_info["valid_poi"]:
+            return {"action": "NO_TRADE", "reason": "No valid 15M POI retest"}
 
-                result = engine.analyze(data)
-                decision = result.get("decision", "NO_TRADE")
-                reason = result.get("reason", "Setup validated")
-                bias = result.get("bias_4h", "N/A")
+        df = df_1m.copy()
+        df["atr"] = self.calculate_atr(df, 14)
+        current_bar = df.iloc[-1]
+        atr_val = current_bar["atr"] if not pd.isna(current_bar["atr"]) else 0.0001
 
-                print(f"📊 LIVE SCANNER REPORT FOR TRADE: {symbol} ({asset_name})")
-                print(f"⏰ Scan Time (IST):  {now_str}")
-                print(f"💲 Live Price:       {latest_price}")
-                print(f"🚦 Engine Decision:  {decision} ({reason})")
-                print("==================================================")
-                print("1️⃣  4H MACRO BIAS & 15M STRUCTURAL CONTEXT")
-                print(f"   • Active Trade:   {symbol} ({asset_name})")
-                print(f"   • 4H Equilibrium: {eq_4h}")
-                print(f"   • Overall Bias:   {bias}")
-                print(f"   • 15M ATR (Noise):{atr_val}")
-                print("--------------------------------------------------")
-                print(f"2️⃣  TIGHTER 15M PREDICTIVE EXECUTION MAP [{symbol}]")
+        entry_price = current_bar["close"]
+        h1_sh = sweep_info["h1_sh"]
+        h1_sl = sweep_info["h1_sl"]
+        m15_sh = poi_info["m15_sh"]
+        m15_sl = poi_info["m15_sl"]
 
-                if latest_price > eq_4h:
-                    # SHORT SETUP
-                    planned_entry = h1_bsl
-                    # Use immediate 15M local swing high structural ceiling + tighter 0.3*ATR buffer
-                    structural_ceiling = max(m15_sh, h1_bsl)
-                    planned_sl = structural_ceiling + (atr_val * 0.3)
-                    planned_tp1 = eq_4h
-                    planned_tp2 = h4_sl
-                    risk_points = planned_sl - planned_entry
-                    reward_tp1 = planned_entry - planned_tp1
-                    reward_tp2 = planned_entry - planned_tp2
-                    rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
+        if sweep_info["type"] == "BULLISH":
+            structural_floor = min(m15_sl, h1_sl)
+            stop_loss = structural_floor - (atr_val * self.atr_multiplier)
+            risk = entry_price - stop_loss
+            
+            if risk <= 0:
+                return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-                    print(f"   • Active Trade:    {symbol} ({asset_name})")
-                    print("   • Direction:       SHORT (Bearish Reversal from Premium)")
-                    print(f"   • Target Entry:    {planned_entry} (1H BSL Sweep)")
-                    print(f"   • Logical SL:      {planned_sl} (15M Local Ceiling + 0.3*ATR - Tighter)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1}")
-                    print(f"   • Target 2 (4H SL):{planned_tp2} -> R:R {rr_tp2:.2f}R")
-                else:
-                    # LONG SETUP
-                    planned_entry = h1_ssl
-                    # Use immediate 15M local swing low structural floor - tighter 0.3*ATR buffer
-                    structural_floor = min(m15_sl, h1_ssl)
-                    planned_sl = structural_floor - (atr_val * 0.3)
-                    planned_tp1 = eq_4h
-                    planned_tp2 = h4_sh
-                    risk_points = planned_entry - planned_sl
-                    reward_tp1 = planned_tp1 - planned_entry
-                    reward_tp2 = planned_tp2 - planned_entry
-                    rr_tp2 = reward_tp2 / risk_points if risk_points > 0 else 0
+            tp1 = entry_price + (risk * 1.5)  # Breakeven target
+            tp2 = h1_sh                       # 1H Structural Liquidity Target
+            if tp2 <= entry_price:
+                tp2 = entry_price + (risk * 2.0)
 
-                    print(f"   • Active Trade:    {symbol} ({asset_name})")
-                    print("   • Direction:       LONG (Bullish Reversal from Discount)")
-                    print(f"   • Target Entry:    {planned_entry} (1H SSL Sweep)")
-                    print(f"   • Logical SL:      {planned_sl} (15M Local Floor - 0.3*ATR - Tighter)")
-                    print(f"   • Target 1 (EQ):   {planned_tp1}")
-                    print(f"   • Target 2 (4H SH):{planned_tp2} -> R:R {rr_tp2:.2f}R")
+            reward_tp2 = tp2 - entry_price
+            rr_tp2 = reward_tp2 / risk
 
-                # MULTI-LOT SCENARIO SIMULATOR TABLE (CONSOLE)
-                print("--------------------------------------------------")
-                print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
-                print("==================================================")
-                print("   Lot Size   |   SL Loss    |   TP1 Profit (EQ) |   TP2 Profit")
-                print("--------------------------------------------------")
-                for lot in [0.01, 0.02, 0.03, 0.05, 0.10, 0.50]:
-                    if quote_usd:
-                        sl_loss = lot * risk_points * contract_size
-                        tp1_prof = lot * reward_tp1 * contract_size
-                        tp2_prof = lot * reward_tp2 * contract_size
-                    else:
-                        sl_loss = lot * contract_size * (risk_points / latest_price)
-                        tp1_prof = lot * contract_size * (reward_tp1 / latest_price)
-                        tp2_prof = lot * contract_size * (reward_tp2 / latest_price)
-                    print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}      |   +${tp2_prof:.2f}")
-                print("==================================================")
+            if self.min_rr <= rr_tp2 <= self.max_rr:
+                return {
+                    "action": "BUY",
+                    "entry": round(entry_price, 5),
+                    "sl": round(stop_loss, 5),
+                    "tp1": round(tp1, 5),
+                    "tp2": round(tp2, 5),
+                    "rr": round(rr_tp2, 2),
+                }
 
-                if quote_usd:
-                    risk_per_lot_min = risk_points * contract_size * 0.01
-                else:
-                    risk_per_lot_min = contract_size * (risk_points / latest_price) * 0.01
+        elif sweep_info["type"] == "BEARISH":
+            structural_ceiling = max(m15_sh, h1_sh)
+            stop_loss = structural_ceiling + (atr_val * self.atr_multiplier)
+            risk = stop_loss - entry_price
+            
+            if risk <= 0:
+                return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-                # Strict Dollar Risk Guardrail Check for 0.01 lots floor
-                if risk_per_lot_min > MAX_DOLLAR_RISK:
-                    print(f"   ❌ REJECTED [{symbol}]: Minimum 0.01 lot risk (${risk_per_lot_min:.2f}) exceeds MAX_DOLLAR_RISK (${MAX_DOLLAR_RISK:.2f}).")
-                    decision = "WAIT"
-                elif rr_tp2 < MIN_REQUIRED_RR:
-                    print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R.")
-                    decision = "WAIT"
-                else:
-                    print(f"   ✔ APPROVED [{symbol}]: Tight stop-loss setup verified within risk parameters.")
+            tp1 = entry_price - (risk * 1.5)  # Breakeven target
+            tp2 = h1_sl                       # 1H Structural Liquidity Target
+            if tp2 >= entry_price:
+                tp2 = entry_price - (risk * 2.0)
 
-                    if quote_usd:
-                        risk_per_lot = risk_points * contract_size
-                    else:
-                        risk_per_lot = contract_size * (risk_points / latest_price)
+            reward_tp2 = entry_price - tp2
+            rr_tp2 = reward_tp2 / risk
 
-                    exact_lots = MAX_DOLLAR_RISK / risk_per_lot if risk_per_lot > 0 else 0.01
-                    recommended_lots = math.floor(exact_lots * 100) / 100
-                    recommended_lots = max(0.01, recommended_lots)
-                    actual_dollar_risk = recommended_lots * risk_per_lot
-                    print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
+            if self.min_rr <= rr_tp2 <= self.max_rr:
+                return {
+                    "action": "SELL",
+                    "entry": round(entry_price, 5),
+                    "sl": round(stop_loss, 5),
+                    "tp1": round(tp1, 5),
+                    "tp2": round(tp2, 5),
+                    "rr": round(rr_tp2, 2),
+                }
 
-                print("==================================================")
+        return {
+            "action": "WAIT",
+            "reason": "Setup conditions met but 1H Liquidity R:R out of bounds",
+        }
 
-                if decision in ["BUY", "SELL"]:
-                    has_active_trade = False
-                    if os.path.exists(TRADE_HISTORY_FILE):
-                        df_check = pd.read_csv(TRADE_HISTORY_FILE)
-                        if not df_check.empty and "status" in df_check.columns:
-                            has_active_trade = not df_check[(df_check["status"] == "PENDING") & (df_check["symbol"] == symbol)].empty
+    # ==========================================
+    # MAIN ANALYZER RUNNER
+    # ==========================================
+    def analyze(self, symbol: str, data_dict: dict, news_events: list = None) -> dict:
+        """Executes session time validation and full SMC top-down cascade."""
+        
+        # Enforce Session Time Check
+        if not is_within_trading_hours(symbol):
+            return {
+                "decision": "OUT_OF_SESSION",
+                "reason": f"Current IST time is outside active trading session for {symbol}"
+            }
 
-                    if not has_active_trade:
-                        trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
-                        log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
+        df_1m = data_dict["1M"]
+        current_time = (
+            df_1m.index[-1]
+            if "time" not in df_1m.columns
+            else df_1m.iloc[-1]["time"]
+        )
 
-                        telegram_table_lines = []
-                        for lot in [0.01, 0.02, 0.03, 0.05, 0.10, 0.50]:
-                            if quote_usd:
-                                s_loss = lot * risk_points * contract_size
-                                t1_prof = lot * reward_tp1 * contract_size
-                                t2_prof = lot * reward_tp2 * contract_size
-                            else:
-                                s_loss = lot * contract_size * (risk_points / latest_price)
-                                t1_prof = lot * contract_size * (reward_tp1 / latest_price)
-                                t2_prof = lot * contract_size * (reward_tp2 / latest_price)
-                            telegram_table_lines.append(f"`{lot:.2f}L | -${s_loss:.2f} | +${t1_prof:.2f} | +${t2_prof:.2f}`")
-                        table_string = "\n".join(telegram_table_lines)
+        # News Blackout Check
+        if news_events:
+            for event_time in news_events:
+                if (
+                    abs((current_time - event_time).total_seconds())
+                    <= (self.news_buffer_mins * 60)
+                ):
+                    return {
+                        "decision": "NO_TRADE",
+                        "reason": f"News Blackout Active near {event_time}",
+                    }
 
-                        msg = (
-                            f"🚨 *TIGHT 15M SMC TRADE SIGNAL: {symbol} ({asset_name})* (`{trade_id}`)\n\n"
-                            f"• *Decision:* `{decision}`\n"
-                            f"• *Live Price:* `{latest_price}`\n"
-                            f"• *Entry:* `{planned_entry}`\n"
-                            f"• *Tight SL:* `{planned_sl}`\n"
-                            f"• *TP1 (EQ):* `{planned_tp1}`\n"
-                            f"• *TP2 (4H):* `{planned_tp2}`\n"
-                            f"• *Lots:* `{recommended_lots}` (Risk: `${actual_dollar_risk:.2f}`)\n"
-                            f"• *R:R:* `{rr_tp2:.2f}R`\n\n"
-                            f"💰 *Multi-Lot Table:*\n{table_string}\n\n"
-                            f"• *Time (IST):* `{now_str}`"
-                        )
-                        send_telegram_alert(msg)
-                    else:
-                        print(f"   ⏳ [DUPLICATE BLOCKED] Active PENDING trade for {symbol} already exists.")
+        # Step 1: 4H Market Bias
+        bias = self.get_4h_bias(data_dict["4H"])
+        if bias == "NEUTRAL":
+            return {"decision": "NO_TRADE", "reason": "4H Market Bias Neutral"}
 
-            except Exception as e:
-                print(f"[{symbol}] Error fetching data: {e}")
+        # Step 2: 1H Liquidity Sweep & Levels
+        sweep = self.check_1h_liquidity_sweep(data_dict["1H"], bias)
+        if not sweep["swept"]:
+            return {
+                "decision": "WAIT",
+                "reason": f"No 1H Liquidity Sweep for {bias} bias",
+            }
 
-            if idx < len(TICKERS) - 1:
-                time.sleep(API_THROTTLE_SECONDS)
+        # Step 3: 15M POI & Retest
+        poi = self.detect_15m_poi(data_dict["15M"], sweep)
+        if not poi["valid_poi"]:
+            return {
+                "decision": "WAIT",
+                "reason": "15M POI not confirmed or retested",
+            }
 
-        time.sleep(SCAN_INTERVAL_SECONDS)
+        # Step 4: 1M Precision Entry with 1H Liquidity Targets
+        entry = self.evaluate_1m_entry(df_1m, sweep, poi)
 
+        result = {
+            "symbol": symbol,
+            "decision": entry["action"],
+            "bias_4h": bias,
+            "liquidity_sweep": sweep["type"],
+            "trade_params": entry if entry["action"] in ["BUY", "SELL"] else None,
+            "timestamp": str(current_time),
+        }
 
-if __name__ == "__main__":
-    run_scanner()
+        # Send Telegram alert if a valid signal is generated
+        if result["decision"] in ["BUY", "SELL"]:
+            tp = result["trade_params"]
+            msg = (
+                f"🚨 *SMC TRADE SIGNAL: {symbol}* 🚨\n\n"
+                f"🔹 *Action:* `{result['decision']}`\n"
+                f"📈 *4H Bias:* {result['bias_4h']}\n"
+                f"🎯 *Entry:* `{tp['entry']}`\n"
+                f"🛑 *Stop Loss:* `{tp['sl']}`\n"
+                f"🎯 *TP1 (1.5R):* `{tp['tp1']}`\n"
+                f"🎯 *TP2 (1H Pool):* `{tp['tp2']}`\n"
+                f"⚖️ *R:R (TP2):* `{tp['rr']}R`\n"
+                f"🕒 *Time:* {get_current_ist_time()}"
+            )
+            send_telegram_alert(msg)
+
+        return result
