@@ -7,10 +7,9 @@ import pandas as pd
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-# --- ROBUST PATH SETUP FOR smc_engine ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# Go up three levels to reach the repository root (smc-trading-assistant) where smc_engine.py resides
-root_dir = os.path.abspath(os.path.join(current_dir, "../../.."))
+
+# --- ROBUST ABSOLUTE PATH SETUP ---
+root_dir = "/home/ec2-user/trading"
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
