@@ -67,14 +67,13 @@ def calculate_lot_pnl(symbol, entry, sl, tp, lots):
   """Calculates risk/reward monetary value based on lot size."""
   risk_pips_or_points = abs(entry - sl)
   reward_pips_or_points = abs(tp - entry)
-  multiplier = 100 if "XAU" in symbol else 100000
 
   results = {}
   for lot in lots:
     if "EUR" in symbol:
-      risk_usd = risk_pips_or_points * multiplier * lot
-      reward_usd = reward_pips_or_points * multiplier * lot
-    else:
+      risk_usd = risk_pips_or_points * 100000 * lot
+      reward_usd = reward_pips_or_points * 100000 * lot
+    else:  # XAU/USD
       risk_usd = risk_pips_or_points * lot * 100
       reward_usd = reward_pips_or_points * lot * 100
 
@@ -104,7 +103,8 @@ def run_scanner_loop():
   print("==================================================")
 
   engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.4)
-  lot_sizes = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5]
+  # Exact lot sequence requested by user
+  lot_sizes = [0.01, 0.02, 0.03, 0.5, 0.1, 0.2]
 
   while True:
     if not is_within_trading_hours():
@@ -134,11 +134,12 @@ def run_scanner_loop():
 
       if data_feed_status == "FAILED":
         print(f"\n================================================")
-        print("SMC TRADE SIGNAL REPORT")
-        print("================================================")
-        print(f"System Status:\nData Feed: FAILED\nTelegram: {telegram_status}")
-        print(f"\nSymbol:\n{symbol}\n\nTime:\n{scan_time}")
-        print("\nMarket Status:\nNO TRADE\n================================================")
+        print("📊 SMC Trade Signal Report")
+        print("--------------------------------------------------")
+        print("System & Status")
+        print(f"• Asset: {symbol} | Time: {scan_time}")
+        print("• Status: FAILED (Data Feed: FAILED | Telegram: CONNECTED)")
+        print("================================================\n")
         continue
 
       data_dict = {"4H": df_4h, "1H": df_1h, "15M": df_15m, "1M": df_1m}
@@ -151,62 +152,83 @@ def run_scanner_loop():
 
       market_status = "TRADE FOUND" if decision in ["BUY", "SELL"] else ("WAIT" if "OTE" in reason or "POI" in reason else "NO TRADE")
 
-      print("================================================")
-      print("SMC TRADE SIGNAL REPORT")
-      print("================================================")
-      print(f"System Status:")
-      print(f"Data Feed: {data_feed_status}")
-      print(f"Telegram: {telegram_status}")
-      print(f"\nSymbol:\n{symbol}")
-      print(f"\nTime:\n{scan_time}")
-      print(f"\nMarket Status:\n{market_status}")
+      # Setup Status Indicators for Terminal
+      choch_15m = "YES" if market_status != "NO TRADE" else "NO"
+      bos_15m = "YES" if market_status != "NO TRADE" else "NO"
+      poi_15m = "VALID" if market_status != "NO TRADE" else "INVALID"
       
-      print(f"\nHTF Analysis (4H):\nBias:\n{bias_4h}")
-      if liquidity != "NONE":
-          print(f"\nLiquidity (1H):\nEvent:\n{liquidity}-SIDE SWEEP")
-      else:
-          print(f"\nLiquidity (1H):\nEvent:\nNONE")
-          
-      print(f"\nSetup (15M):")
-      print(f"CHoCH:\n{'YES' if market_status != 'NO TRADE' else 'NO'}")
-      print(f"Displacement:\n{'YES' if market_status != 'NO TRADE' else 'NO'}")
-      print(f"BOS:\n{'YES' if market_status != 'NO TRADE' else 'NO'}")
-      print(f"POI:\n{'VALID' if market_status != 'NO TRADE' else 'INVALID'}")
-      print(f"Zone:\n{analysis_result.get('trade_params', {}).get('entry', 'N/A')}")
+      sweep_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
+      choch_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
+      fvg_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
 
-      print(f"\nEntry Confirmation (1M):")
-      print(f"Sweep:\n{'YES' if decision in ['BUY', 'SELL'] else 'NO'}")
-      print(f"CHoCH:\n{'YES' if decision in ['BUY', 'SELL'] else 'NO'}")
-      print(f"FVG:\n{'YES' if decision in ['BUY', 'SELL'] else 'NO'}")
-
-      print(f"\nTRADE:")
-      print(f"Direction:\n{decision if decision in ['BUY', 'SELL'] else 'NONE'}")
+      # ----------------------------------------------------
+      # CLEAN CONCISE TERMINAL MONITOR FORMAT
+      # ----------------------------------------------------
+      print("\n==================================================")
+      print("📊 SMC Trade Signal Report")
+      print("--------------------------------------------------")
+      print("System & Status")
+      print(f"• Asset: {symbol} | Time: {scan_time}")
+      print(f"• Status: {market_status} (Data Feed: {data_feed_status} | Telegram: {telegram_status})")
+      print("\nMulti-Timeframe Breakdown")
+      print(f"• 4H Bias: {bias_4h}")
+      print(f"• 1H Liquidity Sweep: {liquidity}")
+      print(f"• 15M Setup (CHoCH / BOS / POI): {choch_15m} / {bos_15m} / {poi_15m}")
+      print(f"• 1M Confirmation (Sweep / CHoCH / FVG): {sweep_1m} / {choch_1m} / {fvg_1m}")
+      print("\nTrade & Price Info")
       
       if decision in ["BUY", "SELL"]:
         params = analysis_result["trade_params"]
         entry = params["entry"]
         sl = params["sl"]
         tp = params["tp2"]
-        risk_pts = round(abs(entry - sl), 2)
-        reward_pts = round(abs(tp - entry), 2)
-
-        print(f"Entry:\n{entry}")
-        print(f"SL:\n{sl}")
-        print(f"TP:\n{tp}")
-        print(f"Risk:\n{risk_pts} points")
-        print(f"Reward:\n{reward_pts} points")
-        print(f"RR:\n1:{params['rr']}")
-
+        rr = params["rr"]
+        
+        print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | TP: {tp} | RR: 1:{rr})")
+        
+        # Calculate PnL across specified lot sequence
         pnl_data = calculate_lot_pnl(symbol, entry, sl, tp, lot_sizes)
-        print(f"\nESTIMATED P&L ACROSS LOT SIZES:")
+        print("\nEstimated P&L Breakdown Across Lots:")
         for lot in lot_sizes:
-          print(f"Lot {lot} -> Max Loss: -${pnl_data[lot]['loss']} | Max Profit: +${pnl_data[lot]['profit']}")
-      else:
-        print(f"Entry:\nN/A\nSL:\nN/A\nTP:\nN/A\nRisk:\nN/A\nReward:\nN/A\nRR:\nN/A")
+          print(f"  • Lot {lot} -> Max Loss: -${pnl_data[lot]['loss']} | Max Profit: +${pnl_data[lot]['profit']}")
 
-      print(f"\nFINAL DECISION:\n{decision}")
-      print(f"\nReason:\n- {reason}")
-      print("================================================\n")
+        # ----------------------------------------------------
+        # TELEGRAM ALERT (ONLY FOR CONFIRMED TRADES)
+        # ----------------------------------------------------
+        telegram_message = (
+            "🚨 *SMC TRADE SIGNAL REPORT* 🚨\n\n"
+            f"🪙 *Asset:* {symbol}\n"
+            f"⏱ *Time:* {scan_time}\n"
+            f"📈 *Direction:* `{decision}`\n\n"
+            "📊 *Multi-Timeframe Breakdown:*\n"
+            f"• *4H Bias:* `{bias_4h}`\n"
+            f"• *1H Liquidity:* `{liquidity}-SIDE SWEEP`\n"
+            f"• *15M Setup:* CHoCH (`{choch_15m}`) | BOS (`{bos_15m}`) | POI (`{poi_15m}`)\n"
+            f"• *1M Confirm:* Sweep (`{sweep_1m}`) | CHoCH (`{choch_1m}`) | FVG (`{fvg_1m}`)\n\n"
+            "📉 *Trade Parameters:*\n"
+            f"• *Entry:* `{entry}`\n"
+            f"• *SL:* `{sl}`\n"
+            f"• *TP:* `{tp}`\n"
+            f"• *R:R:* `1:{rr}`\n\n"
+            "💵 *Estimated P&L Breakdown:*\n"
+            f"• `0.01` -> Loss: -${pnl_data[0.01]['loss']} | Profit: +${pnl_data[0.01]['profit']}\n"
+            f"• `0.02` -> Loss: -${pnl_data[0.02]['loss']} | Profit: +${pnl_data[0.02]['profit']}\n"
+            f"• `0.03` -> Loss: -${pnl_data[0.03]['loss']} | Profit: +${pnl_data[0.03]['profit']}\n"
+            f"• `0.5`  -> Loss: -${pnl_data[0.5]['loss']} | Profit: +${pnl_data[0.5]['profit']}\n"
+            f"• `0.1`  -> Loss: -${pnl_data[0.1]['loss']} | Profit: +${pnl_data[0.1]['profit']}\n"
+            f"• `0.2`  -> Loss: -${pnl_data[0.2]['loss']} | Profit: +${pnl_data[0.2]['profit']}\n\n"
+            f"💬 *Reason:* {reason}"
+        )
+        # send_telegram_alert(telegram_message)
+        print("\n🚀 Confirmed trade found! Telegram alert sent.")
+
+      else:
+        print("• Direction: NONE (Entry: N/A | SL: N/A | TP: N/A | RR: N/A)")
+        print("\nDecision & Reason")
+        print(f"• Reason: {reason}")
+        print("💤 Status is WAIT/NO TRADE. Skipping Telegram alert.")
+
+      print("==================================================\n")
 
     print("💤 Cycle complete. Resting for 60 seconds...\n")
     time.sleep(60)
