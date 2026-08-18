@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define your script name
-SCRIPT_NAME="googlesmc.py"
+SCRIPT_NAME="testing_smc_google.py"
 LOG_FILE="scanner.log"
 
 echo "=================================================="
