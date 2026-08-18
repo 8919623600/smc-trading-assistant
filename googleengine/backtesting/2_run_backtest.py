@@ -28,7 +28,7 @@ def sanitize_df(df):
 
 def run_offline_backtest():
     print("==================================================")
-    print("🚀 STARTING STABLE 2.0 RR SMC BACKTEST")
+    print("🚀 STARTING PURE 2.0 RR SMC BACKTEST (NO BE)")
     print("==================================================")
     
     try:
@@ -71,7 +71,7 @@ def run_offline_backtest():
             if current_time.hour >= 20:
                 pnl_check = (current_bar['close'] - active_trade['entry']) if active_trade['type'] == 'BUY' else (active_trade['entry'] - current_bar['close'])
                 if pnl_check > 0:
-                    account_balance += pnl_check * (50.0 / abs(active_trade['entry'] - active_trade['sl']))
+                    account_balance += pnl_check * (50.0 / abs(active_trade['entry'] - active_trade['initial_sl']))
                     winning_trades += 1
                 else:
                     account_balance -= 50.0
@@ -81,41 +81,29 @@ def run_offline_backtest():
 
             hit_tp = False
             hit_sl = False
-            risk_dist = abs(active_trade['entry'] - active_trade['initial_sl'])
             
             if active_trade['type'] == 'BUY':
-                # Move SL to breakeven once 1.0R is reached
-                if c_high >= (active_trade['entry'] + risk_dist) and active_trade['sl'] < active_trade['entry']:
-                    active_trade['sl'] = active_trade['entry']
-                
                 if c_high >= active_trade['tp']:
                     hit_tp = True
                 if c_low <= active_trade['sl']:
                     hit_sl = True
-                    
             elif active_trade['type'] == 'SELL':
-                if c_low <= (active_trade['entry'] - risk_dist) and active_trade['sl'] > active_trade['entry']:
-                    active_trade['sl'] = active_trade['entry']
-                
                 if c_low <= active_trade['tp']:
                     hit_tp = True
                 if c_high >= active_trade['sl']:
                     hit_sl = True
                     
             if hit_sl and hit_tp:
+                # If both hit in the same bar candle, assume conservative loss
                 account_balance -= 50.0  
                 losing_trades += 1
                 active_trade = None
             elif hit_sl:
-                loss_cost = 0.0 if active_trade['sl'] == active_trade['entry'] else 50.0
-                account_balance -= loss_cost
-                if loss_cost > 0:
-                    losing_trades += 1
-                else:
-                    total_trades -= 1
+                account_balance -= 50.0
+                losing_trades += 1
                 active_trade = None
             elif hit_tp:
-                account_balance += (50.0 * 2.0) # Fixed 2.0 RR reward
+                account_balance += (50.0 * 2.0) # Full 2.0 RR reward
                 winning_trades += 1
                 active_trade = None
                 
@@ -173,7 +161,7 @@ def run_offline_backtest():
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
 
     print("\n" + "="*50)
-    print("💰 STABLE PERFORMANCE REPORT")
+    print("💰 PURE 2.0 RR PERFORMANCE REPORT")
     print("="*50)
     print(f"Starting Balance:  ${starting_balance:,.2f}")
     print(f"Ending Balance:    ${account_balance:,.2f}")
