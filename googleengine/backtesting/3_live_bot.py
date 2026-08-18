@@ -11,10 +11,10 @@ from zoneinfo import ZoneInfo
 import os
 import sys
 
-# --- EXPLICIT ABSOLUTE PATH INJECTION ---
-ENGINE_DIR = "/home/ec2-user/trading/googleengine"
-if ENGINE_DIR not in sys.path:
-    sys.path.insert(0, ENGINE_DIR)
+# --- ROBUST ABSOLUTE PATH SETUP ---
+root_dir = "/home/ec2-user/trading/googleengine"
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 # Global IST Timezone Definition
 IST = ZoneInfo("Asia/Kolkata")
