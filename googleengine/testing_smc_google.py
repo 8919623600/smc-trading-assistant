@@ -19,7 +19,7 @@ MAX_DOLLAR_RISK = 10.0                  # Maximum allowed loss in USD per trade
 MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
 MAX_DAILY_LOSSES = 2                    # Circuit breaker limit: stop trading after X losses in a day
 
-# Multi-Asset Configuration (Reduced to EUR/USD and XAU/USD to conserve API limits)
+# Multi-Asset Configuration (EUR/USD and XAU/USD)
 ASSET_CONFIG = {
     "XAU/USD": {"contract_size": 100, "quote_usd": True, "name": "Gold"},
     "EUR/USD": {"contract_size": 100000, "quote_usd": True, "name": "Euro / US Dollar"}
@@ -203,7 +203,7 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
 
 
 def find_macro_4h_range(df: pd.DataFrame, lookback: int = 50):
-    """Identifies the true macro 4H Dealing Range (Highest High and Lowest Low over a structural lookback)."""
+    """Identifies the true macro 4H Dealing Range for equilibrium context."""
     macro_df = df.tail(lookback)
     macro_sh = macro_df["high"].max()
     macro_sl = macro_df["low"].min()
@@ -211,7 +211,7 @@ def find_macro_4h_range(df: pd.DataFrame, lookback: int = 50):
 
 
 def find_smc_swings(df: pd.DataFrame, window: int = 2):
-    """Identifies verified SMC Fractal Swing Highs and Swing Lows for 1H liquidity."""
+    """Identifies verified Fractal Swing Highs and Swing Lows for liquidity sweeps."""
     swing_highs = [
         df["high"].iloc[i] for i in range(window, len(df) - window)
         if all(df["high"].iloc[i] > df["high"].iloc[i - j] for j in range(1, window + 1)) and
@@ -267,7 +267,7 @@ def run_scanner():
     initialize_trade_history()
 
     print("==================================================")
-    print("  DUAL-ASSET SMC SCANNER (EUR/USD & XAU/USD)     ")
+    print("  TIGHTER 15M EXECUTION SMC SCANNER (EUR/USD & XAU/USD)")
     print("==================================================")
 
     while True:
@@ -303,12 +303,17 @@ def run_scanner():
 
                 data = fetch_realtime_data(symbol)
                 latest_price = data["1M"]["close"].iloc[-1]
-                atr_val = calculate_atr(data["1H"], period=14)
+                
+                # Use 15M timeframe volatility & internal swings for tighter structural placement
+                atr_val = calculate_atr(data["15M"], period=14)
 
                 evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str)
 
                 h4_sh, h4_sl = find_macro_4h_range(data["4H"], lookback=50)
                 eq_4h = (h4_sh + h4_sl) / 2
+                
+                # Tighter 15M Internal Structure Swings for entry & tight SL
+                m15_sh, m15_sl = find_smc_swings(data["15M"], window=2)
                 h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
 
                 result = engine.analyze(data)
@@ -321,21 +326,20 @@ def run_scanner():
                 print(f"💲 Live Price:       {latest_price}")
                 print(f"🚦 Engine Decision:  {decision} ({reason})")
                 print("==================================================")
-                print("1️⃣  4H MACRO DEALING RANGE & BIAS")
+                print("1️⃣  4H MACRO BIAS & 15M STRUCTURAL CONTEXT")
                 print(f"   • Active Trade:   {symbol} ({asset_name})")
-                print(f"   • 4H Swing High:  {h4_sh}")
-                print(f"   • 4H Swing Low:   {h4_sl}")
-                print(f"   • Equilibrium:    {eq_4h}")
+                print(f"   • 4H Equilibrium: {eq_4h}")
                 print(f"   • Overall Bias:   {bias}")
-                print(f"   • 1H ATR (Noise): {atr_val}")
+                print(f"   • 15M ATR (Noise):{atr_val}")
                 print("--------------------------------------------------")
-                print(f"2️⃣  PREDICTIVE EXECUTION MAP [{symbol} - {asset_name}]")
+                print(f"2️⃣  TIGHTER 15M PREDICTIVE EXECUTION MAP [{symbol}]")
 
                 if latest_price > eq_4h:
                     # SHORT SETUP
                     planned_entry = h1_bsl
-                    structural_ceiling = max(h4_sh, h1_bsl)
-                    planned_sl = structural_ceiling + (atr_val * 0.5)
+                    # Use immediate 15M local swing high structural ceiling + tighter 0.3*ATR buffer
+                    structural_ceiling = max(m15_sh, h1_bsl)
+                    planned_sl = structural_ceiling + (atr_val * 0.3)
                     planned_tp1 = eq_4h
                     planned_tp2 = h4_sl
                     risk_points = planned_sl - planned_entry
@@ -345,16 +349,16 @@ def run_scanner():
 
                     print(f"   • Active Trade:    {symbol} ({asset_name})")
                     print("   • Direction:       SHORT (Bearish Reversal from Premium)")
-                    print(f"   • Target Entry:    {planned_entry} (1H BSL Fractal High Sweep)")
-                    print(f"   • 📈 CHART TIP:    Draw horizontal line at {planned_entry} on your 1H chart to watch the sweep!")
-                    print(f"   • Logical SL:      {planned_sl} (Structural Ceiling + 0.5*ATR)")
+                    print(f"   • Target Entry:    {planned_entry} (1H BSL Sweep)")
+                    print(f"   • Logical SL:      {planned_sl} (15M Local Ceiling + 0.3*ATR - Tighter)")
                     print(f"   • Target 1 (EQ):   {planned_tp1}")
                     print(f"   • Target 2 (4H SL):{planned_tp2} -> R:R {rr_tp2:.2f}R")
                 else:
                     # LONG SETUP
                     planned_entry = h1_ssl
-                    structural_floor = min(h4_sl, h1_ssl)
-                    planned_sl = structural_floor - (atr_val * 0.5)
+                    # Use immediate 15M local swing low structural floor - tighter 0.3*ATR buffer
+                    structural_floor = min(m15_sl, h1_ssl)
+                    planned_sl = structural_floor - (atr_val * 0.3)
                     planned_tp1 = eq_4h
                     planned_tp2 = h4_sh
                     risk_points = planned_entry - planned_sl
@@ -364,9 +368,8 @@ def run_scanner():
 
                     print(f"   • Active Trade:    {symbol} ({asset_name})")
                     print("   • Direction:       LONG (Bullish Reversal from Discount)")
-                    print(f"   • Target Entry:    {planned_entry} (1H SSL Fractal Low Sweep)")
-                    print(f"   • 📈 CHART TIP:    Draw horizontal line at {planned_entry} on your 1H chart to watch the sweep!")
-                    print(f"   • Logical SL:      {planned_sl} (Structural Floor - 0.5*ATR)")
+                    print(f"   • Target Entry:    {planned_entry} (1H SSL Sweep)")
+                    print(f"   • Logical SL:      {planned_sl} (15M Local Floor - 0.3*ATR - Tighter)")
                     print(f"   • Target 1 (EQ):   {planned_tp1}")
                     print(f"   • Target 2 (4H SH):{planned_tp2} -> R:R {rr_tp2:.2f}R")
 
@@ -388,24 +391,29 @@ def run_scanner():
                     print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}      |   +${tp2_prof:.2f}")
                 print("==================================================")
 
-                if rr_tp2 < MIN_REQUIRED_RR:
-                    print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R. Skipping execution.")
+                if quote_usd:
+                    risk_per_lot_min = risk_points * contract_size * 0.01
+                else:
+                    risk_per_lot_min = contract_size * (risk_points / latest_price) * 0.01
+
+                # Strict Dollar Risk Guardrail Check for 0.01 lots floor
+                if risk_per_lot_min > MAX_DOLLAR_RISK:
+                    print(f"   ❌ REJECTED [{symbol}]: Minimum 0.01 lot risk (${risk_per_lot_min:.2f}) exceeds MAX_DOLLAR_RISK (${MAX_DOLLAR_RISK:.2f}).")
+                    decision = "WAIT"
+                elif rr_tp2 < MIN_REQUIRED_RR:
+                    print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R.")
                     decision = "WAIT"
                 else:
-                    print(f"   ✔ APPROVED [{symbol}]: High-asymmetry setup verified.")
+                    print(f"   ✔ APPROVED [{symbol}]: Tight stop-loss setup verified within risk parameters.")
 
                     if quote_usd:
                         risk_per_lot = risk_points * contract_size
                     else:
                         risk_per_lot = contract_size * (risk_points / latest_price)
 
-                    if risk_per_lot > 0:
-                        exact_lots = MAX_DOLLAR_RISK / risk_per_lot
-                        recommended_lots = math.floor(exact_lots * 100) / 100
-                        recommended_lots = max(0.01, recommended_lots)
-                    else:
-                        recommended_lots = 0.01
-
+                    exact_lots = MAX_DOLLAR_RISK / risk_per_lot if risk_per_lot > 0 else 0.01
+                    recommended_lots = math.floor(exact_lots * 100) / 100
+                    recommended_lots = max(0.01, recommended_lots)
                     actual_dollar_risk = recommended_lots * risk_per_lot
                     print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
 
@@ -436,24 +444,21 @@ def run_scanner():
                         table_string = "\n".join(telegram_table_lines)
 
                         msg = (
-                            f"🚨 *SMC TRADE SIGNAL FOR: {symbol} ({asset_name})* (`{trade_id}`)\n\n"
-                            f"• *Active Trade:* `{symbol} - {asset_name}`\n"
+                            f"🚨 *TIGHT 15M SMC TRADE SIGNAL: {symbol} ({asset_name})* (`{trade_id}`)\n\n"
                             f"• *Decision:* `{decision}`\n"
-                            f"• *Current Live Price:* `{latest_price}`\n"
-                            f"• *Target Entry Coordinate:* `{planned_entry}`\n"
-                            f"• *Logical SL:* `{planned_sl}`\n"
-                            f"• *Target 1 (EQ):* `{planned_tp1}`\n"
-                            f"• *Target 2 (4H):* `{planned_tp2}`\n"
-                            f"• *Recommended Lots:* `{recommended_lots}`\n"
-                            f"• *Max Risk:* `${actual_dollar_risk:.2f}`\n"
-                            f"• *Risk R:R:* `{rr_tp2:.2f}R`\n\n"
-                            f"💰 *Multi-Lot Breakdown (Lot | SL | TP1 | TP2):*\n"
-                            f"{table_string}\n\n"
+                            f"• *Live Price:* `{latest_price}`\n"
+                            f"• *Entry:* `{planned_entry}`\n"
+                            f"• *Tight SL:* `{planned_sl}`\n"
+                            f"• *TP1 (EQ):* `{planned_tp1}`\n"
+                            f"• *TP2 (4H):* `{planned_tp2}`\n"
+                            f"• *Lots:* `{recommended_lots}` (Risk: `${actual_dollar_risk:.2f}`)\n"
+                            f"• *R:R:* `{rr_tp2:.2f}R`\n\n"
+                            f"💰 *Multi-Lot Table:*\n{table_string}\n\n"
                             f"• *Time (IST):* `{now_str}`"
                         )
                         send_telegram_alert(msg)
                     else:
-                        print(f"   ⏳ [DUPLICATE BLOCKED] An active PENDING trade for {symbol} ({asset_name}) already exists. Skipping new entry.")
+                        print(f"   ⏳ [DUPLICATE BLOCKED] Active PENDING trade for {symbol} already exists.")
 
             except Exception as e:
                 print(f"[{symbol}] Error fetching data: {e}")
