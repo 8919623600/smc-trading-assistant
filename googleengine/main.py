@@ -166,6 +166,19 @@ def run_scanner_loop():
       choch_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
       fvg_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
 
+      # Safely extract trade parameters if present in engine response (even during WAIT states if calculated)
+      trade_params = analysis_result.get("trade_params")
+      if trade_params:
+        entry = trade_params["entry"]
+        sl = trade_params["sl"]
+        tp = trade_params["tp2"]
+        rr = trade_params["rr"]
+      else:
+        entry = "N/A"
+        sl = "N/A"
+        tp = "N/A"
+        rr = "N/A"
+
       # ----------------------------------------------------
       # TERMINAL MONITOR FORMAT
       # ----------------------------------------------------
@@ -181,27 +194,19 @@ def run_scanner_loop():
       print(f"• 15M Setup (CHoCH / BOS / POI): {choch_15m} / {bos_15m} / {poi_15m}")
       print(f"• 1M Confirmation (Sweep / CHoCH / FVG): {sweep_1m} / {choch_1m} / {fvg_1m}")
       print("\nTrade & Price Info")
-      
-      if decision in ["BUY", "SELL"]:
-        params = analysis_result["trade_params"]
-        entry = params["entry"]
-        sl = params["sl"]
-        tp = params["tp2"]
-        rr = params["rr"]
-        
-        print(f"• Current Price: {current_price}")
-        print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | TP: {tp} | RR: 1:{rr})")
-        
+      print(f"• Current Price: {current_price}")
+      print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | TP: {tp} | RR: {f'1:{rr}' if rr != 'N/A' else 'N/A'})")
+
+      # Print Lot P&L Breakdown whenever numerical trade parameters exist
+      if entry != "N/A" and sl != "N/A" and tp != "N/A":
         pnl_data = calculate_lot_pnl(symbol, entry, sl, tp, lot_sizes)
         print("\nEstimated P&L Breakdown Across Lots:")
         for lot in lot_sizes:
           print(f"  • Lot {lot} -> Loss: -${pnl_data[lot]['loss']} | Profit: +${pnl_data[lot]['profit']}")
 
+      if decision in ["BUY", "SELL"]:
         print("\n🚀 Confirmed trade found! Telegram alert sent.")
-
       else:
-        print(f"• Current Price: {current_price}")
-        print("• Direction: NONE (Entry: N/A | SL: N/A | TP: N/A | RR: N/A)")
         print("\nDecision & Reason")
         print(f"• Reason: {reason}")
         print("💤 Status is WAIT/NO TRADE. Skipping Telegram alert.")
