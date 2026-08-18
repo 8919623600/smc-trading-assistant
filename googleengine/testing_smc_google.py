@@ -75,17 +75,23 @@ def initialize_trade_history():
     """Initializes trade history CSV and prints historical stats on boot."""
     if not os.path.exists(TRADE_HISTORY_FILE):
         pd.DataFrame(columns=[
-            "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time", "be_active"
+            "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time", "be_active", "pnl_usd"
         ]).to_csv(TRADE_HISTORY_FILE, index=False)
     else:
         df = pd.read_csv(TRADE_HISTORY_FILE)
+        # Ensure pnl_usd column exists for backward compatibility with older CSVs
+        if "pnl_usd" not in df.columns:
+            df["pnl_usd"] = 0.0
+            df.to_csv(TRADE_HISTORY_FILE, index=False)
+
         closed_trades = df[df["status"] != "PENDING"]
         if not closed_trades.empty:
             wins = len(closed_trades[closed_trades["status"] == "WIN"])
             losses = len(closed_trades[closed_trades["status"] == "LOSS"])
             total = len(closed_trades)
             win_rate = (wins / total) * 100 if total > 0 else 0
-            print(f"📈 [PERFORMANCE REVIEW] Total Closed: {total} | Wins: {wins} | Losses: {losses} | Win Rate: {win_rate:.1f}%")
+            total_pnl = closed_trades["pnl_usd"].sum()
+            print(f"📈 [PERFORMANCE REVIEW] Total Closed: {total} | Wins: {wins} | Losses: {losses} | Win Rate: {win_rate:.1f}% | Net PnL: ${total_pnl:.2f}")
 
 
 def check_daily_circuit_breaker() -> bool:
@@ -110,7 +116,7 @@ def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2, lo
     df = pd.read_csv(TRADE_HISTORY_FILE)
     new_row = {
         "trade_id": trade_id, "timestamp": timestamp, "symbol": symbol, "decision": decision,
-        "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "lots": lots, "status": "PENDING", "exit_time": "N/A", "be_active": 0
+        "entry": entry, "sl": sl, "tp1": tp1, "tp2": tp2, "lots": lots, "status": "PENDING", "exit_time": "N/A", "be_active": 0, "pnl_usd": 0.0
     }
     pd.concat([df, pd.DataFrame([new_row])], ignore_index=True).to_csv(TRADE_HISTORY_FILE, index=False)
 
@@ -140,22 +146,74 @@ def log_trade_mistake(trade_id, symbol, decision, entry, sl, exit_price, atr_val
     print(f"📝 [MISTAKE JOURNAL] Logged autopsy for failed trade ID: {trade_id} ({symbol})")
 
 
-def evaluate_pending_trades(current_high: float, current_low: float, atr_val: float, now_str: str):
-    """Monitors pending trades, manages Breakeven activation, checks SL/TP hits, and logs losses."""
+def check_and_send_monthly_report(now_ist: datetime):
+    """Checks if today is the 1st day of a new month and generates/sends the previous month's report."""
+    report_flag_file = "last_monthly_report.txt"
+    current_month_str = now_ist.strftime("%Y-%m")
+    
+    # Check if we are on the 1st of the month
+    if now_ist.day == 1:
+        # Check if we already sent the report for the previous month
+        last_sent = ""
+        if os.path.exists(report_flag_file):
+            with open(report_flag_file, "r") as f:
+                last_sent = f.read().strip()
+                
+        if last_sent != current_month_str:
+            # Calculate stats for the previous month
+            if os.path.exists(TRADE_HISTORY_FILE):
+                df = pd.read_csv(TRADE_HISTORY_FILE)
+                closed = df[df["status"] != "PENDING"].copy()
+                
+                if not closed.empty:
+                    # Filter for previous month based on exit_time
+                    prev_month_dt = now_ist.replace(day=1) - pd.Timedelta(days=1)
+                    prev_month_str = prev_month_dt.strftime("%Y-%m")
+                    
+                    closed["exit_date"] = pd.to_datetime(closed["exit_time"], errors="coerce")
+                    month_trades = closed[closed["exit_date"].dt.strftime("%Y-%m") == prev_month_str]
+                    
+                    if not month_trades.empty:
+                        total_trades = len(month_trades)
+                        wins = len(month_trades[month_trades["status"] == "WIN"])
+                        losses = len(month_trades[month_trades["status"] == "LOSS"])
+                        win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
+                        net_pnl = month_trades["pnl_usd"].sum()
+                        
+                        emoji = "🟢" if net_pnl >= 0 else "🔴"
+                        
+                        report_msg = (
+                            f"📊 *MONTHLY PERFORMANCE REPORT ({prev_month_str})* 📊\n\n"
+                            f"• *Total Trades Taken:* `{total_trades}`\n"
+                            f"• *Winning Trades:* `{wins}` 🟢\n"
+                            f"• *Losing Trades:* `{losses}` ❌\n"
+                            f"• *Win Rate:* `{win_rate:.1f}%`\n"
+                            f"• *Net Month-End PnL:* {emoji} *`${net_pnl:.2f}`*\n\n"
+                            f"_Report generated automatically at month start._"
+                        )
+                        send_telegram_alert(report_msg)
+                        
+            # Save state so it doesn't send twice in the same month
+            with open(report_flag_file, "w") as f:
+                f.write(current_month_str)
+
+
+def evaluate_pending_trades(current_high: float, current_low: float, atr_val: float, now_str: str, symbol: str, quote_usd: bool, contract_size: float):
+    """Monitors pending trades, manages Breakeven activation, checks SL/TP hits, and computes dollar PnL."""
     if not os.path.exists(TRADE_HISTORY_FILE):
         return
     df = pd.read_csv(TRADE_HISTORY_FILE)
     updated = False
 
     for idx, row in df.iterrows():
-        if row["status"] == "PENDING":
+        if row["status"] == "PENDING" and row["symbol"] == symbol:
             decision = row["decision"]
             entry = float(row["entry"])
             sl = float(row["sl"])
             tp1 = float(row["tp1"])
             tp2 = float(row["tp2"])
+            lots = float(row["lots"])
             trade_id = row["trade_id"]
-            symbol = row["symbol"]
             be_active = int(row.get("be_active", 0))
 
             if decision == "BUY":
@@ -166,17 +224,36 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
                     send_telegram_alert(f"🛡️ *Breakeven Activated* for Trade **{symbol}** BUY (`{trade_id}`).\nStop Loss moved to entry price: `{entry}`")
 
                 if current_low <= float(df.at[idx, "sl"]):
-                    df.at[idx, "status"] = "LOSS"
+                    # If SL was moved to entry (BE), PnL is $0, otherwise it's a loss based on original SL risk
+                    actual_exit_sl = float(df.at[idx, "sl"])
+                    risk_points_realized = abs(entry - actual_exit_sl) if be_active == 1 else abs(entry - sl)
+                    
+                    if quote_usd:
+                        pnl = -(lots * risk_points_realized * contract_size) if be_active == 0 else 0.0
+                    else:
+                        pnl = -(lots * contract_size * (risk_points_realized / current_low)) if be_active == 0 else 0.0
+
+                    df.at[idx, "status"] = "LOSS" if be_active == 0 else "BREAKEVEN"
                     df.at[idx, "exit_time"] = now_str
+                    df.at[idx, "pnl_usd"] = round(pnl, 2)
                     updated = True
-                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl'])}`")
+                    
+                    send_telegram_alert(f"❌ *TRADE STOPPED OUT* [Trade: **{symbol}**]\nID: `{trade_id}`\nResult PnL: `${pnl:.2f}`")
                     log_trade_mistake(trade_id, symbol, decision, entry, sl, current_low, atr_val, now_str)
 
                 elif current_high >= tp2:
+                    reward_points = abs(tp2 - entry)
+                    if quote_usd:
+                        pnl = lots * reward_points * contract_size
+                    else:
+                        pnl = lots * contract_size * (reward_points / current_high)
+
                     df.at[idx, "status"] = "WIN"
                     df.at[idx, "exit_time"] = now_str
+                    df.at[idx, "pnl_usd"] = round(pnl, 2)
                     updated = True
-                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting TP2 at `{tp2}`")
+                    
+                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting TP2 at `{tp2}`\nProfit PnL: *+${pnl:.2f}*")
 
             elif decision == "SELL":
                 if current_low <= tp1 and be_active == 0:
@@ -186,17 +263,35 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
                     send_telegram_alert(f"🛡️ *Breakeven Activated* for Trade **{symbol}** SELL (`{trade_id}`).\nStop Loss moved to entry price: `{entry}`")
 
                 if current_high >= float(df.at[idx, "sl"]):
-                    df.at[idx, "status"] = "LOSS"
+                    actual_exit_sl = float(df.at[idx, "sl"])
+                    risk_points_realized = abs(actual_exit_sl - entry) if be_active == 1 else abs(sl - entry)
+
+                    if quote_usd:
+                        pnl = -(lots * risk_points_realized * contract_size) if be_active == 0 else 0.0
+                    else:
+                        pnl = -(lots * contract_size * (risk_points_realized / current_high)) if be_active == 0 else 0.0
+
+                    df.at[idx, "status"] = "LOSS" if be_active == 0 else "BREAKEVEN"
                     df.at[idx, "exit_time"] = now_str
+                    df.at[idx, "pnl_usd"] = round(pnl, 2)
                     updated = True
-                    send_telegram_alert(f"❌ *TRADE STOPPED OUT (LOSS)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting SL at `{float(df.at[idx, 'sl'])}`")
+                    
+                    send_telegram_alert(f"❌ *TRADE STOPPED OUT* [Trade: **{symbol}**]\nID: `{trade_id}`\nResult PnL: `${pnl:.2f}`")
                     log_trade_mistake(trade_id, symbol, decision, entry, sl, current_high, atr_val, now_str)
 
                 elif current_low <= tp2:
+                    reward_points = abs(entry - tp2)
+                    if quote_usd:
+                        pnl = lots * reward_points * contract_size
+                    else:
+                        pnl = lots * contract_size * (reward_points / current_low)
+
                     df.at[idx, "status"] = "WIN"
                     df.at[idx, "exit_time"] = now_str
+                    df.at[idx, "pnl_usd"] = round(pnl, 2)
                     updated = True
-                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting TP2 at `{tp2}`")
+                    
+                    send_telegram_alert(f"🎯 *TARGET REACHED (WIN)* [Trade: **{symbol}**]\nID: `{trade_id}`\nHitting TP2 at `{tp2}`\nProfit PnL: *+${pnl:.2f}*")
 
     if updated:
         df.to_csv(TRADE_HISTORY_FILE, index=False)
@@ -274,6 +369,9 @@ def run_scanner():
         manage_log_size()
         now_ist = datetime.now(IST)
 
+        # Check for monthly report trigger (automatically sends on the 1st of every new month)
+        check_and_send_monthly_report(now_ist)
+
         if NEWS_PAUSE:
             print(f"[{now_ist.strftime('%I:%M:%S %p IST')}] 🛑 NEWS PAUSE ACTIVE. Idling...")
             time.sleep(IDLE_SLEEP_SECONDS)
@@ -305,7 +403,8 @@ def run_scanner():
                 latest_price = data["1M"]["close"].iloc[-1]
                 atr_val = calculate_atr(data["15M"], period=14)
 
-                evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str)
+                # Evaluate active trades and log PnLs for wins/losses
+                evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str, symbol, quote_usd, contract_size)
 
                 h4_sh, h4_sl = find_macro_4h_range(data["4H"], lookback=50)
                 eq_4h = (h4_sh + h4_sl) / 2
@@ -320,9 +419,7 @@ def run_scanner():
                 result = engine.analyze(data)
                 decision = result.get("decision", "NO_TRADE")
                 reason = result.get("reason", "Setup validated")
-                bias = result.get("bias_4h", "N/A")
 
-                # Updated clean output format requested
                 print(f"🚦 Decision: {decision} | Status: {reason}")
 
                 trade_params = result.get("trade_params")
