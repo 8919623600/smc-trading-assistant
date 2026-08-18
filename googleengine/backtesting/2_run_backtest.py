@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from smc_engine import SMCTradingEngine
@@ -27,10 +28,9 @@ def sanitize_df(df):
 
 def run_offline_backtest():
     print("==================================================")
-    print("🚀 STARTING ADVANCED SMC BACKTEST (BE Stops & Time Exits)")
+    print("🚀 STARTING STRICT-FILTERED SMC BACKTEST")
     print("==================================================")
     
-    # Load and Sanitize all timeframes
     try:
         df_1m_full = sanitize_df(pd.read_parquet("XAU_USD_1min.parquet"))
         df_15m_full = sanitize_df(pd.read_parquet("XAU_USD_15min.parquet"))
@@ -58,7 +58,6 @@ def run_offline_backtest():
         current_bar = df_1m_full.iloc[i]
         current_time = current_bar['datetime']
         
-        # Reset daily trade counter on new day
         if current_time.date() != current_day:
             current_day = current_time.date()
             trades_today = 0
@@ -68,7 +67,7 @@ def run_offline_backtest():
             c_high = current_bar['high']
             c_low = current_bar['low']
             
-            # RULE A: Time-based exit (Close all trades by 8 PM UTC to avoid overnight holding)
+            # Time-based exit (8 PM UTC)
             if current_time.hour >= 20:
                 pnl_check = (current_bar['close'] - active_trade['entry']) if active_trade['type'] == 'BUY' else (active_trade['entry'] - current_bar['close'])
                 if pnl_check > 0:
@@ -84,10 +83,9 @@ def run_offline_backtest():
             hit_sl = False
             
             if active_trade['type'] == 'BUY':
-                # Check for Breakeven adjustment: if price hits 1R profit, move SL to entry
                 risk_dist = abs(active_trade['entry'] - active_trade['sl'])
                 if c_high >= (active_trade['entry'] + risk_dist) and active_trade['sl'] < active_trade['entry']:
-                    active_trade['sl'] = active_trade['entry'] # Lock in breakeven
+                    active_trade['sl'] = active_trade['entry']
                 
                 if c_high >= active_trade['tp']:
                     hit_tp = True
@@ -97,7 +95,7 @@ def run_offline_backtest():
             elif active_trade['type'] == 'SELL':
                 risk_dist = abs(active_trade['sl'] - active_trade['entry'])
                 if c_low <= (active_trade['entry'] - risk_dist) and active_trade['sl'] > active_trade['entry']:
-                    active_trade['sl'] = active_trade['entry'] # Lock in breakeven
+                    active_trade['sl'] = active_trade['entry']
                 
                 if c_low <= active_trade['tp']:
                     hit_tp = True
@@ -109,33 +107,38 @@ def run_offline_backtest():
                 losing_trades += 1
                 active_trade = None
             elif hit_sl:
-                # If SL was moved to entry, this loss costs $0 instead of $50!
                 loss_cost = 0.0 if active_trade['sl'] == active_trade['entry'] else 50.0
                 account_balance -= loss_cost
                 if loss_cost > 0:
                     losing_trades += 1
                 else:
-                    total_trades -= 1 # Breakeven scratch doesn't count as a loss
+                    total_trades -= 1
                 active_trade = None
             elif hit_tp:
-                risk_amount = 50.0
-                reward_gain = risk_amount * active_trade['rr']
-                account_balance += reward_gain
+                account_balance += (50.0 * active_trade['rr'])
                 winning_trades += 1
                 active_trade = None
                 
             continue
 
-        # --- CHECK SESSION & TRADE CAP FILTERS ---
-        # Active hours: 7:00 AM to 7:00 PM UTC (London & NY)
-        if not (7 <= current_time.hour <= 19):
+        # Filters: Session hours & daily cap
+        if not (8 <= current_time.hour <= 17):  # Restricted to peak London/NY hours only
             continue
             
-        if trades_today >= 4:
+        if trades_today >= 2:  # Stricter cap: max 2 trades per day
             continue
 
-        # --- SLICE MULTI-TIMEFRAME DATA ---
         df_1m_slice = df_1m_full.iloc[i-200:i].copy()
+        
+        # Volatility check: skip if 1M range is excessively erratic
+        df_1m_slice['tr'] = np.maximum(df_1m_slice['high'] - df_1m_slice['low'], 
+                                       np.maximum(abs(df_1m_slice['high'] - df_1m_slice['close'].shift(1)), 
+                                                  abs(df_1m_slice['low'] - df_1m_slice['close'].shift(1))))
+        rolling_atr = df_1m_slice['tr'].rolling(14).mean().iloc[-1]
+        mean_atr = df_1m_slice['tr'].rolling(50).mean().iloc[-1]
+        if not pd.isna(rolling_atr) and not pd.isna(mean_atr) and rolling_atr > (mean_atr * 2.0):
+            continue  # Skip high noise periods
+
         data_dict = {
             "4H": df_4h_full[df_4h_full["datetime"] <= current_time].tail(50),
             "1H": df_1h_full[df_1h_full["datetime"] <= current_time].tail(50),
@@ -143,7 +146,6 @@ def run_offline_backtest():
             "1M": df_1m_slice
         }
 
-        # Run Engine Analysis
         signal = engine.analyze(data_dict)
         decision = signal.get("decision")
         params = signal.get("trade_params", {})
@@ -168,13 +170,12 @@ def run_offline_backtest():
                 trades_today += 1
                 total_trades += 1
 
-    # --- PERFORMANCE REPORT ---
     net_profit = account_balance - starting_balance
     roi = (net_profit / starting_balance) * 100
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
 
     print("\n" + "="*50)
-    print("💰 ADVANCED ACCOUNT PERFORMANCE REPORT")
+    print("💰 STRICT FILTERED PERFORMANCE REPORT")
     print("="*50)
     print(f"Starting Balance:  ${starting_balance:,.2f}")
     print(f"Ending Balance:    ${account_balance:,.2f}")
