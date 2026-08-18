@@ -56,12 +56,10 @@ def check_displacement(df_15m: pd.DataFrame) -> bool:
     if len(df_15m) < 10:
         return True
 
-    # Calculate candle bodies and average body size
     bodies = (df_15m["close"] - df_15m["open"]).abs()
     avg_body = bodies.iloc[-15:-1].mean()
     latest_body = bodies.iloc[-1]
 
-    # True displacement requires the latest structural move candle to be at least 1.3x average body size
     return latest_body >= (1.3 * avg_body)
 
 
@@ -112,12 +110,9 @@ def inspect_market_state(symbol="XAU/USD"):
         h4_high, h4_low = find_smc_swings(df_4h, window=2)
         total_range = h4_high - h4_low
 
-        # Calculate OTE Zones depending on direction
-        # Bullish Discount OTE: retracement down to 61.8% - 79% from the high
         ote_bullish_high = h4_high - (total_range * 0.618)
         ote_bullish_low = h4_high - (total_range * 0.790)
 
-        # Bearish Premium OTE: retracement up to 61.8% - 79% from the low
         ote_bearish_low = h4_low + (total_range * 0.618)
         ote_bearish_high = h4_low + (total_range * 0.790)
 
@@ -128,7 +123,6 @@ def inspect_market_state(symbol="XAU/USD"):
             else "BULLISH (Discount Zone)"
         )
 
-        # Check if price is specifically inside the institutional OTE sweet spot
         in_bullish_ote = ote_bullish_low <= current_price <= ote_bullish_high
         in_bearish_ote = ote_bearish_low <= current_price <= ote_bearish_high
 
@@ -175,7 +169,7 @@ def inspect_market_state(symbol="XAU/USD"):
                 f"   • 61.8% - 79% OTE Zone: {ote_bullish_low:.2f} - {ote_bullish_high:.2f}"
             )
             print(
-                f"   • Price in OTE Sweet Spot? {'YES ✅ (High Confluence)' : 'NO (Waiting for deep retracement)' if not in_bullish_ote else 'YES ✅'}"
+                f"   • Price in OTE Sweet Spot? {'YES ✅' if in_bullish_ote else 'NO (Waiting for deep retracement)'}"
             )
         else:
             print(
@@ -205,7 +199,7 @@ def inspect_market_state(symbol="XAU/USD"):
         print("4️⃣  ACTIONABLE UPGRADED EXECUTION PLAN")
         if current_price > equilibrium:
             print(
-                f"   • PLAN: Requires 1H BSL sweep AND valid Bearish CHoCH with strong displacement."
+                "   • PLAN: Requires 1H BSL sweep AND valid Bearish CHoCH with strong displacement."
             )
             if not has_displacement:
                 print(
@@ -220,6 +214,9 @@ def inspect_market_state(symbol="XAU/USD"):
                     "   • STATUS: 🛑 BLOCKED - Waiting for a high-momentum expansion candle to confirm intent."
                 )
         print("==================================================\n")
+
+    except Exception as e:
+        print(f"❌ Error fetching data: {e}")
 
 
 if __name__ == "__main__":
