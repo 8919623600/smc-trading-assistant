@@ -30,7 +30,9 @@ def run_offline_backtest():
 
   # --- RELAXED ENGINE PARAMETERS FOR BACKTESTING ---
   # Lowered min_rr to 1.5 and adjusted multiplier to catch more setups
-  engine = SMCTradingEngine(min_rr=1.5, max_rr=10.0, atr_multiplier=0.3)
+  engine = SMCTradingEngine(
+    min_rr=1.5, max_rr=10.0, atr_multiplier=0.4, backtest_mode=True
+)
 
   # Optional flags if supported by your engine class to bypass strict filters:
   # engine.require_strict_ote = False
@@ -181,7 +183,7 @@ def run_offline_backtest():
   print(f"• Total Trades:     {len(trades_executed)}")
 
   if len(trades_executed) > 0:
-    wins = len([t for t in trades_executed if t["outcome"] == "WIN"])
+    wins = len([t for t in trades_executed if t["outcomef"] == "WIN"])
     losses = len(trades_executed) - wins
     print(f"• Win/Loss Breakdown: {wins} Wins / {losses} Losses")
     print(f"• Win Rate:         {(wins / len(trades_executed)) * 100:.2f}%")
