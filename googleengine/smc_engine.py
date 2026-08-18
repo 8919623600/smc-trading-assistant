@@ -15,8 +15,8 @@ class SMCTradingEngine:
             df_15m = data_dict.get("15M")
             df_1m_raw = data_dict.get("1M")
 
-            if df_1m_raw is None or len(df_1m_raw) < 50:
-                return {"decision": "HOLD", "reason": "Insufficient 1M data"}
+            if df_1m_raw is None or len(df_1m_raw) < 50 or df_1h is None or len(df_1h) < 20:
+                return {"decision": "HOLD", "reason": "Insufficient data"}
 
             df_1m = df_1m_raw.copy()
 
@@ -25,7 +25,12 @@ class SMCTradingEngine:
             current_high = current_bar["high"]
             current_low = current_bar["low"]
 
-            # --- 1. CALCULATE ATR ---
+            # --- 1. HIGHER TIMEFRAME (1H) TREND BIAS ---
+            # Determine if 1H trend is bullish or bearish using a simple 20 EMA vs 50 EMA or close vs moving average
+            df_1h["sma_20"] = df_1h["close"].rolling(20).mean()
+            htf_bullish = df_1h["close"].iloc[-1] > df_1h["sma_20"].iloc[-1]
+
+            # --- 2. CALCULATE ATR ---
             df_1m["tr"] = np.maximum(
                 df_1m["high"] - df_1m["low"],
                 np.maximum(
@@ -37,38 +42,36 @@ class SMCTradingEngine:
             if pd.isna(atr) or atr == 0:
                 atr = 2.0
 
-            # --- 2. SMC STRUCTURE WITH LOOKBACK WINDOW ---
+            # --- 3. SMC STRUCTURE WITH LOOKBACK WINDOW ---
             recent_high = df_1m["high"].iloc[-25:-3].max()
             recent_low = df_1m["low"].iloc[-25:-3].min()
 
-            # Check if a liquidity sweep happened in the recent past (last 3 bars)
             recent_low_sweep = df_1m["low"].iloc[-3:].min() <= recent_low
             recent_high_sweep = df_1m["high"].iloc[-3:].max() >= recent_high
 
-            # Fair Value Gap (FVG) Detection
             bullish_fvg = df_1m["low"].iloc[-1] > df_1m["high"].iloc[-3]
             bearish_fvg = df_1m["high"].iloc[-1] < df_1m["low"].iloc[-3]
 
             decision = "HOLD"
             trade_params = {}
 
-            # --- 3. BULLISH SETUP ---
-            if recent_low_sweep and bullish_fvg:
+            # --- 4. CONDITIONAL EXECUTION BASED ON HTF TREND ---
+            # Only take BUYs if HTF trend is bullish, and SELLs if HTF trend is bearish
+            if htf_bullish and recent_low_sweep and bullish_fvg:
                 decision = "BUY"
                 entry = current_close
                 sl = entry - (atr * 1.8)
-                tp = entry + (abs(entry - sl) * 2.2)
+                tp = entry + (abs(entry - sl) * 2.5)  # Bumped to 2.5 RR
                 trade_params = {"entry": round(entry, 2), "sl": round(sl, 2), "tp": round(tp, 2)}
 
-            # --- 4. BEARISH SETUP ---
-            elif recent_high_sweep and bearish_fvg:
+            elif not htf_bullish and recent_high_sweep and bearish_fvg:
                 decision = "SELL"
                 entry = current_close
                 sl = entry + (atr * 1.8)
-                tp = entry - (abs(entry - sl) * 2.2)
+                tp = entropy_target = entry - (abs(entry - sl) * 2.5)  # Bumped to 2.5 RR
                 trade_params = {"entry": round(entry, 2), "sl": round(sl, 2), "tp": round(tp, 2)}
 
-            return {"decision": decision, "trade_params": trade_params, "reason": "SMC Lookback Sweep & FVG Met"}
+            return {"decision": decision, "trade_params": trade_params, "reason": "HTF Aligned SMC Setup"}
 
         except Exception as e:
             return {"decision": "HOLD", "reason": f"Error in engine: {str(e)}"}
