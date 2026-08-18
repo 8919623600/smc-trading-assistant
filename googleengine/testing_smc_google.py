@@ -310,10 +310,15 @@ def run_scanner():
                 h4_sh, h4_sl = find_macro_4h_range(data["4H"], lookback=50)
                 eq_4h = (h4_sh + h4_sl) / 2
                 
+                # Calculate OTE Zone Levels (0.618 - 0.79 Fibonacci depth from range)
+                h4_range_span = h4_sh - h4_sl
+                ote_bull_low = h4_sl + (h4_range_span * 0.21)  # 0.79 retracement from high
+                ote_bull_high = h4_sl + (h4_range_span * 0.382) # 0.618 retracement from high
+
                 m15_sh, m15_sl = find_smc_swings(data["15M"], window=2)
                 h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
 
-                # Run Upgraded Engine Analysis
+                # Run Upgraded Engine Analysis (includes OTE & Displacement Filters)
                 result = engine.analyze(data)
                 decision = result.get("decision", "NO_TRADE")
                 reason = result.get("reason", "Setup validated")
@@ -324,10 +329,11 @@ def run_scanner():
                 print(f"💲 Current Price:    {latest_price}")
                 print(f"🚦 Engine Decision:  {decision} ({reason})")
                 print("==================================================")
-                print("1️⃣  4H SMC RANGE & OTE ZONE (Upgrade B)")
+                print("1️⃣  4H SMC RANGE & 0.618-0.79 OTE ZONE (Upgrade B)")
                 print(f"   • Active Swing High: {h4_sh}")
                 print(f"   • Active Swing Low:  {h4_sl}")
                 print(f"   • Equilibrium (50%): {eq_4h}")
+                print(f"   • OTE Zone (Bullish): {ote_bull_low:.4f} - {ote_bull_high:.4f}")
                 print(f"   • Overall Bias:      {bias}")
                 print("--------------------------------------------------")
                 print(f"2️⃣  DISPLACEMENT & MOMENTUM FILTER (Upgrade C)")
