@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BOT_SCRIPT="3_live_bot.py"
+BOT_SCRIPT="backtesting/3_live_bot.py"
 LOG_FILE="scanner.log"
 SCREEN_NAME="smc_bot"
 
