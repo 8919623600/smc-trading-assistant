@@ -8,10 +8,13 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 
-# --- ROBUST ABSOLUTE PATH SETUP ---
-root_dir = "/home/ec2-user/trading"
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
+import os
+import sys
+
+# --- EXPLICIT ABSOLUTE PATH INJECTION ---
+ENGINE_DIR = "/home/ec2-user/trading/googleengine"
+if ENGINE_DIR not in sys.path:
+    sys.path.insert(0, ENGINE_DIR)
 
 # Global IST Timezone Definition
 IST = ZoneInfo("Asia/Kolkata")
