@@ -17,10 +17,13 @@ class SMCTradingEngine:
             df_4h = data_dict.get("4H")
             df_1h = data_dict.get("1H")
             df_15m = data_dict.get("15M")
-            df_1m = data_dict.get("1M")
+            df_1m_raw = data_dict.get("1M")
 
-            if df_1m is None or len(df_1m) < 50:
+            if df_1m_raw is None or len(df_1m_raw) < 50:
                 return {"decision": "HOLD", "reason": "Insufficient 1M data"}
+
+            # FIX: Explicitly copy the slice to avoid SettingWithCopyWarning
+            df_1m = df_1m_raw.copy()
 
             current_bar = df_1m.iloc[-1]
             current_close = current_bar["close"]
