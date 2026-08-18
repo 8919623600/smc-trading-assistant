@@ -6,7 +6,6 @@ from smc_engine import SMCTradingEngine
 
 def sanitize_df(df):
     """Ensures 'datetime' column exists and is normalized to UTC datetime."""
-    # Flatten multiindex columns if present
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0] for col in df.columns]
         
@@ -17,7 +16,6 @@ def sanitize_df(df):
     elif 'datetime' not in df.columns:
         df.rename(columns={df.columns[0]: 'datetime'}, inplace=True)
         
-    # Convert to datetime and localize/convert to UTC to prevent tz-naive vs tz-aware crashes
     df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
     if df['datetime'].dt.tz is None:
         df['datetime'] = df['datetime'].dt.tz_localize('UTC')
@@ -29,7 +27,7 @@ def sanitize_df(df):
 
 def run_offline_backtest():
     print("==================================================")
-    print("🚀 STARTING FILTERED SMC BACKTEST (Timezone Safe)")
+    print("🚀 STARTING ADVANCED SMC BACKTEST (BE Stops & Time Exits)")
     print("==================================================")
     
     # Load and Sanitize all timeframes
@@ -65,33 +63,59 @@ def run_offline_backtest():
             current_day = current_time.date()
             trades_today = 0
 
-        # --- MANAGE OPEN TRADES (Bar-by-Bar SL/TP Check) ---
+        # --- MANAGE OPEN TRADES ---
         if active_trade is not None:
             c_high = current_bar['high']
             c_low = current_bar['low']
             
+            # RULE A: Time-based exit (Close all trades by 8 PM UTC to avoid overnight holding)
+            if current_time.hour >= 20:
+                pnl_check = (current_bar['close'] - active_trade['entry']) if active_trade['type'] == 'BUY' else (active_trade['entry'] - current_bar['close'])
+                if pnl_check > 0:
+                    account_balance += pnl_check * (50.0 / abs(active_trade['entry'] - active_trade['sl']))
+                    winning_trades += 1
+                else:
+                    account_balance -= 50.0
+                    losing_trades += 1
+                active_trade = None
+                continue
+
             hit_tp = False
             hit_sl = False
             
             if active_trade['type'] == 'BUY':
+                # Check for Breakeven adjustment: if price hits 1R profit, move SL to entry
+                risk_dist = abs(active_trade['entry'] - active_trade['sl'])
+                if c_high >= (active_trade['entry'] + risk_dist) and active_trade['sl'] < active_trade['entry']:
+                    active_trade['sl'] = active_trade['entry'] # Lock in breakeven
+                
                 if c_high >= active_trade['tp']:
                     hit_tp = True
                 if c_low <= active_trade['sl']:
                     hit_sl = True
+                    
             elif active_trade['type'] == 'SELL':
+                risk_dist = abs(active_trade['sl'] - active_trade['entry'])
+                if c_low <= (active_trade['entry'] - risk_dist) and active_trade['sl'] > active_trade['entry']:
+                    active_trade['sl'] = active_trade['entry'] # Lock in breakeven
+                
                 if c_low <= active_trade['tp']:
                     hit_tp = True
                 if c_high >= active_trade['sl']:
                     hit_sl = True
                     
-            # Conservative tie-breaker: if both hit on same candle, count as loss
             if hit_sl and hit_tp:
-                account_balance -= 50.0  # Fixed $50 risk
+                account_balance -= 50.0  
                 losing_trades += 1
                 active_trade = None
             elif hit_sl:
-                account_balance -= 50.0
-                losing_trades += 1
+                # If SL was moved to entry, this loss costs $0 instead of $50!
+                loss_cost = 0.0 if active_trade['sl'] == active_trade['entry'] else 50.0
+                account_balance -= loss_cost
+                if loss_cost > 0:
+                    losing_trades += 1
+                else:
+                    total_trades -= 1 # Breakeven scratch doesn't count as a loss
                 active_trade = None
             elif hit_tp:
                 risk_amount = 50.0
@@ -100,7 +124,7 @@ def run_offline_backtest():
                 winning_trades += 1
                 active_trade = None
                 
-            continue  # Skip entry evaluation while in an active trade
+            continue
 
         # --- CHECK SESSION & TRADE CAP FILTERS ---
         # Active hours: 7:00 AM to 7:00 PM UTC (London & NY)
@@ -130,10 +154,9 @@ def run_offline_backtest():
             tp = params.get("tp")
             
             if entry and sl and tp:
-                # Calculate RR dynamically
                 risk = abs(entry - sl)
                 reward = abs(tp - entry)
-                rr = reward / risk if risk > 0 else 2.0
+                rr = reward / risk if risk > 0 else 2.5
                 
                 active_trade = {
                     "type": decision,
@@ -151,7 +174,7 @@ def run_offline_backtest():
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
 
     print("\n" + "="*50)
-    print("💰 FILTERED ACCOUNT PERFORMANCE REPORT")
+    print("💰 ADVANCED ACCOUNT PERFORMANCE REPORT")
     print("="*50)
     print(f"Starting Balance:  ${starting_balance:,.2f}")
     print(f"Ending Balance:    ${account_balance:,.2f}")
