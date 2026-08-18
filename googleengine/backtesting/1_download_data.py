@@ -4,9 +4,15 @@ from datetime import datetime, timedelta
 
 def save_data(df, filename):
     df = df.reset_index()
-    # Rename potential index names (Date, Datetime) to 'datetime'
-    df.columns = [c.lower() for c in df.columns]
-    if 'date' in df.columns:
+    
+    # Flatten columns if they are MultiIndex tuples (e.g. ('Close', 'GC=F'))
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0] for col in df.columns]
+        
+    # Convert all columns to strings and lowercase them safely
+    df.columns = [str(c).lower() for c in df.columns]
+    
+    if 'date' in df.columns and 'datetime' not in df.columns:
         df.rename(columns={'date': 'datetime'}, inplace=True)
     elif 'datetime' not in df.columns:
         df.rename(columns={df.columns[0]: 'datetime'}, inplace=True)
