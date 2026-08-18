@@ -86,15 +86,12 @@ def is_within_trading_hours():
   """Checks if current IST time is between 1:30 PM and 3:30 AM."""
   utc_now = datetime.utcnow()
   
-  # Calculate IST manually (+5 hours 30 minutes from UTC)
   total_utc_minutes = utc_now.hour * 60 + utc_now.minute
-  ist_total_minutes = (total_utc_minutes + 330) % 1440  # 330 mins = 5h 30m, 1440 = mins in a day
+  ist_total_minutes = (total_utc_minutes + 330) % 1440
   
-  # Window: 1:30 PM (13:30 = 810 mins) to 3:30 AM next morning (03:30 = 210 mins)
-  start_minutes = 13 * 60 + 30  # 810 mins
-  end_minutes = 3 * 60 + 30     # 210 mins
+  start_minutes = 13 * 60 + 30
+  end_minutes = 3 * 60 + 30
   
-  # Active if between 13:30 and 23:59 OR between 00:00 and 03:30
   if ist_total_minutes >= start_minutes or ist_total_minutes <= end_minutes:
     return True
   return False
@@ -110,10 +107,9 @@ def run_scanner_loop():
   lot_sizes = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5]
 
   while True:
-    # Time restriction check
     if not is_within_trading_hours():
       print(f"[{get_current_ist_time()}] 💤 Outside active trading window (1:30 PM - 3:30 AM IST). Sleeping for 5 minutes...")
-      time.sleep(300) # Check every 5 minutes if it's time to wake up
+      time.sleep(300)
       continue
 
     for asset in ASSETS:
