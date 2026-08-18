@@ -28,7 +28,7 @@ def sanitize_df(df):
 
 def run_offline_backtest():
     print("==================================================")
-    print("🚀 STARTING KILLZONE ORDER BLOCK SMC BACKTEST")
+    print("🚀 STARTING EXTENDED MULTI-MONTH SMC BACKTEST")
     print("==================================================")
     
     try:
@@ -36,12 +36,17 @@ def run_offline_backtest():
         df_15m_full = sanitize_df(pd.read_parquet("XAU_USD_15min.parquet"))
         df_1h_full = sanitize_df(pd.read_parquet("XAU_USD_1h.parquet"))
         df_4h_full = sanitize_df(pd.read_parquet("XAU_USD_4h.parquet"))
-        print("✅ Local caches loaded and timezone-synchronized successfully.")
+        
+        start_date = df_1m_full['datetime'].min()
+        end_date = df_1m_full['datetime'].max()
+        total_days = (end_date - start_date).days
+        
+        print(f"✅ Local caches loaded successfully.")
+        print(f"📅 Dataset Range: {start_date} to {end_date} (~{total_days} days)")
+        print(f"📊 Total 1M Bars: {len(df_1m_full):,}")
     except Exception as e:
         print(f"❌ Error loading files: {e}")
         return
-
-    print(f"📊 Simulating across {len(df_1m_full)} historical 1M bars...")
 
     engine = SMCTradingEngine()
     account_balance = 1000.0
@@ -102,7 +107,6 @@ def run_offline_backtest():
                 losing_trades += 1
                 active_trade = None
             elif hit_tp:
-                # Dynamic RR reward based on engine target calculation
                 initial_risk = abs(active_trade['entry'] - active_trade['sl'])
                 reward_distance = abs(active_trade['tp'] - active_trade['entry'])
                 rr_multiplier = reward_distance / initial_risk if initial_risk > 0 else 2.5
@@ -112,7 +116,7 @@ def run_offline_backtest():
                 
             continue
 
-        # Daily trade capping (Max 2 trades per session/day)
+        # Daily trade capping (Max 2 trades per day)
         if trades_today >= 2:
             continue
 
@@ -158,7 +162,7 @@ def run_offline_backtest():
     win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
 
     print("\n" + "="*50)
-    print("💰 KILLZONE ORDER BLOCK PERFORMANCE REPORT")
+    print("💰 EXTENDED BACKTEST PERFORMANCE REPORT")
     print("="*50)
     print(f"Starting Balance:  ${starting_balance:,.2f}")
     print(f"Ending Balance:    ${account_balance:,.2f}")
