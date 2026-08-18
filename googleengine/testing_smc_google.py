@@ -79,7 +79,6 @@ def initialize_trade_history():
         ]).to_csv(TRADE_HISTORY_FILE, index=False)
     else:
         df = pd.read_csv(TRADE_HISTORY_FILE)
-        # Ensure pnl_usd column exists for backward compatibility with older CSVs
         if "pnl_usd" not in df.columns:
             df["pnl_usd"] = 0.0
             df.to_csv(TRADE_HISTORY_FILE, index=False)
@@ -151,22 +150,18 @@ def check_and_send_monthly_report(now_ist: datetime):
     report_flag_file = "last_monthly_report.txt"
     current_month_str = now_ist.strftime("%Y-%m")
     
-    # Check if we are on the 1st of the month
     if now_ist.day == 1:
-        # Check if we already sent the report for the previous month
         last_sent = ""
         if os.path.exists(report_flag_file):
             with open(report_flag_file, "r") as f:
                 last_sent = f.read().strip()
                 
         if last_sent != current_month_str:
-            # Calculate stats for the previous month
             if os.path.exists(TRADE_HISTORY_FILE):
                 df = pd.read_csv(TRADE_HISTORY_FILE)
                 closed = df[df["status"] != "PENDING"].copy()
                 
                 if not closed.empty:
-                    # Filter for previous month based on exit_time
                     prev_month_dt = now_ist.replace(day=1) - pd.Timedelta(days=1)
                     prev_month_str = prev_month_dt.strftime("%Y-%m")
                     
@@ -179,7 +174,6 @@ def check_and_send_monthly_report(now_ist: datetime):
                         losses = len(month_trades[month_trades["status"] == "LOSS"])
                         win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
                         net_pnl = month_trades["pnl_usd"].sum()
-                        
                         emoji = "🟢" if net_pnl >= 0 else "🔴"
                         
                         report_msg = (
@@ -193,7 +187,6 @@ def check_and_send_monthly_report(now_ist: datetime):
                         )
                         send_telegram_alert(report_msg)
                         
-            # Save state so it doesn't send twice in the same month
             with open(report_flag_file, "w") as f:
                 f.write(current_month_str)
 
@@ -224,7 +217,6 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
                     send_telegram_alert(f"🛡️ *Breakeven Activated* for Trade **{symbol}** BUY (`{trade_id}`).\nStop Loss moved to entry price: `{entry}`")
 
                 if current_low <= float(df.at[idx, "sl"]):
-                    # If SL was moved to entry (BE), PnL is $0, otherwise it's a loss based on original SL risk
                     actual_exit_sl = float(df.at[idx, "sl"])
                     risk_points_realized = abs(entry - actual_exit_sl) if be_active == 1 else abs(entry - sl)
                     
@@ -298,7 +290,6 @@ def evaluate_pending_trades(current_high: float, current_low: float, atr_val: fl
 
 
 def find_macro_4h_range(df: pd.DataFrame, lookback: int = 50):
-    """Identifies the true macro 4H Dealing Range for equilibrium context."""
     macro_df = df.tail(lookback)
     macro_sh = macro_df["high"].max()
     macro_sl = macro_df["low"].min()
@@ -306,7 +297,6 @@ def find_macro_4h_range(df: pd.DataFrame, lookback: int = 50):
 
 
 def find_smc_swings(df: pd.DataFrame, window: int = 2):
-    """Identifies verified Fractal Swing Highs and Swing Lows for liquidity sweeps."""
     swing_highs = [
         df["high"].iloc[i] for i in range(window, len(df) - window)
         if all(df["high"].iloc[i] > df["high"].iloc[i - j] for j in range(1, window + 1)) and
@@ -323,7 +313,6 @@ def find_smc_swings(df: pd.DataFrame, window: int = 2):
 
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
-    """Calculates Average True Range for dynamic structural noise buffer."""
     high_low = df['high'] - df['low']
     high_close = (df['high'] - df['close'].shift()).abs()
     low_close = (df['low'] - df['close'].shift()).abs()
@@ -333,7 +322,6 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
 
 
 def fetch_realtime_data(symbol: str) -> dict:
-    """Fetches real-time multi-timeframe data via Twelve Data in UTC and converts to IST."""
     ts_15m = td.time_series(symbol=symbol, interval="15min", outputsize=500, timezone="UTC").as_pandas()
     ts_1m = td.time_series(symbol=symbol, interval="1min", outputsize=100, timezone="UTC").as_pandas()
 
@@ -369,7 +357,6 @@ def run_scanner():
         manage_log_size()
         now_ist = datetime.now(IST)
 
-        # Check for monthly report trigger (automatically sends on the 1st of every new month)
         check_and_send_monthly_report(now_ist)
 
         if NEWS_PAUSE:
@@ -395,32 +382,36 @@ def run_scanner():
                 quote_usd = cfg["quote_usd"]
                 asset_name = cfg["name"]
 
-                print("\n==================================================")
-                print(f"🎯 PROCESSING: {symbol} ({asset_name})")
-                print("==================================================")
-
                 data = fetch_realtime_data(symbol)
                 latest_price = data["1M"]["close"].iloc[-1]
                 atr_val = calculate_atr(data["15M"], period=14)
 
-                # Evaluate active trades and log PnLs for wins/losses
                 evaluate_pending_trades(data["1M"]["high"].iloc[-1], data["1M"]["low"].iloc[-1], atr_val, now_str, symbol, quote_usd, contract_size)
 
                 h4_sh, h4_sl = find_macro_4h_range(data["4H"], lookback=50)
                 eq_4h = (h4_sh + h4_sl) / 2
                 
-                h4_range_span = h4_sh - h4_sl
-                ote_bull_low = h4_sl + (h4_range_span * 0.21)
-                ote_bull_high = h4_sl + (h4_range_span * 0.382)
-
                 m15_sh, m15_sl = find_smc_swings(data["15M"], window=2)
-                h1_bsl, h1_ssl = find_smc_swings(data["1H"], window=2)
 
                 result = engine.analyze(data)
                 decision = result.get("decision", "NO_TRADE")
                 reason = result.get("reason", "Setup validated")
 
-                print(f"🚦 Decision: {decision} | Status: {reason}")
+                # Reverting back to your detailed formatted console output layout
+                print("==================================================")
+                print(f"🎯 PROCESSING TRADE ASSET: {symbol} ({asset_name})")
+                print("==================================================")
+                print(f"📊 LIVE SCANNER REPORT FOR TRADE: {symbol} ({asset_name})")
+                print(f"⏰ Scan Time (IST):  {now_str}")
+                print(f"💲 Live Price:       {latest_price:.5f}")
+                print(f"🚦 Engine Decision:  {decision} ({reason})")
+                print("==================================================")
+                print(f"1️⃣  4H MACRO BIAS & 15M STRUCTURAL CONTEXT")
+                print(f"   • Active Trade:   {symbol} ({asset_name})")
+                print(f"   • 4H Equilibrium: {eq_4h:.6f}")
+                print(f"   • Overall Bias:   {decision if decision in ['BUY', 'SELL'] else 'N/A'}")
+                print(f"   • 15M ATR (Noise):{atr_val}")
+                print("--------------------------------------------------")
 
                 trade_params = result.get("trade_params")
                 if decision in ["BUY", "SELL"] and trade_params:
@@ -433,6 +424,17 @@ def run_scanner():
                     risk_points = abs(planned_entry - planned_sl)
                     reward_tp1 = abs(planned_tp1 - planned_entry)
                     reward_tp2 = abs(planned_tp2 - planned_entry)
+
+                    direction_str = "LONG (Bullish Reversal from Discount)" if decision == "BUY" else "SHORT (Bearish Reversal from Premium)"
+
+                    print(f"2️⃣  TIGHTER 15M PREDICTIVE EXECUTION MAP [{symbol}]")
+                    print(f"   • Active Trade:    {symbol} ({asset_name})")
+                    print(f"   • Direction:       {direction_str}")
+                    print(f"   • Target Entry:    {planned_entry}")
+                    print(f"   • Logical SL:      {planned_sl}")
+                    print(f"   • Target 1 (EQ):   {planned_tp1}")
+                    print(f"   • Target 2 (4H):   {planned_tp2} -> R:R {rr_tp2:.2f}R")
+                    print("--------------------------------------------------")
 
                     print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
                     print("==================================================")
@@ -471,6 +473,7 @@ def run_scanner():
                         recommended_lots = math.floor(exact_lots * 100) / 100
                         recommended_lots = max(0.01, recommended_lots)
                         actual_dollar_risk = recommended_lots * risk_per_lot
+                        print(f"   ✔ APPROVED [{symbol}]: Tight stop-loss setup verified within risk parameters.")
                         print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
 
                     if decision in ["BUY", "SELL"]:
@@ -500,7 +503,7 @@ def run_scanner():
                             msg = (
                                 f"🚨 *UPGRADED SMC TRADE SIGNAL: {symbol} ({asset_name})* (`{trade_id}`)\n\n"
                                 f"• *Decision:* `{decision}`\n"
-                                f"• *Live Price:* `{latest_price}`\n"
+                                f"• *Live Price:* `{latest_price:.5f}`\n"
                                 f"• *Entry:* `{planned_entry}`\n"
                                 f"• *Tight SL:* `{planned_sl}`\n"
                                 f"• *TP1 (EQ):* `{planned_tp1}`\n"
