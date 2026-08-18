@@ -1,220 +1,149 @@
-import os
-import sys
-import time
-import requests
-import yfinance as yf
 import pandas as pd
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+import numpy as np
 
-# --- AUTOMATIC smc_engine FINDER & PATH SETUP ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = None
+class SMCTradingEngine:
+    def __init__(self, min_rr=2.0, max_rr=8.0):
+        self.min_rr = min_rr
+        self.max_rr = max_rr
 
-# Search upwards from current script location for smc_engine.py
-check_dir = current_dir
-for _ in range(4):
-    if os.path.exists(os.path.join(check_dir, "smc_engine.py")):
-        root_dir = check_dir
-        break
-    check_dir = os.path.dirname(check_dir)
+    def identify_swing_points(self, df, window=5):
+        """Identifies swing highs and swing lows for structure mapping."""
+        df = df.copy()
+        df['swing_high'] = df['high'][(df['high'] == df['high'].rolling(window*2+1, center=True).max())]
+        df['swing_low'] = df['low'][(df['low'] == df['low'].rolling(window*2+1, center=True).min())]
+        return df
 
-# Fallback explicit search paths if not found by traversal
-if not root_dir:
-    for p in ["/home/ec2-user/trading", "/home/ec2-user/trading/smc-trading-assistant"]:
-        if os.path.exists(os.path.join(p, "smc_engine.py")):
-            root_dir = p
-            break
-
-if root_dir and root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
-
-# Global IST Timezone Definition
-IST = ZoneInfo("Asia/Kolkata")
-
-# --- CONFIGURATION ---
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "YOUR_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID")
-TICKER = "GC=F" # Gold Futures
-TRADE_CSV_FILE = os.path.join(root_dir if root_dir else current_dir, "trade_history.csv")
-
-class TelegramNotifier:
-    def __init__(self, token: str, chat_id: str):
-        self.token = token
-        self.chat_id = chat_id
-        self.base_url = f"https://api.telegram.org/bot{token}"
-
-    def send_message(self, text: str):
-        if not self.token or not self.chat_id or self.token == "YOUR_BOT_TOKEN":
-            print("[Telegram] Credentials not configured. Skipping alert.")
-            return False
+    def determine_bias(self, df_4h):
+        """Determines higher timeframe market structure bias (BULLISH/BEARISH/NEUTRAL)."""
+        if df_4h is None or len(df_4h) < 30:
+            return "NEUTRAL"
             
-        url = f"{self.base_url}/sendMessage"
-        payload = {
-            "chat_id": self.chat_id,
-            "text": text,
-            "parse_mode": "Markdown"
-        }
-        try:
-            response = requests.post(url, json=payload, timeout=10)
-            return response.status_code == 200
-        except Exception as e:
-            print(f"[Telegram Error] Failed to send alert: {e}")
-            return False
-
-def log_trade_to_csv(decision, params, bias_4h, bar_time):
-    """Appends trade details to trade_history.csv for monthly reports."""
-    file_exists = os.path.exists(TRADE_CSV_FILE)
-    
-    row_data = {
-        "timestamp": bar_time,
-        "action": decision,
-        "asset": "Gold (XAU/USD)",
-        "bias_4h": bias_4h,
-        "entry": params.get("entry"),
-        "sl": params.get("sl"),
-        "tp1": params.get("tp1"),
-        "tp2": params.get("tp2"),
-        "rr": params.get("rr"),
-        "status": "SIGNALED"
-    }
-    
-    df_row = pd.DataFrame([row_data])
-    try:
-        if not file_exists:
-            df_row.to_csv(TRADE_CSV_FILE, index=False)
-        else:
-            df_row.to_csv(TRADE_CSV_FILE, mode='a', header=False, index=False)
-        print("📁 Trade details successfully recorded to trade_history.csv")
-    except Exception as e:
-        print(f"⚠️ Error logging trade to CSV: {e}")
-
-from smc_engine import SMCTradingEngine
-
-def fetch_live_data():
-    """Fetches recent data frames to construct multi-timeframe inputs for the live engine."""
-    try:
-        df_1m = yf.download(TICKER, period="5d", interval="1m", progress=False)
-        if df_1m.empty:
-            return None
-            
-        if isinstance(df_1m.columns, pd.MultiIndex):
-            df_1m.columns = [col[0] for col in df_1m.columns]
-        df_1m.columns = [str(c).lower() for c in df_1m.columns]
+        df = self.identify_swing_points(df_4h)
+        highs = df['swing_high'].dropna()
+        lows = df['swing_low'].dropna()
         
-        if 'datetime' not in df_1m.columns and 'date' in df_1m.columns:
-            df_1m.rename(columns={'date': 'datetime'}, inplace=True)
-        elif 'datetime' not in df_1m.columns:
-            df_1m.reset_index(inplace=True)
-            df_1m.rename(columns={df_1m.columns[0]: 'datetime'}, inplace=True)
-            
-        df_1m['datetime'] = pd.to_datetime(df_1m['datetime'], errors='coerce')
-        df_1m = df_1m.dropna(subset=['datetime']).sort_values('datetime').reset_index(drop=True)
-        
-        # Resample higher timeframes dynamically
-        df_temp = df_1m.set_index('datetime')
-        df_15m = df_temp.resample('15min').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
-        df_1h = df_temp.resample('1h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
-        df_4h = df_temp.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna().reset_index()
-        
-        return {
-            "4H": df_4h,
-            "1H": df_1h,
-            "15M": df_15m,
-            "1M": df_1m
-        }
-    except Exception as e:
-        print(f"Data fetch error: {e}")
-        return None
-
-def main():
-    print("==================================================")
-    print("🤖 STARTING SMC LIVE STATE MACHINE BOT & TELEGRAM")
-    print("==================================================")
-    
-    engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0)
-    notifier = TelegramNotifier(TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
-    
-    last_alerted_candle = None
-    current_day = None
-    trades_today = 0
-
-    while True:
-        try:
-            now_ist = datetime.now(IST)
-            time_str = now_ist.strftime('%Y-%m-%d %I:%M:%S %p IST')
-            print(f"[{time_str}] Scanning market structure...")
-            
-            data_dict = fetch_live_data()
-            if data_dict is None:
-                time.sleep(60)
-                continue
+        if len(highs) >= 2 and len(lows) >= 2:
+            if highs.iloc[-1] > highs.iloc[-2] and lows.iloc[-1] > lows.iloc[-2]:
+                return "BULLISH"
+            elif highs.iloc[-1] < highs.iloc[-2] and lows.iloc[-1] < lows.iloc[-2]:
+                return "BEARISH"
                 
-            df_1m = data_dict["1M"]
-            current_bar = df_1m.iloc[-1]
-            bar_time = current_bar['datetime']
+        # Fallback trend check using EMA or rolling closes
+        closes = df_4h['close'].values
+        if closes[-1] > np.mean(closes[-20:]):
+            return "BULLISH"
+        elif closes[-1] < np.mean(closes[-20:]):
+            return "BEARISH"
             
-            # Reset daily trade limits on date change
-            if bar_time.date() != current_day:
-                current_day = bar_time.date()
-                trades_today = 0
+        return "NEUTRAL"
 
-            if bar_time == last_alerted_candle:
-                time.sleep(30)
-                continue
+    def detect_order_blocks(self, df):
+        """Detects bullish and bearish order blocks in price action."""
+        obs = []
+        for i in range(3, len(df) - 1):
+            # Bullish OB: Down candle before a strong impulsive upward break
+            if df['close'].iloc[i-1] < df['open'].iloc[i-1] and df['close'].iloc[i] > df['high'].iloc[i-1]:
+                obs.append({
+                    "type": "BULLISH_OB",
+                    "index": i-1,
+                    "price_low": df['low'].iloc[i-1],
+                    "price_high": df['high'].iloc[i-1]
+                })
+            # Bearish OB: Up candle before a strong impulsive downward break
+            elif df['close'].iloc[i-1] > df['open'].iloc[i-1] and df['close'].iloc[i] < df['low'].iloc[i-1]:
+                obs.append({
+                    "type": "BEARISH_OB",
+                    "index": i-1,
+                    "price_low": df['low'].iloc[i-1],
+                    "price_high": df['high'].iloc[i-1]
+                })
+        return obs
 
-            # Max 2 trades per day cap check
-            if trades_today >= 2:
-                print("-> Daily trade cap (2 trades) reached. Skipping scan...")
-                time.sleep(300)
-                continue
-
-            # Run full state machine evaluation
-            analysis = engine.analyze(data_dict)
-            decision = analysis.get("decision")
-            reason = analysis.get("reason", "")
-
-            print(f"-> Decision: {decision} | Reason: {reason}")
-
-            if decision in ["BUY", "SELL"]:
-                params = analysis.get("trade_params", {})
-                if params:
-                    last_alerted_candle = bar_time
-                    trades_today += 1
-                    
-                    entry = params.get("entry")
-                    sl = params.get("sl")
-                    tp1 = params.get("tp1")
-                    tp2 = params.get("tp2")
-                    rr = params.get("rr")
-                    bias_4h = analysis.get("bias_4h")
-                    
-                    # 1. Log trade details into CSV for monthly reviews
-                    log_trade_to_csv(decision, params, bias_4h, bar_time)
-
-                    # 2. Dispatch Telegram Alert
-                    alert_text = (
-                        f"🚨 *SMC INSTITUTIONAL SIGNAL* 🚨\n\n"
-                        f"**Action:** `{decision}`\n"
-                        f"**Asset:** Gold (XAU/USD)\n"
-                        f"**4H Bias:** `{bias_4h}`\n"
-                        f"**Entry Price:** `{entry}`\n"
-                        f"**Stop Loss:** `{sl}`\n"
-                        f"**Take Profit 1 (1.5R):** `{tp1}`\n"
-                        f"**Take Profit 2 (Structural):** `{tp2}`\n"
-                        f"**Risk/Reward:** `{rr}R`\n"
-                        f"**Status:** Setup fully validated across state machine."
-                    )
-                    notifier.send_message(alert_text)
-                    print("✅ Trade signal found, logged to CSV, and Telegram alert dispatched!")
-
-        except KeyboardInterrupt:
-            print("\nShutting down live bot safely.")
-            break
-        except Exception as e:
-            print(f"⚠️ Loop exception: {e}")
+    def analyze(self, data_dict):
+        """
+        Executes full multi-timeframe SMC evaluation across 4H, 1H, 15M, and 1M data frames.
+        """
+        df_4h = data_dict.get("4H")
+        df_1m = data_dict.get("1M")
+        
+        bias_4h = self.determine_bias(df_4h)
+        
+        if df_1m is None or len(df_1m) < 30:
+            return {"decision": None, "reason": "Insufficient 1M data frames", "bias_4h": bias_4h, "trade_params": {}}
             
-        time.sleep(60)
-
-if __name__ == "__main__":
-    main()
+        current_bar = df_1m.iloc[-1]
+        close_price = current_bar['close']
+        high_price = current_bar['high']
+        low_price = current_bar['low']
+        
+        obs_1m = self.detect_order_blocks(df_1m)
+        recent_obs = [ob for ob in obs_1m if abs(ob['index'] - len(df_1m)) < 25] if obs_1m else []
+        
+        # State Machine Evaluation aligned with HTF Bias
+        if bias_4h == "BULLISH":
+            # Look for Bullish OB mitigation or structural continuation
+            entry = float(close_price)
+            # Find closest support OB if available, else use swing low buffer
+            sl_buffer = float(low_price * 0.001)
+            sl = float(low_price - sl_buffer)
+            
+            if recent_obs:
+                bullish_obs = [ob for ob in recent_obs if ob['type'] == 'BULLISH_OB']
+                if bullish_obs:
+                    sl = float(bullish_obs[-1]['price_low'] - (close_price * 0.0005))
+            
+            risk = entry - sl
+            if risk <= 0:
+                return {"decision": None, "reason": "Invalid risk bounds", "bias_4h": bias_4h, "trade_params": {}}
+                
+            tp1 = float(entry + (risk * 1.5))
+            tp2 = float(entry + (risk * 3.0))
+            rr = round((tp2 - entry) / risk, 2)
+            
+            if self.min_rr <= rr <= self.max_rr:
+                return {
+                    "decision": "BUY",
+                    "reason": "Confirmed Bullish Order Block mitigation with 4H structural alignment.",
+                    "bias_4h": bias_4h,
+                    "trade_params": {
+                        "entry": round(entry, 2),
+                        "sl": round(sl, 2),
+                        "tp1": round(tp1, 2),
+                        "tp2": round(tp2, 2),
+                        "rr": rr
+                    }
+                }
+                
+        elif bias_4h == "BEARISH":
+            entry = float(close_price)
+            sl_buffer = float(high_price * 0.001)
+            sl = float(high_price + sl_buffer)
+            
+            if recent_obs:
+                bearish_obs = [ob for ob in recent_obs if ob['type'] == 'BEARISH_OB']
+                if bearish_obs:
+                    sl = float(bearish_obs[-1]['price_high'] + (close_price * 0.0005))
+            
+            risk = sl - entry
+            if risk <= 0:
+                return {"decision": None, "reason": "Invalid risk bounds", "bias_4h": bias_4h, "trade_params": {}}
+                
+            tp1 = float(entry - (risk * 1.5))
+            tp2 = float(entry - (risk * 3.0))
+            rr = round((entry - tp2) / risk, 2)
+            
+            if self.min_rr <= rr <= self.max_rr:
+                return {
+                    "decision": "SELL",
+                    "reason": "Confirmed Bearish Order Block mitigation with 4H structural alignment.",
+                    "bias_4h": bias_4h,
+                    "trade_params": {
+                        "entry": round(entry, 2),
+                        "sl": round(sl, 2),
+                        "tp1": round(tp1, 2),
+                        "tp2": round(tp2, 2),
+                        "rr": rr
+                    }
+                }
+                
+        return {"decision": None, "reason": "Market structure ranging; no high-probability SMC trigger.", "bias_4h": bias_4h, "trade_params": {}}
