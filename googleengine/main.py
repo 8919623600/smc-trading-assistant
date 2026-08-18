@@ -84,27 +84,18 @@ def calculate_lot_pnl(symbol, entry, sl, tp, lots):
 
 def is_within_trading_hours():
   """Checks if current IST time is between 1:30 PM and 3:30 AM."""
-  # Get current time in IST by evaluating system time + offset or parsing datetime string
-  # Using datetime.now() assuming server is set or pulling via standard timezone check:
-  from pytz import timezone  # Standard if available, or we use standard time extraction
-  
-  # Fallback to standard offset calculation (+5:30) if pytz isn't installed
   utc_now = datetime.utcnow()
-  ist_hour = (utc_now.hour + 5) % 24
-  ist_minute = utc_now.minute + 30
-  if ist_minute >= 60:
-    ist_minute -= 60
-    ist_hour = (ist_hour + 1) % 24
-  # Adjust if UTC date rolled over hours (simplified check using total minutes from midnight)
   
-  now_total_minutes = ist_hour * 60 + ist_minute
+  # Calculate IST manually (+5 hours 30 minutes from UTC)
+  total_utc_minutes = utc_now.hour * 60 + utc_now.minute
+  ist_total_minutes = (total_utc_minutes + 330) % 1440  # 330 mins = 5h 30m, 1440 = mins in a day
   
   # Window: 1:30 PM (13:30 = 810 mins) to 3:30 AM next morning (03:30 = 210 mins)
   start_minutes = 13 * 60 + 30  # 810 mins
   end_minutes = 3 * 60 + 30     # 210 mins
   
   # Active if between 13:30 and 23:59 OR between 00:00 and 03:30
-  if now_total_minutes >= start_minutes or now_total_minutes <= end_minutes:
+  if ist_total_minutes >= start_minutes or ist_total_minutes <= end_minutes:
     return True
   return False
 
