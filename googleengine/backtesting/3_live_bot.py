@@ -7,8 +7,11 @@ import pandas as pd
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-# Ensure root directory is in sys.path so Python can find smc_engine.py
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+# --- ROBUST PATH SETUP FOR smc_engine ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, "../.."))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 # Global IST Timezone Definition
 IST = ZoneInfo("Asia/Kolkata")
@@ -17,7 +20,7 @@ IST = ZoneInfo("Asia/Kolkata")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "YOUR_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID")
 TICKER = "GC=F" # Gold Futures
-TRADE_CSV_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../trade_history.csv'))
+TRADE_CSV_FILE = os.path.join(root_dir, "trade_history.csv")
 
 class TelegramNotifier:
     def __init__(self, token: str, chat_id: str):
