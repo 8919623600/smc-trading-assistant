@@ -373,7 +373,7 @@ def fetch_realtime_data(symbol: str) -> dict:
 
 
 def run_scanner():
-    engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.5)
+    engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0)
     initialize_trade_history()
 
     print("==================================================")
