@@ -103,7 +103,6 @@ def run_scanner_loop():
   print("==================================================")
 
   engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.4)
-  # Exact lot sequence requested by user
   lot_sizes = [0.01, 0.02, 0.03, 0.5, 0.1, 0.2]
 
   while True:
@@ -142,6 +141,9 @@ def run_scanner_loop():
         print("================================================\n")
         continue
 
+      # Extract latest live market price from 1M candle close
+      current_price = round(df_1m["close"].iloc[-1], 2) if df_1m is not None and not df_1m.empty else "N/A"
+
       data_dict = {"4H": df_4h, "1H": df_1h, "15M": df_15m, "1M": df_1m}
       analysis_result = engine.analyze(data_dict)
 
@@ -162,7 +164,7 @@ def run_scanner_loop():
       fvg_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
 
       # ----------------------------------------------------
-      # CLEAN CONCISE TERMINAL MONITOR FORMAT
+      # TERMINAL MONITOR FORMAT
       # ----------------------------------------------------
       print("\n==================================================")
       print("📊 SMC Trade Signal Report")
@@ -184,13 +186,14 @@ def run_scanner_loop():
         tp = params["tp2"]
         rr = params["rr"]
         
+        print(f"• Current Price: {current_price}")
         print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | TP: {tp} | RR: 1:{rr})")
         
         # Calculate PnL across specified lot sequence
         pnl_data = calculate_lot_pnl(symbol, entry, sl, tp, lot_sizes)
         print("\nEstimated P&L Breakdown Across Lots:")
         for lot in lot_sizes:
-          print(f"  • Lot {lot} -> Max Loss: -${pnl_data[lot]['loss']} | Max Profit: +${pnl_data[lot]['profit']}")
+          print(f"  • Lot {lot} -> Loss: -${pnl_data[lot]['loss']} | Profit: +${pnl_data[lot]['profit']}")
 
         # ----------------------------------------------------
         # TELEGRAM ALERT (ONLY FOR CONFIRMED TRADES)
@@ -206,6 +209,7 @@ def run_scanner_loop():
             f"• *15M Setup:* CHoCH (`{choch_15m}`) | BOS (`{bos_15m}`) | POI (`{poi_15m}`)\n"
             f"• *1M Confirm:* Sweep (`{sweep_1m}`) | CHoCH (`{choch_1m}`) | FVG (`{fvg_1m}`)\n\n"
             "📉 *Trade Parameters:*\n"
+            f"• *Current Price:* `{current_price}`\n"
             f"• *Entry:* `{entry}`\n"
             f"• *SL:* `{sl}`\n"
             f"• *TP:* `{tp}`\n"
@@ -223,6 +227,7 @@ def run_scanner_loop():
         print("\n🚀 Confirmed trade found! Telegram alert sent.")
 
       else:
+        print(f"• Current Price: {current_price}")
         print("• Direction: NONE (Entry: N/A | SL: N/A | TP: N/A | RR: N/A)")
         print("\nDecision & Reason")
         print(f"• Reason: {reason}")
