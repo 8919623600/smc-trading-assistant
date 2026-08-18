@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 class SMCTradingEngine:
-    def __init__(self, min_rr=2.0, max_rr=6.0, backtest_mode=True):
+    def __init__(self, min_rr=2.5, max_rr=6.0, backtest_mode=True):
         self.min_rr = min_rr
         self.max_rr = max_rr
         self.backtest_mode = backtest_mode
@@ -28,45 +28,37 @@ class SMCTradingEngine:
             if not (is_london_open or is_ny_open):
                 return {"decision": "HOLD", "reason": "Outside Institutional Killzones"}
 
-            # --- 2. HIGHER TIMEFRAME BIAS (1H Structure) ---
-            df_1h["sma_50"] = df_1h["close"].rolling(50).mean()
-            htf_bullish = df_1h["close"].iloc[-1] > df_1h["sma_50"].iloc[-1]
+            # --- 2. HIGHER TIMEFRAME BIAS (1H Structure via EMA crossover) ---
+            df_1h["ema_20"] = df_1h["close"].ewm(span=20, adjust=False).mean()
+            df_1h["ema_50"] = df_1h["close"].ewm(span=50, adjust=False).mean()
+            htf_bullish = df_1h["ema_20"].iloc[-1] > df_1h["ema_50"].iloc[-1]
 
-            # --- 3. 15M ORDER BLOCK (POI) DETECTION ---
-            # Find a bullish/bearish impulse candle cluster on 15M
+            # --- 3. 15M ORDER BLOCK POI ---
             df_15m["body"] = df_15m["close"] - df_15m["open"]
-            df_15m["range"] = df_15m["high"] - df_15m["low"]
+            recent_15m = df_15m.iloc[-12:-1]
             
-            recent_15m = df_15m.iloc[-10:-1] # Look at recent completed 15M bars
             if htf_bullish:
-                # Look for the last down-candle before a strong expansion up
                 down_candles = recent_15m[recent_15m["body"] < 0]
                 if len(down_candles) == 0:
-                    return {"decision": "HOLD", "reason": "No valid 15M Bullish OB found"}
+                    return {"decision": "HOLD", "reason": "No valid 15M Bullish OB"}
                 ob_zone_high = down_candles["high"].iloc[-1]
                 ob_zone_low = down_candles["low"].iloc[-1]
-                
-                # Check if price has tapped into the 15M Order Block zone
-                in_poi = ob_zone_low <= current_close <= ob_zone_high
-                if not in_poi and current_close > ob_zone_high:
-                    # Check if price is within a reasonable pullback distance (0.5% max)
-                    if (current_close - ob_zone_high) / ob_zone_high > 0.003:
-                        return {"decision": "HOLD", "reason": "Price too far from 15M Bullish OB"}
-
             else:
-                # Bearish OB
                 up_candles = recent_15m[recent_15m["body"] > 0]
                 if len(up_candles) == 0:
-                    return {"decision": "HOLD", "reason": "No valid 15M Bearish OB found"}
+                    return {"decision": "HOLD", "reason": "No valid 15M Bearish OB"}
                 ob_zone_high = up_candles["high"].iloc[-1]
                 ob_zone_low = up_candles["low"].iloc[-1]
-                
-                in_poi = ob_zone_low <= current_close <= ob_zone_high
-                if not in_poi and current_close < ob_zone_low:
-                    if (ob_zone_low - current_close) / ob_zone_low > 0.003:
-                        return {"decision": "HOLD", "reason": "Price too far from 15M Bearish OB"}
 
-            # --- 4. 1M ATR & CHOCH (Change of Character) CONFIRMATION ---
+            # Check if price is interacting with the POI zone
+            in_poi = ob_zone_low <= current_close <= ob_zone_high
+            if not in_poi:
+                # Allow a small tolerance wrapper around the POI
+                distance = min(abs(current_close - ob_zone_high), abs(current_close - ob_zone_low))
+                if distance / current_close > 0.002:
+                    return {"decision": "HOLD", "reason": "Price outside POI zone"}
+
+            # --- 4. 1M LIQUIDITY SWEEP & DISPLACEMENT CONFIRMATION ---
             df_1m["tr"] = np.maximum(
                 df_1m["high"] - df_1m["low"],
                 np.maximum(
@@ -82,32 +74,41 @@ class SMCTradingEngine:
             decision = "HOLD"
             trade_params = {}
 
-            # 1M confirmation: 3 consecutive higher closes for bullish, lower for bearish inside the zone
+            # Check for a sweep of recent 1M lows/highs followed by sharp displacement (Engulfing or strong body)
+            recent_low = df_1m["low"].iloc[-6:-2].min()
+            recent_high = df_1m["high"].iloc[-6:-2].max()
+            
+            last_bar = df_1m.iloc[-1]
+            prev_bar = df_1m.iloc[-2]
+
             if htf_bullish:
-                recent_1m_closes = df_1m["close"].iloc[-3:].values
-                is_choch_bullish = (recent_1m_closes[2] > recent_1m_closes[1]) and (recent_1m_closes[1] > recent_1m_closes[0])
+                # Sweep condition: Did price wick below a recent low, then push back up aggressively?
+                swept_liquidity = current_bar["low"] < recent_low
+                displacement = (last_bar["close"] - last_bar["open"]) > (atr * 0.7) and last_bar["close"] > prev_bar["high"]
                 
-                if is_choch_bullish:
+                if swept_liquidity or displacement:
                     decision = "BUY"
                     entry = current_close
-                    sl = min(df_1m["low"].iloc[-5:]) - (atr * 0.5) # Tight structural SL below 1M swing low
+                    sl = min(df_1m["low"].iloc[-5:]) - (atr * 0.3)
                     risk = abs(entry - sl)
-                    tp = entry + (risk * 2.5) # 2.5 RR Target
+                    if risk <= 0: return {"decision": "HOLD", "reason": "Invalid risk sizing"}
+                    tp = entry + (risk * self.min_rr)
                     trade_params = {"entry": round(entry, 2), "sl": round(sl, 2), "tp": round(tp, 2)}
 
             else:
-                recent_1m_closes = df_1m["close"].iloc[-3:].values
-                is_choch_bearish = (recent_1m_closes[2] < recent_1m_closes[1]) and (recent_1m_closes[1] < recent_1m_closes[0])
+                swept_liquidity = current_bar["high"] > recent_high
+                displacement = (last_bar["open"] - last_bar["close"]) > (atr * 0.7) and last_bar["close"] < prev_bar["low"]
                 
-                if is_choch_bearish:
+                if swept_liquidity or displacement:
                     decision = "SELL"
                     entry = current_close
-                    sl = max(df_1m["high"].iloc[-5:]) + (atr * 0.5) # Tight structural SL above 1M swing high
+                    sl = max(df_1m["high"].iloc[-5:]) + (atr * 0.3)
                     risk = abs(entry - sl)
-                    tp = entry - (risk * 2.5)
+                    if risk <= 0: return {"decision": "HOLD", "reason": "Invalid risk sizing"}
+                    tp = entry - (risk * self.min_rr)
                     trade_params = {"entry": round(entry, 2), "sl": round(sl, 2), "tp": round(tp, 2)}
 
-            return {"decision": decision, "trade_params": trade_params, "reason": "Institutional OB + Killzone Choch Confirmed"}
+            return {"decision": decision, "trade_params": trade_params, "reason": "Institutional Sweep + Displacement Verified"}
 
         except Exception as e:
             return {"decision": "HOLD", "reason": f"Error in engine: {str(e)}"}
