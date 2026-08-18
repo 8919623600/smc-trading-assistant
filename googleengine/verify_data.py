@@ -23,7 +23,6 @@ def find_smc_swings(df: pd.DataFrame, window: int = 2):
     swing_lows = []
 
     for i in range(window, len(df) - window):
-        # Swing High: High is greater than 'window' bars to left and right
         is_high = all(
             df["high"].iloc[i] > df["high"].iloc[i - j]
             for j in range(1, window + 1)
@@ -31,11 +30,9 @@ def find_smc_swings(df: pd.DataFrame, window: int = 2):
             df["high"].iloc[i] >= df["high"].iloc[i + j]
             for j in range(1, window + 1)
         )
-
         if is_high:
-            swing_highs.append(df["high"].iloc[i])
+            swing_highs.append((df.index[i], df["high"].iloc[i]))
 
-        # Swing Low: Low is lower than 'window' bars to left and right
         is_low = all(
             df["low"].iloc[i] < df["low"].iloc[i - j]
             for j in range(1, window + 1)
@@ -43,32 +40,40 @@ def find_smc_swings(df: pd.DataFrame, window: int = 2):
             df["low"].iloc[i] <= df["low"].iloc[i + j]
             for j in range(1, window + 1)
         )
-
         if is_low:
-            swing_lows.append(df["low"].iloc[i])
+            swing_lows.append((df.index[i], df["low"].iloc[i]))
 
-    # Fallback to recent max/min if no swing pivot is isolated
-    active_sh = swing_highs[-1] if swing_highs else df["high"].max()
-    active_sl = swing_lows[-1] if swing_lows else df["low"].min()
-
-    # If the latest swing high is lower than recent price, get the highest recent swing
-    if active_sh < df["close"].iloc[-1] and len(swing_highs) > 1:
-        active_sh = max(swing_highs[-3:])
+    active_sh = swing_highs[-1][1] if swing_highs else df["high"].max()
+    active_sl = swing_lows[-1][1] if swing_lows else df["low"].min()
 
     return active_sh, active_sl
+
+
+def check_displacement(df_15m: pd.DataFrame) -> bool:
+    """UPGRADE C: Validates if the most recent impulse move features strong displacement.
+    Checks if the last breaking candle's body size is significantly larger than the average range.
+    """
+    if len(df_15m) < 10:
+        return True
+
+    # Calculate candle bodies and average body size
+    bodies = (df_15m["close"] - df_15m["open"]).abs()
+    avg_body = bodies.iloc[-15:-1].mean()
+    latest_body = bodies.iloc[-1]
+
+    # True displacement requires the latest structural move candle to be at least 1.3x average body size
+    return latest_body >= (1.3 * avg_body)
 
 
 def inspect_market_state(symbol="XAU/USD"):
     print(f"Fetching real-time market data for '{symbol}' via Twelve Data...")
 
     try:
-        # Fetch 500 bars of 15M data (~5 days for accurate active structure)
         ts_15m = td.time_series(
             symbol=symbol, interval="15min", outputsize=500, timezone="UTC"
         )
         df_15m = ts_15m.as_pandas()
 
-        # Fetch 100 bars of 1M data (for live execution & quotes)
         ts_1m = td.time_series(
             symbol=symbol, interval="1min", outputsize=100, timezone="UTC"
         )
@@ -78,7 +83,6 @@ def inspect_market_state(symbol="XAU/USD"):
             print(f"❌ Error: No data returned for '{symbol}'.")
             return
 
-        # Format & Convert Timezones to IST
         for df in [df_15m, df_1m]:
             df.index = pd.to_datetime(df.index)
             df.sort_index(inplace=True)
@@ -90,7 +94,6 @@ def inspect_market_state(symbol="XAU/USD"):
             else:
                 df.index = df.index.tz_convert(IST)
 
-        # Resample into 1H and 4H timeframes
         df_1h = (
             df_15m.resample("1h")
             .agg({"open": "first", "high": "max", "low": "min", "close": "last"})
@@ -105,8 +108,19 @@ def inspect_market_state(symbol="XAU/USD"):
         current_price = df_1m["close"].iloc[-1]
         last_time_ist = df_1m.index[-1].strftime("%Y-%m-%d %I:%M:%S %p IST")
 
-        # 1. Active 4H SMC Fractal Swing Range
+        # 1. 4H Range & UPGRADE B: Optimal Trade Entry (OTE 0.618 - 0.79 zone)
         h4_high, h4_low = find_smc_swings(df_4h, window=2)
+        total_range = h4_high - h4_low
+
+        # Calculate OTE Zones depending on direction
+        # Bullish Discount OTE: retracement down to 61.8% - 79% from the high
+        ote_bullish_high = h4_high - (total_range * 0.618)
+        ote_bullish_low = h4_high - (total_range * 0.790)
+
+        # Bearish Premium OTE: retracement up to 61.8% - 79% from the low
+        ote_bearish_low = h4_low + (total_range * 0.618)
+        ote_bearish_high = h4_low + (total_range * 0.790)
+
         equilibrium = (h4_high + h4_low) / 2
         bias = (
             "BEARISH (Premium Zone)"
@@ -114,16 +128,21 @@ def inspect_market_state(symbol="XAU/USD"):
             else "BULLISH (Discount Zone)"
         )
 
-        # 2. 1H Liquidity Pools (BSL / SSL)
-        h1_bsl, h1_ssl = find_smc_swings(df_1h, window=2)
+        # Check if price is specifically inside the institutional OTE sweet spot
+        in_bullish_ote = ote_bullish_low <= current_price <= ote_bullish_high
+        in_bearish_ote = ote_bearish_low <= current_price <= ote_bearish_high
 
+        # 2. 1H Liquidity Pools
+        h1_bsl, h1_ssl = find_smc_swings(df_1h, window=2)
         swept_bsl = df_1m["high"].iloc[-10:].max() >= h1_bsl
         swept_ssl = df_1m["low"].iloc[-10:].min() <= h1_ssl
 
-        # 3. 15M POI (Fair Value Gap)
+        # 3. UPGRADE C: Displacement Check on 15M
+        has_displacement = check_displacement(df_15m)
+
+        # 4. 15M POI Detection
         fvg_type = "None Detected"
         fvg_range = "N/A"
-
         start_idx = len(df_15m) - 1
         end_idx = max(2, len(df_15m) - 15)
 
@@ -143,17 +162,30 @@ def inspect_market_state(symbol="XAU/USD"):
 
         # Output Verification
         print("\n==================================================")
-        print(f"📊 LIVE SMC MARKET VERIFICATION ({symbol})")
+        print(f"📊 UPGRADED SMC MARKET VERIFICATION ({symbol})")
         print(f"⏰ Bar Time (IST):    {last_time_ist}")
         print(f"💲 Current Price:    {current_price:.2f}")
         print("==================================================")
-        print("1️⃣  4H SMC SWING STRUCTURE & BIAS")
+        print("1️⃣  4H SMC RANGE & OTE ZONE (Upgrade B)")
         print(f"   • Active Swing High: {h4_high:.2f}")
         print(f"   • Active Swing Low:  {h4_low:.2f}")
-        print(f"   • Equilibrium:       {equilibrium:.2f}")
-        print(f"   • Overall Bias:      {bias}")
+        print(f"   • Equilibrium (50%): {equilibrium:.2f}")
+        if bias.startswith("BULLISH"):
+            print(
+                f"   • 61.8% - 79% OTE Zone: {ote_bullish_low:.2f} - {ote_bullish_high:.2f}"
+            )
+            print(
+                f"   • Price in OTE Sweet Spot? {'YES ✅ (High Confluence)' : 'NO (Waiting for deep retracement)' if not in_bullish_ote else 'YES ✅'}"
+            )
+        else:
+            print(
+                f"   • 61.8% - 79% OTE Zone: {ote_bearish_low:.2f} - {ote_bearish_high:.2f}"
+            )
+            print(
+                f"   • Price in OTE Sweet Spot? {'YES ✅' if in_bearish_ote else 'NO (Waiting for deep retracement)'}"
+            )
         print("--------------------------------------------------")
-        print("2️⃣  1H LIQUIDITY LEVELS")
+        print("2️⃣  1H LIQUIDITY POOLS")
         print(f"   • Buy-Side Liquidity (BSL):  {h1_bsl:.2f}")
         print(f"   • Sell-Side Liquidity (SSL): {h1_ssl:.2f}")
         print(
@@ -163,29 +195,31 @@ def inspect_market_state(symbol="XAU/USD"):
             f"   • SSL Swept Recently?        {'YES 🚨' if swept_ssl else 'NO'}"
         )
         print("--------------------------------------------------")
-        print("3️⃣  15M POI (FAIR VALUE GAP / OB)")
-        print(f"   • Active Imbalance: {fvg_type}")
-        print(f"   • FVG Price Zone:   {fvg_range}")
+        print("3️⃣  DISPLACEMENT & MOMENTUM FILTER (Upgrade C)")
+        print(
+            f"   • Strong Impulse Detected?:  {'YES 🚀 (Institutional Expansion)' if has_displacement else 'NO ⚠️ (Weak / Choppy Move)'}"
+        )
+        print(f"   • Active Imbalance:          {fvg_type}")
+        print(f"   • FVG Price Zone:            {fvg_range}")
         print("--------------------------------------------------")
-        print("4️⃣  ACTIONABLE EXECUTION PLAN")
+        print("4️⃣  ACTIONABLE UPGRADED EXECUTION PLAN")
         if current_price > equilibrium:
             print(
-                f"   • PLAN: IF price sweeps 1H BSL High ({h1_bsl:.2f}) and rejects,"
+                f"   • PLAN: Requires 1H BSL sweep AND valid Bearish CHoCH with strong displacement."
             )
-            print(
-                f"           THEN watch for 1M Bearish CHoCH to SHORT down to {equilibrium:.2f}."
-            )
+            if not has_displacement:
+                print(
+                    "   • STATUS: 🛑 BLOCKED - Current market lacks institutional displacement momentum."
+                )
         else:
             print(
-                f"   • PLAN: IF price sweeps 1H SSL Low ({h1_ssl:.2f}) and holds,"
+                f"   • PLAN: Requires 1H SSL sweep ({h1_ssl:.2f}) down into the OTE Zone, followed by 1M Bullish CHoCH."
             )
-            print(
-                f"           THEN watch for 1M Bullish CHoCH to LONG up to {equilibrium:.2f}."
-            )
+            if not has_displacement:
+                print(
+                    "   • STATUS: 🛑 BLOCKED - Waiting for a high-momentum expansion candle to confirm intent."
+                )
         print("==================================================\n")
-
-    except Exception as e:
-        print(f"❌ Error fetching data: {e}")
 
 
 if __name__ == "__main__":
