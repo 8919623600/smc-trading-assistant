@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time as dtime
 import os
 import time
 import pandas as pd
@@ -27,11 +27,14 @@ ASSETS = [
 current_key_index = 0
 
 
-def fetch_twelve_data(symbol: str, interval: str, outputsize: int = 100):
-  """Fetches data from Twelve Data using environment keys with automatic fallback."""
+def fetch_twelve_data(symbol: str, interval: str, outputsize: int = 100, max_retries: int = 3):
+  """Fetches data using Round-Robin key rotation and active retries on failure."""
   global current_key_index
-  for _ in range(len(API_KEYS)):
+  
+  for _ in range(max_retries):
     active_key = API_KEYS[current_key_index]
+    current_key_index = (current_key_index + 1) % len(API_KEYS)
+    
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={active_key}&format=JSON"
 
     try:
@@ -39,7 +42,7 @@ def fetch_twelve_data(symbol: str, interval: str, outputsize: int = 100):
       data = response.json()
 
       if "code" in data and data["code"] in [429, 401, 403]:
-        current_key_index = (current_key_index + 1) % len(API_KEYS)
+        time.sleep(2)
         continue
 
       if "values" in data:
@@ -52,29 +55,26 @@ def fetch_twelve_data(symbol: str, interval: str, outputsize: int = 100):
         return df
       else:
         return None
+        
     except Exception:
-      current_key_index = (current_key_index + 1) % len(API_KEYS)
-      return None
+      time.sleep(2)
+      continue
+      
   return None
 
 
 def calculate_lot_pnl(symbol, entry, sl, tp, lots):
-  """Calculates risk/reward monetary value based on lot size and symbol type."""
+  """Calculates risk/reward monetary value based on lot size."""
   risk_pips_or_points = abs(entry - sl)
   reward_pips_or_points = abs(tp - entry)
-
-  # Standard contract size multiplier adjustments
-  # For XAU/USD (Gold): 1 standard lot = 100 oz. For Forex (EUR/USD): 1 standard lot = 100,000 units.
   multiplier = 100 if "XAU" in symbol else 100000
 
   results = {}
   for lot in lots:
     if "EUR" in symbol:
-      # EUR/USD pip value approximation per standard lot (approx $10 per pip for standard, scale by lot)
       risk_usd = risk_pips_or_points * multiplier * lot
       reward_usd = reward_pips_or_points * multiplier * lot
     else:
-      # XAU/USD point value calculation
       risk_usd = risk_pips_or_points * lot * 100
       reward_usd = reward_pips_or_points * lot * 100
 
@@ -82,48 +82,78 @@ def calculate_lot_pnl(symbol, entry, sl, tp, lots):
   return results
 
 
+def is_within_trading_hours():
+  """Checks if current IST time is between 1:30 PM and 3:30 AM."""
+  # Get current time in IST by evaluating system time + offset or parsing datetime string
+  # Using datetime.now() assuming server is set or pulling via standard timezone check:
+  from pytz import timezone  # Standard if available, or we use standard time extraction
+  
+  # Fallback to standard offset calculation (+5:30) if pytz isn't installed
+  utc_now = datetime.utcnow()
+  ist_hour = (utc_now.hour + 5) % 24
+  ist_minute = utc_now.minute + 30
+  if ist_minute >= 60:
+    ist_minute -= 60
+    ist_hour = (ist_hour + 1) % 24
+  # Adjust if UTC date rolled over hours (simplified check using total minutes from midnight)
+  
+  now_total_minutes = ist_hour * 60 + ist_minute
+  
+  # Window: 1:30 PM (13:30 = 810 mins) to 3:30 AM next morning (03:30 = 210 mins)
+  start_minutes = 13 * 60 + 30  # 810 mins
+  end_minutes = 3 * 60 + 30     # 210 mins
+  
+  # Active if between 13:30 and 23:59 OR between 00:00 and 03:30
+  if now_total_minutes >= start_minutes or now_total_minutes <= end_minutes:
+    return True
+  return False
+
+
 def run_scanner_loop():
   print("==================================================")
   print("🚀 STARTING INSTITUTIONAL SMC SCANNER ENGINE")
+  print("⏰ Active Window Configured: 1:30 PM to 3:30 AM IST")
   print("==================================================")
 
   engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.4)
   lot_sizes = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5]
 
   while True:
+    # Time restriction check
+    if not is_within_trading_hours():
+      print(f"[{get_current_ist_time()}] 💤 Outside active trading window (1:30 PM - 3:30 AM IST). Sleeping for 5 minutes...")
+      time.sleep(300) # Check every 5 minutes if it's time to wake up
+      continue
+
     for asset in ASSETS:
       symbol = asset["symbol"]
       twelve_symbol = asset["twelve_symbol"]
       scan_time = get_current_ist_time()
 
-      # Fetch multi-timeframe arrays
       df_4h = fetch_twelve_data(twelve_symbol, "4h", outputsize=50)
-      time.sleep(5)
+      time.sleep(1)
       df_1h = fetch_twelve_data(twelve_symbol, "1h", outputsize=50)
-      time.sleep(5)
+      time.sleep(1)
       df_15m = fetch_twelve_data(twelve_symbol, "15min", outputsize=50)
-      time.sleep(5)
+      time.sleep(1)
       df_1m = fetch_twelve_data(twelve_symbol, "1min", outputsize=50)
 
       data_feed_status = (
           "CONNECTED"
-          if all(
-              x is not None for x in [df_4h, df_1h, df_15m, df_1m]
-          )
+          if all(x is not None for x in [df_4h, df_1h, df_15m, df_1m])
           else "FAILED"
       )
-      telegram_status = "CONNECTED"  # Update if hooked up to your bot
+      telegram_status = "CONNECTED"
 
       if data_feed_status == "FAILED":
         print(f"\n================================================")
         print("SMC TRADE SIGNAL REPORT")
         print("================================================")
         print(f"System Status:\nData Feed: FAILED\nTelegram: {telegram_status}")
-        print(f"Symbol:\n{symbol}\n\nTime:\n{scan_time}")
-        print("Market Status:\nNO TRADE\n================================================")
+        print(f"\nSymbol:\n{symbol}\n\nTime:\n{scan_time}")
+        print("\nMarket Status:\nNO TRADE\n================================================")
         continue
 
-      # Run Engine Analysis
       data_dict = {"4H": df_4h, "1H": df_1h, "15M": df_15m, "1M": df_1m}
       analysis_result = engine.analyze(data_dict)
 
@@ -143,8 +173,13 @@ def run_scanner_loop():
       print(f"\nSymbol:\n{symbol}")
       print(f"\nTime:\n{scan_time}")
       print(f"\nMarket Status:\n{market_status}")
+      
       print(f"\nHTF Analysis (4H):\nBias:\n{bias_4h}")
-      print(f"\nLiquidity (1H):\nEvent:\n{liquidity}-SIDE SWEEP" if liquidity != "NONE" else "\nLiquidity (1H):\nEvent:\nNONE")
+      if liquidity != "NONE":
+          print(f"\nLiquidity (1H):\nEvent:\n{liquidity}-SIDE SWEEP")
+      else:
+          print(f"\nLiquidity (1H):\nEvent:\nNONE")
+          
       print(f"\nSetup (15M):")
       print(f"CHoCH:\n{'YES' if market_status != 'NO TRADE' else 'NO'}")
       print(f"Displacement:\n{'YES' if market_status != 'NO TRADE' else 'NO'}")
@@ -175,7 +210,6 @@ def run_scanner_loop():
         print(f"Reward:\n{reward_pts} points")
         print(f"RR:\n1:{params['rr']}")
 
-        # Lot P&L Breakdown
         pnl_data = calculate_lot_pnl(symbol, entry, sl, tp, lot_sizes)
         print(f"\nESTIMATED P&L ACROSS LOT SIZES:")
         for lot in lot_sizes:

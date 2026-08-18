@@ -2,7 +2,7 @@
 
 # Define your script name
 SCRIPT_NAME="testing_smc_google.py"
-LOG_FILE="scanner.log"
+LOG_FILE="main.py"
 
 echo "=================================================="
 echo "  RESTARTING SMC GOLD SCANNER                     "
