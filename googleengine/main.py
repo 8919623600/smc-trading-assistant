@@ -111,17 +111,18 @@ def run_scanner_loop():
       time.sleep(300)
       continue
 
-    for asset in ASSETS:
+    for i, asset in enumerate(ASSETS):
       symbol = asset["symbol"]
       twelve_symbol = asset["twelve_symbol"]
       scan_time = get_current_ist_time()
 
+      # Staggered requests to safely handle Twelve Data rate limits
       df_4h = fetch_twelve_data(twelve_symbol, "4h", outputsize=50)
-      time.sleep(1)
+      time.sleep(8)
       df_1h = fetch_twelve_data(twelve_symbol, "1h", outputsize=50)
-      time.sleep(1)
+      time.sleep(8)
       df_15m = fetch_twelve_data(twelve_symbol, "15min", outputsize=50)
-      time.sleep(1)
+      time.sleep(8)
       df_1m = fetch_twelve_data(twelve_symbol, "1min", outputsize=50)
 
       data_feed_status = (
@@ -139,6 +140,9 @@ def run_scanner_loop():
         print(f"• Asset: {symbol} | Time: {scan_time}")
         print("• Status: FAILED (Data Feed: FAILED | Telegram: CONNECTED)")
         print("================================================\n")
+        
+        if i < len(ASSETS) - 1:
+          time.sleep(15)
         continue
 
       # Extract latest live market price from 1M candle close
@@ -154,7 +158,6 @@ def run_scanner_loop():
 
       market_status = "TRADE FOUND" if decision in ["BUY", "SELL"] else ("WAIT" if "OTE" in reason or "POI" in reason else "NO TRADE")
 
-      # Setup Status Indicators for Terminal
       choch_15m = "YES" if market_status != "NO TRADE" else "NO"
       bos_15m = "YES" if market_status != "NO TRADE" else "NO"
       poi_15m = "VALID" if market_status != "NO TRADE" else "INVALID"
@@ -189,41 +192,11 @@ def run_scanner_loop():
         print(f"• Current Price: {current_price}")
         print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | TP: {tp} | RR: 1:{rr})")
         
-        # Calculate PnL across specified lot sequence
         pnl_data = calculate_lot_pnl(symbol, entry, sl, tp, lot_sizes)
         print("\nEstimated P&L Breakdown Across Lots:")
         for lot in lot_sizes:
           print(f"  • Lot {lot} -> Loss: -${pnl_data[lot]['loss']} | Profit: +${pnl_data[lot]['profit']}")
 
-        # ----------------------------------------------------
-        # TELEGRAM ALERT (ONLY FOR CONFIRMED TRADES)
-        # ----------------------------------------------------
-        telegram_message = (
-            "🚨 *SMC TRADE SIGNAL REPORT* 🚨\n\n"
-            f"🪙 *Asset:* {symbol}\n"
-            f"⏱ *Time:* {scan_time}\n"
-            f"📈 *Direction:* `{decision}`\n\n"
-            "📊 *Multi-Timeframe Breakdown:*\n"
-            f"• *4H Bias:* `{bias_4h}`\n"
-            f"• *1H Liquidity:* `{liquidity}-SIDE SWEEP`\n"
-            f"• *15M Setup:* CHoCH (`{choch_15m}`) | BOS (`{bos_15m}`) | POI (`{poi_15m}`)\n"
-            f"• *1M Confirm:* Sweep (`{sweep_1m}`) | CHoCH (`{choch_1m}`) | FVG (`{fvg_1m}`)\n\n"
-            "📉 *Trade Parameters:*\n"
-            f"• *Current Price:* `{current_price}`\n"
-            f"• *Entry:* `{entry}`\n"
-            f"• *SL:* `{sl}`\n"
-            f"• *TP:* `{tp}`\n"
-            f"• *R:R:* `1:{rr}`\n\n"
-            "💵 *Estimated P&L Breakdown:*\n"
-            f"• `0.01` -> Loss: -${pnl_data[0.01]['loss']} | Profit: +${pnl_data[0.01]['profit']}\n"
-            f"• `0.02` -> Loss: -${pnl_data[0.02]['loss']} | Profit: +${pnl_data[0.02]['profit']}\n"
-            f"• `0.03` -> Loss: -${pnl_data[0.03]['loss']} | Profit: +${pnl_data[0.03]['profit']}\n"
-            f"• `0.5`  -> Loss: -${pnl_data[0.5]['loss']} | Profit: +${pnl_data[0.5]['profit']}\n"
-            f"• `0.1`  -> Loss: -${pnl_data[0.1]['loss']} | Profit: +${pnl_data[0.1]['profit']}\n"
-            f"• `0.2`  -> Loss: -${pnl_data[0.2]['loss']} | Profit: +${pnl_data[0.2]['profit']}\n\n"
-            f"💬 *Reason:* {reason}"
-        )
-        # send_telegram_alert(telegram_message)
         print("\n🚀 Confirmed trade found! Telegram alert sent.")
 
       else:
@@ -234,6 +207,11 @@ def run_scanner_loop():
         print("💤 Status is WAIT/NO TRADE. Skipping Telegram alert.")
 
       print("==================================================\n")
+
+      # Stagger buffer between assets to clear the per-minute limit
+      if i < len(ASSETS) - 1:
+        print("⏳ Rate-limit cooldown: pausing 30 seconds before next asset...")
+        time.sleep(30)
 
     print("💤 Cycle complete. Resting for 60 seconds...\n")
     time.sleep(60)
