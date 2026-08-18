@@ -55,11 +55,26 @@ class SMCTradingEngine:
 
         return df
 
+    @staticmethod
+    def check_displacement(df_15m: pd.DataFrame) -> bool:
+        """UPGRADE C: Validates if the recent impulse features true institutional displacement.
+        Blocks trades if candles feature tiny bodies and massive rejection wicks.
+        """
+        if len(df_15m) < 10:
+            return True
+
+        bodies = (df_15m["close"] - df_15m["open"]).abs()
+        avg_body = bodies.iloc[-15:-1].mean()
+        latest_body = bodies.iloc[-1]
+
+        # Ensure latest candle body is at least 1.3x the average body size
+        return latest_body >= (1.3 * avg_body)
+
     # ==========================================
     # TIMEFRAME ANALYSIS STEPS
     # ==========================================
-    def get_4h_bias(self, df_4h: pd.DataFrame) -> str:
-        """Step 1: 4H Market Bias & Dealing Range (Premium/Discount)."""
+    def get_4h_bias_and_ote(self, df_4h: pd.DataFrame) -> dict:
+        """Step 1: 4H Market Bias & Upgraded OTE Zone (0.618 - 0.79 Fib Retracement)."""
         df = self.find_pivots(df_4h, length=5)
         recent_high = (
             df["pivot_high"].dropna().iloc[-1]
@@ -72,14 +87,39 @@ class SMCTradingEngine:
             else df["low"].min()
         )
 
+        total_range = recent_high - recent_low
         equilibrium = (recent_high + recent_low) / 2
         current_close = df["close"].iloc[-1]
 
-        if current_close > equilibrium:
-            return "BEARISH"  # In Premium: Look for Shorts
-        elif current_close < equilibrium:
-            return "BULLISH"  # In Discount: Look for Longs
-        return "NEUTRAL"
+        # UPGRADE B: Optimal Trade Entry (OTE) Zone Calculations
+        # Bullish OTE: Retracement down into 61.8% to 79% of the discount array
+        ote_bullish_high = recent_high - (total_range * 0.618)
+        ote_bullish_low = recent_high - (total_range * 0.790)
+
+        # Bearish OTE: Retracement up into 61.8% to 79% of the premium array
+        ote_bearish_low = recent_low + (total_range * 0.618)
+        ote_bearish_high = recent_low + (total_range * 0.790)
+
+        in_bullish_ote = ote_bullish_low <= current_close <= ote_bullish_high
+        in_bearish_ote = ote_bearish_low <= current_close <= ote_bearish_high
+
+        if current_close < equilibrium:
+            bias = "BULLISH"
+            in_ote = in_bullish_ote
+        elif current_close > equilibrium:
+            bias = "BEARISH"
+            in_ote = in_bearish_ote
+        else:
+            bias = "NEUTRAL"
+            in_ote = False
+
+        return {
+            "bias": bias,
+            "in_ote": in_ote,
+            "recent_high": recent_high,
+            "recent_low": recent_low,
+            "equilibrium": equilibrium,
+        }
 
     def check_1h_liquidity_sweep(self, df_1h: pd.DataFrame, bias: str) -> dict:
         """Step 2: Detect 1H Liquidity Sweeps and extract liquidity pools."""
@@ -113,11 +153,11 @@ class SMCTradingEngine:
             "type": sweep_type,
             "sweep_level": sweep_level,
             "h1_sh": last_high,
-            "h1_sl": last_low
+            "h1_sl": last_low,
         }
 
     def detect_15m_poi(self, df_15m: pd.DataFrame, sweep_info: dict) -> dict:
-        """Step 3: 15M Structure Shift (CHoCH + BOS) & POI (OB + FVG)."""
+        """Step 3: 15M Structure Shift & POI (OB + FVG)."""
         if not sweep_info["swept"]:
             return {"valid_poi": False}
 
@@ -160,7 +200,7 @@ class SMCTradingEngine:
             "fvg_top": fvg_top,
             "fvg_bottom": fvg_bottom,
             "m15_sh": m15_sh,
-            "m15_sl": m15_sl
+            "m15_sl": m15_sl,
         }
 
     def evaluate_1m_entry(
@@ -185,17 +225,14 @@ class SMCTradingEngine:
             structural_floor = min(m15_sl, h1_sl)
             stop_loss = structural_floor - (atr_val * self.atr_multiplier)
             risk = entry_price - stop_loss
-            
+
             if risk <= 0:
                 return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-            # TP1: 1.5R Expansion for Breakeven safety
             tp1 = entry_price + (risk * 1.5)
-            
-            # TP2: Structural 1H Liquidity Pool (Buy-Side Liquidity High)
             tp2 = h1_sh
             if tp2 <= entry_price:
-                tp2 = entry_price + (risk * 2.0)  # Fallback safety
+                tp2 = entry_price + (risk * 2.0)
 
             reward_tp2 = tp2 - entry_price
             rr_tp2 = reward_tp2 / risk
@@ -214,17 +251,14 @@ class SMCTradingEngine:
             structural_ceiling = max(m15_sh, h1_sh)
             stop_loss = structural_ceiling + (atr_val * self.atr_multiplier)
             risk = stop_loss - entry_price
-            
+
             if risk <= 0:
                 return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-            # TP1: 1.5R Expansion for Breakeven safety
             tp1 = entry_price - (risk * 1.5)
-            
-            # TP2: Structural 1H Liquidity Pool (Sell-Side Liquidity Low)
             tp2 = h1_sl
             if tp2 >= entry_price:
-                tp2 = entry_price - (risk * 2.0)  # Fallback safety
+                tp2 = entry_price - (risk * 2.0)
 
             reward_tp2 = entry_price - tp2
             rr_tp2 = reward_tp2 / risk
@@ -248,8 +282,9 @@ class SMCTradingEngine:
     # MAIN ANALYZER RUNNER
     # ==========================================
     def analyze(self, data_dict: dict, news_events: list = None) -> dict:
-        """Executes the full SMC top-down cascade."""
+        """Executes the full SMC top-down cascade with OTE and Displacement filters."""
         df_1m = data_dict["1M"]
+        df_15m = data_dict["15M"]
         current_time = (
             df_1m.index[-1]
             if "time" not in df_1m.columns
@@ -268,10 +303,18 @@ class SMCTradingEngine:
                         "reason": f"News Blackout Active near {event_time}",
                     }
 
-        # Step 1: 4H Market Bias
-        bias = self.get_4h_bias(data_dict["4H"])
+        # Step 1: 4H Market Bias & OTE Zone Check (Upgrade B)
+        market_context = self.get_4h_bias_and_ote(data_dict["4H"])
+        bias = market_context["bias"]
         if bias == "NEUTRAL":
             return {"decision": "NO_TRADE", "reason": "4H Market Bias Neutral"}
+
+        # Optional strict OTE gate check: if not in OTE sweet spot, wait for deeper pullback
+        if not market_context["in_ote"]:
+            return {
+                "decision": "WAIT",
+                "reason": "Price not yet in 0.618 - 0.79 OTE Zone (Waiting for deep retracement)",
+            }
 
         # Step 2: 1H Liquidity Sweep & Levels
         sweep = self.check_1h_liquidity_sweep(data_dict["1H"], bias)
@@ -282,11 +325,19 @@ class SMCTradingEngine:
             }
 
         # Step 3: 15M POI & Retest
-        poi = self.detect_15m_poi(data_dict["15M"], sweep)
+        poi = self.detect_15m_poi(df_15m, sweep)
         if not poi["valid_poi"]:
             return {
                 "decision": "WAIT",
                 "reason": "15M POI not confirmed or retested",
+            }
+
+        # Step 3.5: True Displacement Filter Check (Upgrade C)
+        has_displacement = self.check_displacement(df_15m)
+        if not has_displacement:
+            return {
+                "decision": "WAIT",
+                "reason": "Trade Blocked: Lacks institutional displacement momentum (Weak body/Wick rejection)",
             }
 
         # Step 4: 1M Precision Entry with 1H Liquidity Targets
