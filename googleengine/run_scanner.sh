@@ -25,7 +25,7 @@ echo "✅ Created fresh $LOG_FILE"
 
 # 3. Launch the python bot in a detached screen session, piping output to scanner.log
 echo "🤖 Launching bot in background screen session ($SCREEN_NAME)..."
-screen -dmS "$SCREEN_NAME" bash -c "python3 $BOT_SCRIPT > $LOG_FILE 2>&1"
+screen -dmS "$SCREEN_NAME" bash -c "python3 -u $BOT_SCRIPT > $LOG_FILE 2>&1"
 
 # 4. Verify startup
 sleep 2
