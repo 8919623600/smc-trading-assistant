@@ -1,41 +1,36 @@
 #!/bin/bash
 
-BOT_SCRIPT="backtesting/3_live_bot.py"
-LOG_FILE="scanner.log"
-SCREEN_NAME="smc_bot"
+# ==========================================
+# SMC LIVE SCANNER LAUNCHER SCRIPT
+# ==========================================
 
 echo "=================================================="
 echo "🚀 STARTING SMC LIVE SCANNER & BOT"
 echo "=================================================="
 
-# 1. Stop any existing background bot session if running
-if screen -list | grep -q "$SCREEN_NAME"; then
+# Stop any existing screen session named 'smc_bot' if running
+if screen -list | grep -q "smc_bot"; then
     echo "🔄 Stopping existing bot session..."
-    screen -S "$SCREEN_NAME" -X quit
+    screen -S smc_bot -X quit
 fi
 
-# 2. Remove old log file and create a fresh one
+# Reset scanner log safely
+LOG_FILE="scanner.log"
 if [ -f "$LOG_FILE" ]; then
-    echo "🗑️ Removing old $LOG_FILE..."
-    rm -f "$LOG_FILE"
+    rm "$LOG_FILE"
+    echo "🗑️ Removing old scanner.log..."
 fi
 
 touch "$LOG_FILE"
-echo "✅ Created fresh $LOG_FILE"
+echo "✅ Created fresh scanner.log"
 
-# 3. Launch the python bot in a detached screen session, piping output to scanner.log
-echo "🤖 Launching bot in background screen session ($SCREEN_NAME)..."
-screen -dmS "$SCREEN_NAME" bash -c "python3 -u $BOT_SCRIPT > $LOG_FILE 2>&1"
+# Launch python script inside detached screen session
+# Using direct path since we are in the backtesting folder
+echo "🤖 Launching bot in background screen session (smc_bot)..."
+screen -dmS smc_bot python3 3_live_bot.py > "$LOG_FILE" 2>&1
 
-# 4. Verify startup
-sleep 2
-if screen -list | grep -q "$SCREEN_NAME"; then
-    echo "✅ Success! SMC Scanner is running successfully."
-    echo ""
-    echo "Handy Log & Control Commands:"
-    echo "View live output in real-time: tail -f scanner.log"
-    echo "Stop the scanner completely: screen -S smc_bot -X quit"
-else
-    echo "❌ Error: Bot failed to start. Check $LOG_FILE for details."
-fi
+echo "=================================================="
+echo "✨ Bot launched successfully in screen session 'smc_bot'!"
+echo "Run 'screen -r smc_bot' to view live interactive terminal."
+echo "Run 'tail -f scanner.log' to view log outputs."
 echo "=================================================="
