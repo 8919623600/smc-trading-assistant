@@ -12,13 +12,81 @@ def get_current_ist_time():
     return datetime.now(IST).strftime("%Y-%m-%d %I:%M:%S %p IST")
 
 
+class ResilientDataFetcher:
+    """Manages multi-key load balancing and seamless automatic failover
+
+    for Twelve Data (or similar API clients) to prevent missed trade setups.
+    """
+
+    def __init__(self, api_keys: list):
+        # Filter out any empty/None keys
+        self.keys = [k for k in api_keys if k]
+        if not self.keys:
+            raise ValueError(
+                "No valid API keys provided to ResilientDataFetcher."
+            )
+        self.current_key_index = 0
+
+    def rotate_key(self):
+        """Switches to the next available API key in a round-robin fashion."""
+        if len(self.keys) > 1:
+            old_index = self.current_key_index
+            self.current_key_index = (self.current_key_index + 1) % len(
+                self.keys
+            )
+            print(
+                f"[{get_current_ist_time()}] API Rate limit or error encountered on Key #{old_index}. Rotating to backup Key #{self.current_key_index}..."
+            )
+
+    def get_current_key(self):
+        return self.keys[self.current_key_index]
+
+    def fetch_time_series(self, client_factory, symbol, interval, outputsize=100):
+        """Fetches time series data with automatic key failover.
+
+:param client_factory: A callable function/lambda that takes an api_key
+                       and returns an initialized client (e.g., TDClient)
+:param symbol: Trading symbol (e.g., 'EUR/USD')
+:param interval: Candle interval (e.g., '1h', '15min')
+:param outputsize: Number of data points to fetch
+"""
+        attempts = 0
+        max_attempts = len(self.keys)
+
+        while attempts < max_attempts:
+            current_key = self.get_current_key()
+            try:
+                # Instantiate client with the active key
+                client = client_factory(current_key)
+                ts = client.time_series(
+                    symbol=symbol, interval=interval, outputsize=outputsize
+                )
+                df = ts.as_pandas()
+
+                if df is not None and not df.empty:
+                    return df
+                else:
+                    raise RuntimeError("API returned an empty DataFrame.")
+
+            except Exception as e:
+                print(
+                    f"[{get_current_ist_time()}] Fetch error on {symbol} ({interval}) using Key #{self.current_key_index}: {e}"
+                )
+                self.rotate_key()
+                attempts += 1
+
+        raise ConnectionError(
+            f"All {len(self.keys)} API keys failed while fetching {symbol} on interval {interval}."
+        )
+
+
 class SMCTradingEngine:
 
     def __init__(
         self,
         min_rr=1.5,
         max_rr=8.0,
-        atr_multiplier=0.5,  # Updated from 0.3 to 0.5 for a tight structural swing buffer
+        atr_multiplier=0.5,  # Tight structural swing buffer
         news_buffer_mins=15,
     ):
         self.min_rr = min_rr
@@ -57,9 +125,7 @@ class SMCTradingEngine:
 
     @staticmethod
     def check_displacement(df_15m: pd.DataFrame) -> bool:
-        """UPGRADE C: Validates if the recent impulse features true institutional displacement.
-        Blocks trades if candles feature tiny bodies and massive rejection wicks.
-        """
+        """Validates if recent impulse features true institutional displacement."""
         if len(df_15m) < 10:
             return True
 
@@ -67,7 +133,6 @@ class SMCTradingEngine:
         avg_body = bodies.iloc[-15:-1].mean()
         latest_body = bodies.iloc[-1]
 
-        # Ensure latest candle body is at least 1.3x the average body size
         return latest_body >= (1.3 * avg_body)
 
     # ==========================================
@@ -91,12 +156,9 @@ class SMCTradingEngine:
         equilibrium = (recent_high + recent_low) / 2
         current_close = df["close"].iloc[-1]
 
-        # UPGRADE B: Optimal Trade Entry (OTE) Zone Calculations
-        # Bullish OTE: Retracement down into 61.8% to 79% of the discount array
         ote_bullish_high = recent_high - (total_range * 0.618)
         ote_bullish_low = recent_high - (total_range * 0.790)
 
-        # Bearish OTE: Retracement up into 61.8% to 79% of the premium array
         ote_bearish_low = recent_low + (total_range * 0.618)
         ote_bearish_high = recent_low + (total_range * 0.790)
 
@@ -128,7 +190,9 @@ class SMCTradingEngine:
         swing_lows = df["pivot_low"].dropna()
 
         last_low = swing_lows.iloc[-1] if not swing_lows.empty else df["low"].min()
-        last_high = swing_highs.iloc[-1] if not swing_highs.empty else df["high"].max()
+        last_high = (
+            swing_highs.iloc[-1] if not swing_highs.empty else df["high"].max()
+        )
 
         current_bar = df.iloc[-1]
 
@@ -206,7 +270,7 @@ class SMCTradingEngine:
     def evaluate_1m_entry(
         self, df_1m: pd.DataFrame, sweep_info: dict, poi_info: dict
     ) -> dict:
-        """Step 4: 1M Entry, Tight SL with ATR buffer, TP1 (1.2x ATR / internal structural target), and TP2 (1H Liquidity Pool)."""
+        """Step 4: 1M Entry, Tight SL with ATR buffer, TP1 and TP2 targets."""
         if not poi_info["valid_poi"]:
             return {"action": "NO_TRADE", "reason": "No valid 15M POI retest"}
 
@@ -229,9 +293,7 @@ class SMCTradingEngine:
             if risk <= 0:
                 return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-            # TP1: 15M internal structural target for partials (approx 1.2x ATR or structural offset)
             tp1 = entry_price + (atr_val * 1.2)
-            # TP2: 1H external liquidity pool / opposing structural extreme
             tp2 = h1_sh
             if tp2 <= entry_price:
                 tp2 = entry_price + (risk * 3.0)
@@ -257,9 +319,7 @@ class SMCTradingEngine:
             if risk <= 0:
                 return {"action": "WAIT", "reason": "Calculated risk is invalid or zero"}
 
-            # TP1: 15M internal structural target for partials
             tp1 = entry_price - (atr_val * 1.2)
-            # TP2: 1H external liquidity pool / opposing structural extreme
             tp2 = h1_sl
             if tp2 >= entry_price:
                 tp2 = entry_price - (risk * 3.0)
@@ -307,13 +367,12 @@ class SMCTradingEngine:
                         "reason": f"News Blackout Active near {event_time}",
                     }
 
-        # Step 1: 4H Market Bias & OTE Zone Check (Upgrade B)
+        # Step 1: 4H Market Bias & OTE Zone Check
         market_context = self.get_4h_bias_and_ote(data_dict["4H"])
         bias = market_context["bias"]
         if bias == "NEUTRAL":
             return {"decision": "NO_TRADE", "reason": "4H Market Bias Neutral"}
 
-        # Optional strict OTE gate check: if not in OTE sweet spot, wait for deeper pullback
         if not market_context["in_ote"]:
             return {
                 "decision": "WAIT",
@@ -336,7 +395,7 @@ class SMCTradingEngine:
                 "reason": "15M POI not confirmed or retested",
             }
 
-        # Step 3.5: True Displacement Filter Check (Upgrade C)
+        # Step 3.5: True Displacement Filter Check
         has_displacement = self.check_displacement(df_15m)
         if not has_displacement:
             return {
