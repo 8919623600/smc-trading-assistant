@@ -38,18 +38,21 @@ def send_telegram_alert(message):
         print(f"⚠️ Failed to send Telegram alert: {e}")
 
 def fetch_market_data():
-    """Fetches multi-timeframe data required for SMC analysis."""
+    """Fetches multi-timeframe data required for SMC analysis and standardizes columns."""
     data_dict = {}
     try:
         # Fetching data across timeframes
-        data_dict["4H"] = yf.download(SYMBOL, interval="60m", period="5d", progress=False) # Proxy/equivalent or actual
+        data_dict["4H"] = yf.download(SYMBOL, interval="60m", period="5d", progress=False)
         data_dict["1M"] = yf.download(SYMBOL, interval="1m", period="1d", progress=False)
         
-        # Clean up multi-index columns if yfinance returns them
+        # Clean up multi-index columns and normalize names to lowercase
         for tf in data_dict:
             df = data_dict[tf]
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
+            
+            # Standardize column headers to lowercase (prevents KeyError: 'close')
+            df.columns = [str(col).lower().strip() for col in df.columns]
             data_dict[tf] = df.dropna()
             
     except Exception as e:
