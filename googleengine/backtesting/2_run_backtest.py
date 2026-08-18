@@ -193,3 +193,14 @@ def run_offline_backtest():
 
 if __name__ == "__main__":
   run_offline_backtest()
+
+
+# Print final performance metrics
+print("\n" + "=" * 50)
+print("📊 BACKTEST COMPLETE - PERFORMANCE SUMMARY")
+print("=" * 50)
+print(f"Starting Balance: $1,000.00")
+print(f"Ending Balance:   ${final_balance:.2f}")
+print(f"Total Net Profit: ${final_balance - 1000.00:.2f}")
+print(f"Return on Investment (ROI): {((final_balance - 1000.00) / 1000.00) * 100:.2f}%")
+print("=" * 50)
