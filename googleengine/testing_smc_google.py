@@ -19,11 +19,10 @@ MAX_DOLLAR_RISK = 10.0                  # Maximum allowed loss in USD per trade
 MIN_REQUIRED_RR = 2.0                   # Minimum acceptable Reward-to-Risk ratio for Target 2
 MAX_DAILY_LOSSES = 2                    # Circuit breaker limit: stop trading after X losses in a day
 
-# Multi-Asset Configuration (Contract sizes, base/quote structure, and names)
+# Multi-Asset Configuration (Reduced to EUR/USD and XAU/USD to conserve API limits)
 ASSET_CONFIG = {
     "XAU/USD": {"contract_size": 100, "quote_usd": True, "name": "Gold"},
-    "EUR/USD": {"contract_size": 100000, "quote_usd": True, "name": "Euro / US Dollar"},
-    "USD/JPY": {"contract_size": 100000, "quote_usd": False, "name": "US Dollar / Japanese Yen"}
+    "EUR/USD": {"contract_size": 100000, "quote_usd": True, "name": "Euro / US Dollar"}
 }
 
 TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")
@@ -34,9 +33,9 @@ if not TWELVE_DATA_API_KEY:
     print("❌ Error: TWELVE_DATA_API_KEY environment variable is not set.")
     sys.exit(1)
 
-TICKERS = ["XAU/USD", "EUR/USD", "USD/JPY"]
-SCAN_INTERVAL_SECONDS = 180  # 3 minutes cycle for multi-ticker rotation
-API_THROTTLE_SECONDS = 15    # Pause between tickers to respect Twelve Data API limits
+TICKERS = ["XAU/USD", "EUR/USD"]
+SCAN_INTERVAL_SECONDS = 180  # 3 minutes cycle rotation
+API_THROTTLE_SECONDS = 15    # Pause between tickers to respect Twelve Data limits
 IDLE_SLEEP_SECONDS = 300     # 5 minutes
 IST = ZoneInfo("Asia/Kolkata")
 TRADE_HISTORY_FILE = "trade_history.csv"
@@ -268,7 +267,7 @@ def run_scanner():
     initialize_trade_history()
 
     print("==================================================")
-    print("  MULTI-ASSET SMC SCANNER v2.9 (Fixed JPY Math)  ")
+    print("  DUAL-ASSET SMC SCANNER (EUR/USD & XAU/USD)     ")
     print("==================================================")
 
     while True:
@@ -371,7 +370,7 @@ def run_scanner():
                     print(f"   • Target 1 (EQ):   {planned_tp1}")
                     print(f"   • Target 2 (4H SH):{planned_tp2} -> R:R {rr_tp2:.2f}R")
 
-                # MULTI-LOT SCENARIO SIMULATOR TABLE (CONSOLE - WITH CORRECTED CURRENCY MATH)
+                # MULTI-LOT SCENARIO SIMULATOR TABLE (CONSOLE)
                 print("--------------------------------------------------")
                 print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
                 print("==================================================")
@@ -383,7 +382,6 @@ def run_scanner():
                         tp1_prof = lot * reward_tp1 * contract_size
                         tp2_prof = lot * reward_tp2 * contract_size
                     else:
-                        # Correct currency conversion for USD-base pairs (e.g., USD/JPY)
                         sl_loss = lot * contract_size * (risk_points / latest_price)
                         tp1_prof = lot * contract_size * (reward_tp1 / latest_price)
                         tp2_prof = lot * contract_size * (reward_tp2 / latest_price)
@@ -424,7 +422,6 @@ def run_scanner():
                         trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
                         log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
 
-                        # Build Multi-Lot Telegram Table
                         telegram_table_lines = []
                         for lot in [0.01, 0.02, 0.03, 0.05, 0.10]:
                             if quote_usd:
@@ -461,7 +458,6 @@ def run_scanner():
             except Exception as e:
                 print(f"[{symbol}] Error fetching data: {e}")
 
-            # API Rate-Limit Throttle: pause between tickers to stay safe under Twelve Data limits
             if idx < len(TICKERS) - 1:
                 time.sleep(API_THROTTLE_SECONDS)
 
