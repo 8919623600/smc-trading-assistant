@@ -31,7 +31,7 @@ class SMCTradingEngine:
             df_1m["tr"] = np.maximum(
                 df_1m["high"] - df_1m["low"],
                 np.maximum(
-                    abs(df_1m["high"] - df_1m["shift"](1) if "shift" in dir(df_1m) else abs(df_1m["high"] - df_1m["close"].shift(1))),
+                    abs(df_1m["high"] - df_1m["close"].shift(1)),
                     abs(df_1m["low"] - df_1m["close"].shift(1))
                 )
             )
@@ -39,44 +39,37 @@ class SMCTradingEngine:
             if pd.isna(atr) or atr == 0:
                 atr = 2.0  # Fallback for gold volatility
 
-            # --- 2. IDENTIFY SMC STRUCTURE (Order Block & FVG Simulation) ---
-            # Recent 20-bar high/low for liquidity sweeps
+            # --- 2. IDENTIFY SMC STRUCTURE (Liquidity Sweep & FVG) ---
+            # Recent 20-bar high/low for liquidity sweeps (Stop Hunts)
             recent_high = df_1m["high"].iloc[-20:-1].max()
             recent_low = df_1m["low"].iloc[-20:-1].min()
 
-            # Fair Value Gap (FVG) Detection on 1M/15M
-            # Bullish FVG: Low of current bar > High of bar - 2
+            # Fair Value Gap (FVG) Detection on 1M
+            # Bullish FVG: Low of current bar is greater than the High of 2 bars ago
             bullish_fvg = df_1m["low"].iloc[-1] > df_1m["high"].iloc[-3]
-            # Bearish FVG: High of current bar < Low of bar - 2
-            bearish_fvg = df_1m["high"].iloc[-1] > df_1m["low"].iloc[-3]
-
-            # Order Block (OB) Proxies: Strong displacement candles
-            body_size = abs(current_close - current_bar["open"])
-            avg_body = abs(df_1m["close"] - df_1m["open"]).rolling(20).mean().iloc[-1]
-            is_displacement = body_size > (1.5 * avg_body) if not pd.isna(avg_body) else True
+            # Bearish FVG: High of current bar is less than the Low of 2 bars ago
+            bearish_fvg = df_1m["high"].iloc[-1] < df_1m["low"].iloc[-3]
 
             decision = "HOLD"
             trade_params = {}
 
-            # --- 3. BULLISH SETUP (Demand Zone + Sweep + FVG + OB) ---
-            # Price swept recent lows (liquidity grab) and is bouncing with displacement & FVG
-            if current_low <= recent_low and bullish_fvg and is_displacement:
+            # --- 3. SMC BULLISH SETUP (Demand / Liquidity Sweep + FVG) ---
+            if current_low <= recent_low and bullish_fvg:
                 decision = "BUY"
                 entry = current_close
-                sl = entry - (atr * 1.5)  # Stop loss below structural low / OB
-                tp = entry + (abs(entry - sl) * 2.5)  # 2.5 RR Target
+                sl = entry - (atr * 1.8)
+                tp = entry + (abs(entry - sl) * 2.2)  # 2.2 Risk-to-Reward Ratio
                 trade_params = {"entry": round(entry, 2), "sl": round(sl, 2), "tp": round(tp, 2)}
 
-            # --- 4. BEARISH SETUP (Supply Zone + Sweep + FVG + OB) ---
-            # Price swept recent highs (liquidity grab) and is dropping with displacement & FVG
-            elif current_high >= recent_high and bearish_fvg and is_displacement:
+            # --- 4. SMC BEARISH SETUP (Supply / Liquidity Sweep + FVG) ---
+            elif current_high >= recent_high and bearish_fvg:
                 decision = "SELL"
                 entry = current_close
-                sl = entry + (atr * 1.5)  # Stop loss above structural high / OB
-                tp = entry - (abs(entry - sl) * 2.5)  # 2.5 RR Target
+                sl = entry + (atr * 1.8)
+                tp = entry - (abs(entry - sl) * 2.2)  # 2.2 Risk-to-Reward Ratio
                 trade_params = {"entry": round(entry, 2), "sl": round(sl, 2), "tp": round(tp, 2)}
 
-            return {"decision": decision, "trade_params": trade_params, "reason": "SMC Confluence Met"}
+            return {"decision": decision, "trade_params": trade_params, "reason": "SMC FVG & Sweep Confluence Met"}
 
         except Exception as e:
             return {"decision": "HOLD", "reason": f"Error in engine: {str(e)}"}
