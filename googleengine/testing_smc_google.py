@@ -382,11 +382,18 @@ def run_scanner():
 
                 # Fallback parameters for simulation/display when engine is in WAIT mode
                 if not trade_params:
-                    # Provide default mock levels relative to live price for structural preview
-                    sim_sl = latest_price + (atr_val * 0.3) if "SELL" in reason.upper() else latest_price - (atr_val * 0.3)
-                    sim_tp1 = eq_4h
-                    sim_tp2 = h4_sl if "SELL" in reason.upper() else h4_sh
-                    sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 3.5
+                    is_bearish = "SELL" in reason.upper() or "BEARISH" in reason.upper() or "NOT YET IN" in reason.upper()
+                    
+                    if is_bearish:
+                        sim_sl = latest_price + (atr_val * 0.4)
+                        sim_tp1 = max(eq_4h, latest_price - (atr_val * 0.8))
+                        sim_tp2 = latest_price - (atr_val * 2.5)
+                    else:
+                        sim_sl = latest_price - (atr_val * 0.4)
+                        sim_tp1 = min(eq_4h, latest_price + (atr_val * 0.8))
+                        sim_tp2 = latest_price + (atr_val * 2.5)
+                        
+                    sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 3.0
                     
                     trade_params = {
                         "entry": round(latest_price, 5),
