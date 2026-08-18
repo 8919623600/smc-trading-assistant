@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import sys
+from datetime import datetime
 
 # Import your SMC Engine from the parent directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -8,7 +9,7 @@ from smc_engine import SMCTradingEngine
 
 def run_offline_backtest():
     print("==================================================")
-    print("🚀 STARTING $1,000 ACCOUNT BACKTEST WITH RELAXED FILTERS")
+    print("🚀 STARTING FILTERED SMC BACKTEST (Max 1-4 Trades/Day)")
     print("==================================================")
 
     starting_balance = 1000.0
@@ -26,9 +27,10 @@ def run_offline_backtest():
         print(f"❌ Error: Missing cached files. Run `1_download_data.py` first! {e}")
         return
 
-    # --- RELAXED ENGINE PARAMETERS FOR BACKTESTING ---
+    # --- TIGHTENED ENGINE PARAMETERS FOR QUALITY OVER QUANTITY ---
+    # Raising min_rr slightly and using stricter parameters to avoid overtrading
     engine = SMCTradingEngine(
-        min_rr=1.5, max_rr=10.0, atr_multiplier=0.4, backtest_mode=True
+        min_rr=2.0, max_rr=8.0, atr_multiplier=0.6, backtest_mode=True
     )
 
     start_index = 200
@@ -36,16 +38,25 @@ def run_offline_backtest():
 
     trades_executed = []
     active_trade = None
+    
+    # Tracking daily trades to enforce the 1-4 trades per day limit
+    current_day = None
+    trades_today = 0
 
-    print(f"📊 Simulating across {total_bars - start_index} historical 1M bars... (This will run quietly)")
+    print(f"📊 Simulating across {total_bars - start_index} historical 1M bars...")
 
     i = start_index
     while i < total_bars:
         df_1m_slice = df_1m_full.iloc[i - 200 : i]
-        current_time = df_1m_slice["datetime"].iloc[-1]
+        current_time = pd.to_datetime(df_1m_slice["datetime"].iloc[-1])
         current_bar = df_1m_full.iloc[i]
 
-        # Keep console quiet, but show progress every 10,000 bars
+        # Reset daily trade counter if day changes
+        bar_day = current_time.date()
+        if bar_day != current_day:
+            current_day = bar_day
+            trades_today = 0
+
         if i % 10000 == 0:
             print(f"⏳ Processed {i}/{total_bars} bars...")
 
@@ -85,7 +96,7 @@ def run_offline_backtest():
             if outcome is not None:
                 risk_distance = abs(entry - sl)
                 reward_distance = abs(tp - entry)
-                rr_ratio = (reward_distance / risk_distance if risk_distance > 0 else 1.5)
+                rr_ratio = (reward_distance / risk_distance if risk_distance > 0 else 2.0)
 
                 trade_pnl = ((risk_per_trade_usd * rr_ratio) if outcome == "WIN" else -risk_per_trade_usd)
                 account_balance += trade_pnl
@@ -101,6 +112,12 @@ def run_offline_backtest():
 
                 active_trade = None
 
+            i += 1
+            continue
+
+        # --- FILTER: ONLY TRADE DURING ACTIVE SESSIONS & IF DAILY LIMIT NOT REACHED ---
+        # Limit to max 4 trades per day and restrict to core trading hours (e.g., 07:00 to 19:00 UTC)
+        if trades_today >= 4 or not (7 <= current_time.hour <= 19):
             i += 1
             continue
 
@@ -133,6 +150,7 @@ def run_offline_backtest():
                     "sl": sl,
                     "tp": tp,
                 }
+                trades_today += 1
 
         i += 1
 
@@ -140,7 +158,7 @@ def run_offline_backtest():
     # FINAL FINANCIAL REPORT
     # ==========================================================
     print("\n" + "=" * 50)
-    print("💰 FINAL ACCOUNT PERFORMANCE REPORT")
+    print("💰 FILTERED ACCOUNT PERFORMANCE REPORT")
     print("=" * 50)
     print(f"Starting Balance:  ${starting_balance:,.2f}")
     print(f"Ending Balance:    ${account_balance:,.2f}")
@@ -162,6 +180,7 @@ def run_offline_backtest():
         print(f"Winning Trades:    {wins}")
         print(f"Losing Trades:     {losses}")
         print(f"Win Rate:          {win_rate:.2f}%")
+        print(f"Avg Trades/Day:    {total_trades / 30:.1f}")
 
     print("=" * 50)
 
