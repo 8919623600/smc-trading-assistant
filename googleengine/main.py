@@ -63,21 +63,27 @@ def fetch_twelve_data(symbol: str, interval: str, outputsize: int = 100, max_ret
   return None
 
 
-def calculate_lot_pnl(symbol, entry, sl, tp, lots):
-  """Calculates risk/reward monetary value based on lot size."""
+def calculate_lot_pnl_multi_tp(symbol, entry, sl, tps, lots):
+  """Calculates risk/reward monetary value across multiple liquidity-based take-profit targets based on lot size."""
   risk_pips_or_points = abs(entry - sl)
-  reward_pips_or_points = abs(tp - entry)
 
   results = {}
   for lot in lots:
     if "EUR" in symbol:
       risk_usd = risk_pips_or_points * 100000 * lot
-      reward_usd = reward_pips_or_points * 100000 * lot
     else:  # XAU/USD
       risk_usd = risk_pips_or_points * lot * 100
-      reward_usd = reward_pips_or_points * lot * 100
 
-    results[lot] = {"loss": round(risk_usd, 2), "profit": round(reward_usd, 2)}
+    results[lot] = {"loss": round(risk_usd, 2), "profits": {}}
+    
+    for tp_name, tp_val in tps.items():
+      reward_pips_or_points = abs(tp_val - entry)
+      if "EUR" in symbol:
+        reward_usd = reward_pips_or_points * 100000 * lot
+      else:
+        reward_usd = reward_pips_or_points * lot * 100
+      results[lot]["profits"][tp_name] = round(reward_usd, 2)
+      
   return results
 
 
@@ -102,6 +108,7 @@ def run_scanner_loop():
   print("⏰ Active Window Configured: 1:30 PM to 3:30 AM IST")
   print("==================================================")
 
+  # Initialize engine with min_rr=2.0 and max_rr=8.0 as validation filters for SMC liquidity targets
   engine = SMCTradingEngine(min_rr=2.0, max_rr=8.0, atr_multiplier=0.4)
   lot_sizes = [0.01, 0.02, 0.03, 0.5, 0.1, 0.2]
 
@@ -166,34 +173,48 @@ def run_scanner_loop():
       choch_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
       fvg_1m = "YES" if decision in ["BUY", "SELL"] else "NO"
 
-      # Extract trade params if available, otherwise fallback preview calculation using current_price if possible
+      # Extract SMC liquidity-based targets (TP1: Internal Liquidity, TP2: HTF Liquidity, TP3: Major External Swing/Equal Highs-Lows)
       trade_params = analysis_result.get("trade_params")
       if trade_params and trade_params.get("entry"):
         entry = trade_params["entry"]
         sl = trade_params["sl"]
-        tp = trade_params["tp2"]
-        rr = trade_params["rr"]
+        tps = {
+            "TP1 (Internal Liq)": trade_params.get("tp1", trade_params.get("tp")),
+            "TP2 (HTF Target)": trade_params.get("tp2", trade_params.get("tp")),
+            "TP3 (External Swing Runner)": trade_params.get("tp3", trade_params.get("tp"))
+        }
+        tps = {k: v for k, v in tps.items() if v is not None}
+        rr = trade_params.get("rr", "2.0 (Validated)")
       else:
         entry = current_price if current_price != "N/A" else "N/A"
-        # Create a mock SL / TP preview distance based on asset type if engine hasn't outputted exact ones yet
         if current_price != "N/A":
           if "EUR" in symbol:
             sl = round(current_price - 0.0020, 4)
-            tp = round(current_price + 0.0040, 4)
+            tps = {
+                "TP1 (Internal Liq)": round(current_price + 0.0020, 4),
+                "TP2 (HTF Target)": round(current_price + 0.0040, 4),
+                "TP3 (External Swing Runner)": round(current_price + 0.0060, 4)
+            }
           else:
             sl = round(current_price - 5.0, 2)
-            tp = round(current_price + 10.0, 2)
-          rr = "2.0 (Estimated)"
+            tps = {
+                "TP1 (Internal Liq)": round(current_price + 5.0, 2),
+                "TP2 (HTF Target)": round(current_price + 10.0, 2),
+                "TP3 (External Swing Runner)": round(current_price + 15.0, 2)
+            }
+          rr = "2.0 (SMC Target Filtered)"
         else:
           sl = "N/A"
-          tp = "N/A"
+          tps = {}
           rr = "N/A"
+
+      tp_str = " | ".join([f"{k}: {v}" for k, v in tps.items()]) if tps else "N/A"
 
       # ----------------------------------------------------
       # TERMINAL MONITOR FORMAT
       # ----------------------------------------------------
       print("\n==================================================")
-      print("📊 SMC Trade Signal Report")
+      print("📊 SMC Trade Signal Report (Liquidity-Driven Targets)")
       print("--------------------------------------------------")
       print("System & Status")
       print(f"• Asset: {symbol} | Time: {scan_time}")
@@ -205,14 +226,15 @@ def run_scanner_loop():
       print(f"• 1M Confirmation (Sweep / CHoCH / FVG): {sweep_1m} / {choch_1m} / {fvg_1m}")
       print("\nTrade & Price Info")
       print(f"• Current Price: {current_price}")
-      print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | TP: {tp} | RR: {rr})")
+      print(f"• Direction: {decision} (Entry: {entry} | SL: {sl} | {tp_str} | RR Filter: {rr})")
 
-      # Estimated / Live P&L Breakdown
-      if entry != "N/A" and sl != "N/A" and tp != "N/A":
-        pnl_data = calculate_lot_pnl(symbol, entry, sl, tp, lot_sizes)
-        print("\nEstimated P&L Breakdown Across Lots:")
+      # Multi-TP Liquidity P&L Breakdown
+      if entry != "N/A" and sl != "N/A" and tps:
+        pnl_data = calculate_lot_pnl_multi_tp(symbol, entry, sl, tps, lot_sizes)
+        print("\nEstimated P&L Breakdown Across Lots (Liquidity Targets):")
         for lot in lot_sizes:
-          print(f"  • Lot {lot} -> Loss: -${pnl_data[lot]['loss']} | Profit: +${pnl_data[lot]['profit']}")
+          profits_desc = " | ".join([f"{tp_name.split(' ')[0]}: +${pnl_data[lot]['profits'][tp_name]}" for tp_name in tps])
+          print(f"  • Lot {lot} -> Loss: -${pnl_data[lot]['loss']} | {profits_desc}")
 
       if decision in ["BUY", "SELL"]:
         print("\n🚀 Confirmed trade found! Telegram alert sent.")
