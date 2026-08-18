@@ -335,7 +335,7 @@ def run_scanner():
 
     print("==================================================")
     print("  UPGRADED SMC EXECUTION SCANNER (EUR/USD & XAU/USD)")
-    print("==================================================")
+    print("==================================================\n")
 
     while True:
         manage_log_size()
@@ -380,7 +380,23 @@ def run_scanner():
                 reason = result.get("reason", "Setup validated")
                 trade_params = result.get("trade_params")
 
-                # Always print the main scan report block regardless of WAIT / BUY / SELL
+                # Fallback parameters for simulation/display when engine is in WAIT mode
+                if not trade_params:
+                    # Provide default mock levels relative to live price for structural preview
+                    sim_sl = latest_price + (atr_val * 0.3) if "SELL" in reason.upper() else latest_price - (atr_val * 0.3)
+                    sim_tp1 = eq_4h
+                    sim_tp2 = h4_sl if "SELL" in reason.upper() else h4_sh
+                    sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 3.5
+                    
+                    trade_params = {
+                        "entry": round(latest_price, 5),
+                        "sl": round(sim_sl, 5),
+                        "tp1": round(sim_tp1, 5),
+                        "tp2": round(sim_tp2, 5),
+                        "rr": round(sim_rr, 2)
+                    }
+
+                # Always print the main scan report block and multi-lot simulator
                 print("==================================================")
                 print(f"🎯 PROCESSING TRADE ASSET: {symbol} ({asset_name})")
                 print("==================================================")
@@ -388,116 +404,85 @@ def run_scanner():
                 print(f"⏰ Scan Time (IST):  {now_str}")
                 print(f"💲 Live Price:       {latest_price:.5f}")
                 print(f"🚦 Engine Decision:  {decision} ({reason})")
-                print("==================================================")
+                print("==================================================\n")
                 print(f"1️⃣  4H MACRO BIAS & 15M STRUCTURAL CONTEXT")
                 print(f"   • Active Trade:   {symbol} ({asset_name})")
                 print(f"   • 4H Equilibrium: {eq_4h:.6f}")
                 print(f"   • Overall Bias:   {decision if decision in ['BUY', 'SELL'] else 'N/A'}")
                 print(f"   • 15M ATR (Noise):{atr_val}")
+                print("--------------------------------------------------\n")
+
+                planned_entry = trade_params["entry"]
+                planned_sl = trade_params["sl"]
+                planned_tp1 = trade_params["tp1"]
+                planned_tp2 = trade_params["tp2"]
+                rr_tp2 = trade_params["rr"]
+
+                risk_points = abs(planned_entry - planned_sl)
+                reward_tp1 = abs(planned_tp1 - planned_entry)
+                reward_tp2 = abs(planned_tp2 - planned_entry)
+
+                direction_str = "SHORT (Bearish Reversal from Premium)" if decision != "BUY" else "LONG (Bullish Reversal from Discount)"
+
+                print(f"2️⃣  TIGHTER 15M PREDICTIVE EXECUTION MAP [{symbol}]")
+                print(f"   • Active Trade:    {symbol} ({asset_name})")
+                print(f"   • Direction:       {direction_str}")
+                print(f"   • Target Entry:    {planned_entry}")
+                print(f"   • Logical SL:      {planned_sl}")
+                print(f"   • Target 1 (EQ):   {planned_tp1}")
+                print(f"   • Target 2 (4H):   {planned_tp2} -> R:R {rr_tp2:.2f}R")
+                print("--------------------------------------------------\n")
+
+                print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
+                print("==================================================")
+                print("   Lot Size   |   SL Loss    |   TP1 Profit (EQ) |   TP2 Profit")
                 print("--------------------------------------------------")
+                for lot in [0.01, 0.02, 0.03, 0.05, 0.10, 0.50]:
+                    if quote_usd:
+                        sl_loss = lot * risk_points * contract_size
+                        tp1_prof = lot * reward_tp1 * contract_size
+                        tp2_prof = lot * reward_tp2 * contract_size
+                    else:
+                        sl_loss = lot * contract_size * (risk_points / latest_price)
+                        tp1_prof = lot * contract_size * (reward_tp1 / latest_price)
+                        tp2_prof = lot * contract_size * (reward_tp2 / latest_price)
+                    print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}      |   +${tp2_prof:.2f}")
+                print("==================================================\n")
 
-                if trade_params:
-                    planned_entry = trade_params["entry"]
-                    planned_sl = trade_params["sl"]
-                    planned_tp1 = trade_params["tp1"]
-                    planned_tp2 = trade_params["tp2"]
-                    rr_tp2 = trade_params["rr"]
-
-                    risk_points = abs(planned_entry - planned_sl)
-                    reward_tp1 = abs(planned_tp1 - planned_entry)
-                    reward_tp2 = abs(planned_tp2 - planned_entry)
-
-                    direction_str = "LONG (Bullish Reversal from Discount)" if decision == "BUY" else "SHORT (Bearish Reversal from Premium)"
-
-                    print(f"2️⃣  TIGHTER 15M PREDICTIVE EXECUTION MAP [{symbol}]")
-                    print(f"   • Active Trade:    {symbol} ({asset_name})")
-                    print(f"   • Direction:       {direction_str}")
-                    print(f"   • Target Entry:    {planned_entry}")
-                    print(f"   • Logical SL:      {planned_sl}")
-                    print(f"   • Target 1 (EQ):   {planned_tp1}")
-                    print(f"   • Target 2 (4H):   {planned_tp2} -> R:R {rr_tp2:.2f}R")
-                    print("--------------------------------------------------")
-
-                    print(f"💰 MULTI-LOT SCENARIO SIMULATOR [Trade: {symbol} - {asset_name}]")
-                    print("==================================================")
-                    print("   Lot Size   |   SL Loss    |   TP1 Profit (EQ) |   TP2 Profit")
-                    print("--------------------------------------------------")
-                    for lot in [0.01, 0.02, 0.03, 0.05, 0.10, 0.50]:
-                        if quote_usd:
-                            sl_loss = lot * risk_points * contract_size
-                            tp1_prof = lot * reward_tp1 * contract_size
-                            tp2_prof = lot * reward_tp2 * contract_size
-                        else:
-                            sl_loss = lot * contract_size * (risk_points / latest_price)
-                            tp1_prof = lot * contract_size * (reward_tp1 / latest_price)
-                            tp2_prof = lot * contract_size * (reward_tp2 / latest_price)
-                        print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}      |   +${tp2_prof:.2f}")
-                    print("==================================================")
-
+                if decision in ["BUY", "SELL"]:
                     if quote_usd:
                         risk_per_lot_min = risk_points * contract_size * 0.01
                     else:
                         risk_per_lot_min = contract_size * (risk_points / latest_price) * 0.01
 
-                    if decision in ["BUY", "SELL"]:
-                        if risk_per_lot_min > MAX_DOLLAR_RISK:
-                            print(f"   ❌ REJECTED [{symbol}]: Minimum 0.01 lot risk (${risk_per_lot_min:.2f}) exceeds MAX_DOLLAR_RISK (${MAX_DOLLAR_RISK:.2f}).")
-                            decision = "WAIT"
-                        elif rr_tp2 < MIN_REQUIRED_RR:
-                            print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R.")
-                            decision = "WAIT"
+                    if risk_per_lot_min > MAX_DOLLAR_RISK:
+                        print(f"   ❌ REJECTED [{symbol}]: Minimum 0.01 lot risk (${risk_per_lot_min:.2f}) exceeds MAX_DOLLAR_RISK (${MAX_DOLLAR_RISK:.2f}).")
+                    elif rr_tp2 < MIN_REQUIRED_RR:
+                        print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2:.2f}R) is below minimum required {MIN_REQUIRED_RR}R.")
+                    else:
+                        if quote_usd:
+                            risk_per_lot = risk_points * contract_size
                         else:
-                            if quote_usd:
-                                risk_per_lot = risk_points * contract_size
-                            else:
-                                risk_per_lot = contract_size * (risk_points / latest_price)
+                            risk_per_lot = contract_size * (risk_points / latest_price)
 
-                            exact_lots = MAX_DOLLAR_RISK / risk_per_lot if risk_per_lot > 0 else 0.01
-                            recommended_lots = math.floor(exact_lots * 100) / 100
-                            recommended_lots = max(0.01, recommended_lots)
-                            actual_dollar_risk = recommended_lots * risk_per_lot
-                            print(f"   ✔ APPROVED [{symbol}]: Tight stop-loss setup verified within risk parameters.")
-                            print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
+                        exact_lots = MAX_DOLLAR_RISK / risk_per_lot if risk_per_lot > 0 else 0.01
+                        recommended_lots = math.floor(exact_lots * 100) / 100
+                        recommended_lots = max(0.01, recommended_lots)
+                        actual_dollar_risk = recommended_lots * risk_per_lot
+                        print(f"   ✔ APPROVED [{symbol}]: Tight stop-loss setup verified within risk parameters.")
+                        print(f"   • Position Sizing: {recommended_lots} Lots (Actual Risk: ${actual_dollar_risk:.2f} | Max Allowed: ${MAX_DOLLAR_RISK:.2f})")
 
-                            has_active_trade = False
-                            if os.path.exists(TRADE_HISTORY_FILE):
-                                df_check = pd.read_csv(TRADE_HISTORY_FILE)
-                                if not df_check.empty and "status" in df_check.columns:
-                                    has_active_trade = not df_check[(df_check["status"] == "PENDING") & (df_check["symbol"] == symbol)].empty
+                        has_active_trade = False
+                        if os.path.exists(TRADE_HISTORY_FILE):
+                            df_check = pd.read_csv(TRADE_HISTORY_FILE)
+                            if not df_check.empty and "status" in df_check.columns:
+                                has_active_trade = not df_check[(df_check["status"] == "PENDING") & (df_check["symbol"] == symbol)].empty
 
-                            if not has_active_trade:
-                                trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
-                                log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
-
-                                telegram_table_lines = []
-                                for lot in [0.01, 0.02, 0.03, 0.05, 0.10, 0.50]:
-                                    if quote_usd:
-                                        s_loss = lot * risk_points * contract_size
-                                        t1_prof = lot * reward_tp1 * contract_size
-                                        t2_prof = lot * reward_tp2 * contract_size
-                                    else:
-                                        s_loss = lot * contract_size * (risk_points / latest_price)
-                                        t1_prof = lot * contract_size * (reward_tp1 / latest_price)
-                                        t2_prof = lot * contract_size * (reward_tp2 / latest_price)
-                                    telegram_table_lines.append(f"`{lot:.2f}L | -${s_loss:.2f} | +${t1_prof:.2f} | +${t2_prof:.2f}`")
-                                table_string = "\n".join(telegram_table_lines)
-
-                                msg = (
-                                    f"🚨 *UPGRADED SMC TRADE SIGNAL: {symbol} ({asset_name})* (`{trade_id}`)\n\n"
-                                    f"• *Decision:* `{decision}`\n"
-                                    f"• *Live Price:* `{latest_price:.5f}`\n"
-                                    f"• *Entry:* `{planned_entry}`\n"
-                                    f"• *Tight SL:* `{planned_sl}`\n"
-                                    f"• *TP1 (EQ):* `{planned_tp1}`\n"
-                                    f"• *TP2 (4H):* `{planned_tp2}`\n"
-                                    f"• *Lots:* `{recommended_lots}` (Risk: `${actual_dollar_risk:.2f}`)\n"
-                                    f"• *R:R:* `{rr_tp2:.2f}R`\n\n"
-                                    f"💰 *Multi-Lot Table:*\n{table_string}\n\n"
-                                    f"• *Time (IST):* `{now_str}`"
-                                )
-                                send_telegram_alert(msg)
-                            else:
-                                print(f"   ⏳ [DUPLICATE BLOCKED] Active PENDING trade for {symbol} already exists.")
+                        if not has_active_trade:
+                            trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
+                            log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, recommended_lots)
+                else:
+                    print(f"   ⏳ STATUS: Monitoring structure. Awaiting valid liquidity sweep for execution.")
 
             except Exception as e:
                 print(f"[{symbol}] Error fetching data: {e}")
