@@ -10,15 +10,12 @@ from smc_engine import SMCTradingEngine
 
 def run_offline_backtest():
   print("==================================================")
-  print("🚀 STARTING $1,000 ACCOUNT BALANCE BACKTEST")
+  print("🚀 STARTING $1,000 ACCOUNT BACKTEST WITH DEBUG MODE")
   print("==================================================")
 
-  # --- ACCOUNT CONFIGURATION ---
   starting_balance = 1000.0
   account_balance = starting_balance
-  risk_per_trade_usd = (
-      50.0  # Risking $50 (5% of initial balance) per trade as an example
-  )
+  risk_per_trade_usd = 50.0
 
   # Load cached parquet files
   try:
@@ -40,8 +37,7 @@ def run_offline_backtest():
   active_trade = None
 
   print(
-      f"📊 Simulating account performance across {total_bars - start_index}"
-      f" historical bars with ${starting_balance} starting balance..."
+      f"📊 Simulating across {total_bars - start_index} historical 1M bars..."
   )
 
   i = start_index
@@ -90,32 +86,22 @@ def run_offline_backtest():
             reward_distance / risk_distance if risk_distance > 0 else 2.0
         )
 
-        if outcome == "WIN":
-          trade_pnl = risk_per_trade_usd * rr_ratio
-        else:
-          trade_pnl = -risk_per_trade_usd
-
-        # Update Account Balance
+        trade_pnl = (
+            (risk_per_trade_usd * rr_ratio)
+            if outcome == "WIN"
+            else -risk_per_trade_usd
+        )
         account_balance += trade_pnl
 
         active_trade["exit_time"] = current_time
         active_trade["outcome"] = outcome
         active_trade["pnl"] = round(trade_pnl, 2)
-        active_trade["balance_after"] = round(account_balance, 2)
         trades_executed.append(active_trade)
 
         print(
             f"   🏁 Trade Closed [{outcome}] | PnL: ${trade_pnl:+.2f} | New"
             f" Balance: ${account_balance:.2f}"
         )
-
-        # Check for blowup condition
-        if account_balance <= 0:
-          print(
-              "⚠️ ACCOUNT BLOWOUT: Balance reached $0.00. Stopping backtest."
-          )
-          break
-
         active_trade = None
 
       i += 1
@@ -137,6 +123,11 @@ def run_offline_backtest():
 
     analysis_result = engine.analyze(data_dict)
     decision = analysis_result["decision"]
+    reason = analysis_result.get("reason", "No reason provided")
+
+    # Print debug info every 500 bars so you know it's actively scanning
+    if i % 500 == 0:
+      print(f"[{current_time}] 🔍 Scanning... Engine Reason: {reason}")
 
     if decision in ["BUY", "SELL"]:
       trade_params = analysis_result.get("trade_params", {})
@@ -168,27 +159,14 @@ def run_offline_backtest():
   print("\n==================================================")
   print("💰 FINAL ACCOUNT PERFORMANCE REPORT")
   print("==================================================")
-
-  total_trades = len(trades_executed)
   print(f"• Starting Balance: ${starting_balance:,.2f}")
   print(f"• Ending Balance:   ${account_balance:,.2f}")
-
-  net_profit_loss = account_balance - starting_balance
-  return_pct = (net_profit_loss / starting_balance) * 100
-
-  print(f"• Net Profit/Loss:  ${net_profit_loss:+,.2f} ({return_pct:+.2f}%)")
-  print(f"• Total Trades:     {total_trades}")
-
-  if total_trades > 0:
-    wins = len([t for t in trades_executed if t["outcome"] == "WIN"])
-    losses = total_trades - wins
-    print(f"• Win/Loss Breakdown: {wins} Wins / {losses} Losses")
-    print(
-        f"• Win Rate:         {(wins / total_trades) * 100:.2f}%"
-        if total_trades > 0
-        else "• Win Rate: 0%"
-    )
-
+  print(
+      f"• Net Profit/Loss:"
+      f" ${account_balance - starting_balance:+,.2f}"
+      f" ({(account_balance - starting_balance) / starting_balance * 100:+.2f}%)"
+  )
+  print(f"• Total Trades:     {len(trades_executed)}")
   print("==================================================")
 
 
