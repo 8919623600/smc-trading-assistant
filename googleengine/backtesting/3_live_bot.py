@@ -80,7 +80,6 @@ def execute_with_failover(func, *args, **kwargs):
         if "credit" in err_msg or "limit" in err_msg or "rate" in err_msg or "exhausted" in err_msg:
             print(f"⚠️ Twelve Data Rate Limit / Credit error detected: {e}")
             if switch_twelve_data_key():
-                # Retry once with the new key
                 return func(*args, **kwargs)
         raise e
 
@@ -424,7 +423,6 @@ def run_scanner():
                 reason = result.get("reason", "Setup validated")
                 trade_params = result.get("trade_params")
 
-                # Fallback execution map when engine is in WAIT mode
                 if not trade_params:
                     is_bearish = "SELL" in reason.upper() or "BEARISH" in reason.upper() or "NOT YET IN" in reason.upper()
                     
@@ -455,12 +453,6 @@ def run_scanner():
                 print(f"💲 Live Price:       {latest_price}")
                 print(f"🚦 Engine Decision:  {reason}")
                 print("==================================================\n")
-                print(f"1️⃣  4H MACRO BIAS & 15M STRUCTURAL CONTEXT")
-                print(f"   • Active Trade:   {symbol} ({asset_name})")
-                print(f"   • 4H Equilibrium: {eq_4h}")
-                print(f"   • Overall Bias:   N/A")
-                print(f"   • 15M ATR (Noise):{atr_val}")
-                print("--------------------------------------------------\n")
 
                 planned_entry = trade_params["entry"]
                 planned_sl = trade_params["sl"]
@@ -483,23 +475,6 @@ def run_scanner():
                 print(f"   • Target 2 (1H):   {planned_tp2} -> R:R {rr_tp2}R")
                 print("--------------------------------------------------\n")
 
-                # Risk & Lot Sizing Scenario Matrix (Informational for discretion)
-                print(f"💰 RISK & LOT SIZING MATRIX [Trade: {symbol} - {asset_name}]")
-                print("==================================================")
-                print("   Lot Size   |   SL Loss    |   TP1 Profit (1.2x)|   TP2 Profit")
-                print("--------------------------------------------------")
-                for lot in [0.01, 0.02, 0.05, 0.10, 0.50, 1.00]:
-                    if quote_usd:
-                        sl_loss = lot * risk_points * contract_size
-                        tp1_prof = lot * reward_tp1 * contract_size
-                        tp2_prof = lot * reward_tp2 * contract_size
-                    else:
-                        sl_loss = lot * contract_size * (risk_points / latest_price)
-                        tp1_prof = lot * contract_size * (reward_tp1 / latest_price)
-                        tp2_prof = lot * contract_size * (reward_tp2 / latest_price)
-                    print(f"   {lot:4.2f} Lots  |   -${sl_loss:.2f}   |   +${tp1_prof:.2f}       |   +${tp2_prof:.2f}")
-                print("==================================================\n")
-
                 if decision in ["BUY", "SELL"]:
                     if rr_tp2 < MIN_REQUIRED_RR:
                         print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2}R) is below minimum required {MIN_REQUIRED_RR}R.")
@@ -511,8 +486,7 @@ def run_scanner():
                             actual_dollar_risk = default_lots * contract_size * (risk_points / latest_price)
 
                         print(f"   ✔ APPROVED [{symbol}]: Structural setup verified within SMC criteria.")
-                        print(f"   • Baseline Execution: {default_lots} Lot (SL Risk: ${actual_dollar_risk:.2f} | R:R: {rr_tp2}R)")
-
+                        
                         has_active_trade = False
                         if os.path.exists(TRADE_HISTORY_FILE):
                             df_check = pd.read_csv(TRADE_HISTORY_FILE)
