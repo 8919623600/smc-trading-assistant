@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define your script name
-SCRIPT_NAME="testing_smc_google.py"
-LOG_FILE="main.py"
+SCRIPT_NAME="main.py"
+LOG_FILE="scanner.log"
 
 echo "=================================================="
 echo "  RESTARTING SMC GOLD SCANNER                     "
