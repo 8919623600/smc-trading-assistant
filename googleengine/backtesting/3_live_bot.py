@@ -112,10 +112,10 @@ def is_active_session(now_dt: datetime) -> bool:
 
 def initialize_trade_history():
     """Initializes trade history CSV and prints historical stats on boot."""
-    if not os.path.exists(TRADE_HISTORY_FILE):
+    if not os.path.exists(TRADE_HISTORY_FILE) or os.stat(TRADE_HISTORY_FILE).st_size == 0:
         pd.DataFrame(columns=[
             "trade_id", "timestamp", "symbol", "decision", "entry", "sl", "tp1", "tp2", "lots", "status", "exit_time", "be_active", "pnl_usd"
-        ]).to_csv(TRADE_HISTORY_FILE, index=False)
+        ], dtype=object).to_csv(TRADE_HISTORY_FILE, index=False)
     else:
         df = pd.read_csv(TRADE_HISTORY_FILE)
         if "pnl_usd" not in df.columns:
