@@ -283,27 +283,28 @@ def run_bot():
                     tp1 = params["tp1"]
                     tp2 = params["tp2"]
 
-                    # Quantity or risk calculation
-                    qty = 10.0 # Default fixed qty or calculated based on risk
-                    calculated_risk = 10.0
+                    qty = 10.0 # Adjust quantity as needed
+                    calculated_risk = abs(entry - sl) * qty
 
-                    print(f"   🎯 NEW TRADE SETUP DETECTED:")
-                    print(f"      • Entry Target : {entry}")
-                    print(f"      • Stop Loss    : {sl}")
-                    print(f"      • Take Profit 1: {tp1}")
-                    print(f"      • Take Profit 2: {tp2}")
+                    print(f"   🎯 NEW SMC LIMIT SETUP DETECTED:")
+                    print(f"      • Limit Entry Target : {entry} (Waiting for pullback)")
+                    print(f"      • Stop Loss          : {sl}")
+                    print(f"      • Take Profit 1      : {tp1}")
+                    print(f"      • Take Profit 2      : {tp2}")
                     
                     try:
+                        # Submit a LIMIT order so it waits for the SMC pullback level
                         order = api.submit_order(
                             symbol=symbol,
                             qty=qty,
                             side=decision.lower(),
-                            type='market',
+                            type='limit',
+                            limit_price=entry,
                             time_in_force='gtc'
                         )
                         ticket_id = order.id
                         success = True
-                        print(f"✅ Alpaca Bracket Order Placed! Ticket ID: {ticket_id}")
+                        print(f"✅ Alpaca Limit Order Placed! Ticket ID: {ticket_id}")
                     except Exception as e:
                         print(f"❌ Order submission error: {e}")
                         success = False
@@ -325,10 +326,10 @@ def run_bot():
                         save_active_trades(active_trades)
 
                         alert_msg = (
-                            f"🤖 *ALPACA PAPER TRADE EXECUTED ({decision})* 🤖\n\n"
+                            f"🤖 *ALPACA SMC LIMIT ORDER PLACED ({decision})* 🤖\n\n"
                             f"📌 *Asset:* `{symbol}`\n"
                             f"🎫 *Alpaca Order ID:* `{ticket_id}`\n"
-                            f"📊 *Price:* `{current_price}` | *Qty:* `{qty}`\n"
+                            f"📊 *Limit Entry:* `{entry}` | *Qty:* `{qty}`\n"
                             f"🛑 *SL:* `{sl}`\n"
                             f"🎯 *TP1:* `{tp1}` | 🎯 *TP2:* `{tp2}`\n"
                             f"📝 *Reason:* {reason}"
