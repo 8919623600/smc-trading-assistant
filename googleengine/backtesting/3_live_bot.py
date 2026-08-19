@@ -52,6 +52,11 @@ LOG_FILE = "scanner.log"
 current_api_key_index = 1
 active_td_client = TDClient(apikey=TWELVE_DATA_API_KEY_1)
 
+# Daily API Call Budget Management (1600 max budget across 2 keys)
+DAILY_CALL_LIMIT = 1600
+api_calls_today = 0
+last_budget_reset_date = datetime.now(IST).date()
+
 
 def switch_twelve_data_key():
     """Switches to the secondary Twelve Data API key upon hitting rate limits."""
@@ -71,13 +76,29 @@ def switch_twelve_data_key():
 
 
 def execute_with_failover(func, *args, **kwargs):
-    """Executes a Twelve Data API call, automatically handling credit limits and failing over."""
-    global active_td_client
+    """Executes a Twelve Data API call, automatically tracking calls, handling credit limits and failing over."""
+    global active_td_client, api_calls_today, last_budget_reset_date
+    
+    # Reset daily call tracking if date changed
+    today = datetime.now(IST).date()
+    if today != last_budget_reset_date:
+        api_calls_today = 0
+        last_budget_reset_date = today
+        print("🔄 Daily API budget counter reset to 0.")
+
+    if api_calls_today >= DAILY_CALL_LIMIT:
+        print("⚠️ Daily API call budget of 1,600 reached! Halting API requests until tomorrow.")
+        send_telegram_alert("⚠️ *API Budget Exhausted*\nDaily budget of 1,600 calls reached. Pausing market scans.")
+        time.sleep(3600)
+        return None
+
+    api_calls_today += 1
+
     try:
         return func(*args, **kwargs)
     except Exception as e:
         err_msg = str(e).lower()
-        if "credit" in err_msg or "limit" in err_msg or "rate" in err_msg or "exhausted" in err_msg:
+        if "credit" in err_msg or "limit" in err_msg or "rate" in err_msg or "exhausted" in err_msg or "429" in err_msg:
             print(f"⚠️ Twelve Data Rate Limit / Credit error detected: {e}")
             if switch_twelve_data_key():
                 return func(*args, **kwargs)
@@ -143,7 +164,6 @@ def check_daily_circuit_breaker() -> bool:
         
     today_str = datetime.now(IST).strftime("%Y-%m-%d")
     
-    # Safely fill NaNs and cast to string to prevent AttributeError
     exit_times = df["exit_time"].fillna("").astype(str)
     losses_today = df[(df["status"] == "LOSS") & (exit_times.str.startswith(today_str))]
     
@@ -236,7 +256,7 @@ def check_and_send_monthly_report(now_ist: datetime):
 
 
 def evaluate_pending_trades(current_high: float, current_low: float, atr_val: float, now_str: str, symbol: str, quote_usd: bool, contract_size: float):
-    """Monitors pending trades, manages Breakeven activation, checks SL/TP hits, and computes dollar PnL."""
+    """Monitors pending trades, manages Breakeven activation, checks SL/TP hits, and computes dollar PnL with explicit alerts."""
     if not os.path.exists(TRADE_HISTORY_FILE):
         return
     df = pd.read_csv(TRADE_HISTORY_FILE)
@@ -348,7 +368,7 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
     true_range = ranges.max(axis=1)
     atr = float(true_range.rolling(period).mean().iloc[-1])
     if pd.isna(atr) or atr <= 0:
-        return 0.0010  # Safe minimum fallback to prevent collapse or division-by-zero
+        return 0.0010
     return atr
 
 
@@ -418,6 +438,9 @@ def run_scanner():
                 asset_name = cfg["name"]
 
                 data = fetch_realtime_data(symbol)
+                if not data:
+                    continue
+                    
                 latest_price = data["1M"]["close"].iloc[-1]
                 atr_val = calculate_atr(data["15M"], period=14)
 
@@ -426,7 +449,8 @@ def run_scanner():
                 h4_sh, h4_sl = find_macro_4h_range(data["4H"], lookback=50)
                 eq_4h = (h4_sh + h4_sl) / 2
 
-                result = engine.analyze(data)
+                # Pass asset symbol so engine knows whether to use pip or dollar scales
+                result = engine.analyze(data, symbol=symbol)
                 decision = result.get("decision", "NO_TRADE")
                 reason = result.get("reason", "Setup validated")
                 trade_params = result.get("trade_params")
@@ -440,7 +464,6 @@ def run_scanner():
                 print(f"🚦 Engine Decision:  {decision} -> Reason: {reason}")
                 print("==================================================\n")
 
-                # STRICT SMC ENFORCEMENT: Skip if engine doesn't find a genuine structured setup
                 if not trade_params or decision not in ["BUY", "SELL"]:
                     print(f"   ⏳ STATUS: No valid institutional SMC structure found for {symbol}. Monitoring...")
                     continue
@@ -451,13 +474,11 @@ def run_scanner():
                 planned_tp2 = trade_params["tp2"]
                 rr_tp2 = trade_params["rr"]
 
-                # SAFETY GUARD: Reject if entry and stop loss are identical or invalid
                 if planned_entry == planned_sl or abs(planned_entry - planned_sl) == 0:
                     print(f"   ❌ REJECTED [{symbol}]: Engine returned invalid parameters (Entry equals Stop Loss). Skipping trade.")
                     continue
 
                 risk_points = abs(planned_entry - planned_sl)
-
                 direction_str = "SHORT (Bearish Reversal from Premium)" if decision == "SELL" else "LONG (Bullish Reversal from Discount)"
 
                 print(f"2️⃣  TIGHTER 15M PREDICTIVE EXECUTION MAP [{symbol}]")
