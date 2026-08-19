@@ -1,5 +1,3 @@
-# Create the correct generator script using a standard python file write
-cat << 'EOF' > generate_mock_data.py
 import pandas as pd
 import numpy as np
 import os
@@ -32,4 +30,4 @@ create_dummy_csv("data/eurusd_4h.csv", periods=200)
 create_dummy_csv("data/eurusd_1h.csv", periods=500)
 create_dummy_csv("data/eurusd_15m.csv", periods=1000)
 create_dummy_csv("data/eurusd_1m.csv", periods=2000)
-print("All mock files created successfully!")
+pri:::nt("All mock files created successfully!")
