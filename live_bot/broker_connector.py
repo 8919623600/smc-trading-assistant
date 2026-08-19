@@ -51,14 +51,14 @@ class MT5BrokerConnector:
             else:
                 adjusted_sl = max(sl, current_price + 0.05)
 
-            # Whole shares (1.0) are required for bracket orders on Alpaca
-            fixed_qty = 1.0
+            # Updated to 10 whole shares/lots as requested
+            fixed_qty = 10.0
 
             order_data = MarketOrderRequest(
                 symbol=formatted_symbol,
                 qty=fixed_qty,
                 side=side,
-                time_in_force=TimeInForce.GTC,  # Whole shares support GTC bracket orders
+                time_in_force=TimeInForce.GTC,
                 order_class=OrderClass.BRACKET,
                 take_profit=TakeProfitRequest(limit_price=round(tp, 2)),
                 stop_loss=StopLossRequest(stop_price=round(adjusted_sl, 2))
