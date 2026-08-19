@@ -39,9 +39,12 @@ class MT5BrokerConnector:
             side = OrderSide.BUY if order_type.upper() == "BUY" else OrderSide.SELL
             formatted_symbol = symbol.replace("/", "") if "/" in symbol else symbol
 
+            # Always set quantity to 0.1 (Alpaca supports fractional shares for ETFs like GLD)
+            fixed_qty = 0.1
+
             order_data = MarketOrderRequest(
                 symbol=formatted_symbol,
-                qty=max(1, int(lot_size * 100)),
+                qty=fixed_qty,
                 side=side,
                 time_in_force=TimeInForce.GTC,
                 order_class=OrderClass.BRACKET,
@@ -52,7 +55,7 @@ class MT5BrokerConnector:
             response = self.client.submit_order(order_data=order_data)
             ticket_id = str(response.id)
             
-            print(f"✅ Alpaca Paper Order Placed! Ticket/ID: {ticket_id}")
+            print(f"✅ Alpaca Paper Order Placed! Ticket/ID: {ticket_id} | Qty: {fixed_qty}")
             return True, ticket_id
 
         except Exception as e:
