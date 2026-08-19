@@ -11,7 +11,7 @@ sleep 2
 
 # 2. Start the new bot instance in the background with logging
 echo "🚀 Starting fresh bot instance..."
-nohup python main.py > live_bot.log 2>&1 &
+nohup python3 -u main.py > live_bot.log 2>&1 &
 
 # 3. Confirmation output
 echo "✅ Bot is now running cleanly in the background!"
