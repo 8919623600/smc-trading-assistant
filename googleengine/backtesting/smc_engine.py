@@ -53,6 +53,49 @@ class SMCTradingEngine:
                 })
         return obs
 
+    def calculate_lot_breakdown(self, risk_in_pips, is_forex):
+        """
+        Calculates P&L for standard lot sizes: 0.01, 0.02, 0.03, 0.1, 0.2, 0.5
+        For EUR/USD (Forex): 1 standard lot = $10 per pip. 0.01 lot = $0.10 per pip.
+        For XAU/USD (Gold): 1 standard lot = $1 per 0.01 move (or $100 per full $1.00 move). 
+                           Usually, 0.01 lot on Gold = $1.00 per $1.00 move in price.
+        """
+        standard_lots = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5]
+        breakdown = {}
+        
+        # Determine dollar value per unit risk per 0.01 lot
+        # EUR/USD: 1 pip = 0.0001. Dollar per pip for 0.01 lot = $0.10
+        # XAU/USD: 1 point = $1.00. Dollar per $1.00 move for 0.01 lot = $1.00
+        if is_forex:
+            pips = risk_in_pips * 10000
+            for lot in standard_lots:
+                dollar_loss = pips * (lot * 10) # $0.10 per pip per 0.01 lot
+                breakdown[f"{lot} Lot"] = round(dollar_loss, 2)
+        else:
+            price_diff = risk_in_pips
+            for lot in standard_lots:
+                # 0.01 lot gold = $1 per $1 move. 0.1 lot = $10 per $1 move.
+                dollar_loss = price_diff * (lot * 100)
+                breakdown[f"{lot} Lot"] = round(dollar_loss, 2)
+                
+        return breakdown
+
+    def get_optimal_lot_for_target_loss(self, risk_in_pips, is_forex, target_loss=10.0):
+        if risk_in_pips <= 0:
+            return 0.01
+            
+        if is_forex:
+            pips = risk_in_pips * 10000
+            # dollar_per_lot_per_pip = 1000 ($10 per pip for 1.0 lot)
+            # target_loss = pips * lot * 10 -> lot = target_loss / (pips * 10)
+            ideal_lot = target_loss / (pips * 10)
+        else:
+            # target_loss = price_diff * lot * 100 -> lot = target_loss / (price_diff * 100)
+            ideal_lot = target_loss / (risk_in_pips * 100)
+            
+        # Round to standard broker increments (min 0.01)
+        return max(0.01, round(ideal_lot, 2))
+
     def analyze(self, data_dict, symbol="XAU/USD"):
         df_4h = data_dict.get("4H")
         df_1m = data_dict.get("1M")
@@ -60,7 +103,14 @@ class SMCTradingEngine:
         bias_4h = self.determine_bias(df_4h)
         
         if df_1m is None or len(df_1m) < 30:
-            return {"decision": None, "reason": "Insufficient 1M data frames", "bias_4h": bias_4h, "trade_params": {}}
+            current_close = float(df_1m.iloc[-1]['close']) if (df_1m is not None and not df_1m.empty) else 0.0
+            return {
+                "decision": None, 
+                "current_price": current_close, 
+                "reason": "Insufficient 1M data frames", 
+                "bias_4h": bias_4h, 
+                "trade_params": {}
+            }
             
         current_bar = df_1m.iloc[-1]
         close_price = float(current_bar['close'])
@@ -70,7 +120,6 @@ class SMCTradingEngine:
         obs_1m = self.detect_order_blocks(df_1m)
         recent_obs = [ob for ob in obs_1m if abs(ob['index'] - len(df_1m)) < 25] if obs_1m else []
         
-        # Asset-aware Pip/Buffer scaling (EUR/USD vs Gold)
         is_forex = "EUR" in symbol.upper() or ("USD" in symbol.upper() and "XAU" not in symbol.upper())
         sl_buffer = 0.0015 if is_forex else (low_price * 0.001)
 
@@ -85,15 +134,19 @@ class SMCTradingEngine:
             
             risk = entry - sl
             if risk <= 0:
-                return {"decision": None, "reason": "Invalid risk bounds", "bias_4h": bias_4h, "trade_params": {}}
+                return {"decision": None, "current_price": close_price, "reason": "Invalid risk bounds", "bias_4h": bias_4h, "trade_params": {}}
                 
             tp1 = entry + (risk * 1.5)
             tp2 = entry + (risk * 3.0)
             rr = round((tp2 - entry) / risk, 2)
             
             if self.min_rr <= rr <= self.max_rr:
+                lot_breakdown = self.calculate_lot_breakdown(risk, is_forex)
+                optimal_lot = self.get_optimal_lot_for_target_loss(risk, is_forex, target_loss=10.0)
+                
                 return {
                     "decision": "BUY",
+                    "current_price": round(entry, 4 if is_forex else 2),
                     "reason": "Confirmed Bullish Order Block mitigation with 4H alignment.",
                     "bias_4h": bias_4h,
                     "trade_params": {
@@ -101,7 +154,9 @@ class SMCTradingEngine:
                         "sl": round(sl, 4 if is_forex else 2),
                         "tp1": round(tp1, 4 if is_forex else 2),
                         "tp2": round(tp2, 4 if is_forex else 2),
-                        "rr": rr
+                        "rr": rr,
+                        "risk_dollar_breakdown_by_lot": lot_breakdown,
+                        "recommended_lot_for_$10_loss": optimal_lot
                     }
                 }
                 
@@ -116,24 +171,38 @@ class SMCTradingEngine:
             
             risk = sl - entry
             if risk <= 0:
-                return {"decision": None, "reason": "Invalid risk bounds", "bias_4h": bias_4h, "trade_params": {}}
+                return {"decision": None, "current_price": close_price, "reason": "Invalid risk bounds", "bias_4h": bias_4h, "trade_params": {}}
                 
             tp1 = entry - (risk * 1.5)
             tp2 = entry - (risk * 3.0)
             rr = round((entry - tp2) / risk, 2)
             
             if self.min_rr <= rr <= self.max_rr:
+                lot_breakdown = self.calculate_lot_breakdown(risk, is_forex)
+                optimal_lot = self.get_optimal_lot_for_target_loss(risk, is_forex, target_loss=10.0)
+                
                 return {
                     "decision": "SELL",
+                    "current_price": round(entry, 4 if is_forex else 2),
                     "reason": "Confirmed Bearish Order Block mitigation with 4H alignment.",
                     "bias_4h": bias_4h,
                     "trade_params": {
                         "entry": round(entry, 4 if is_forex else 2),
                         "sl": round(sl, 4 if is_forex else 2),
                         "tp1": round(tp1, 4 if is_forex else 2),
+                        "tp2": round(tp2, 4 if is_forexoster else 2),
                         "tp2": round(tp2, 4 if is_forex else 2),
-                        "rr": rr
+                        "rr": rr,
+                        "risk_dollar_breakdown_by_lot": lot_breakdown,
+                        "recommended_lot_for_$10_loss": optimal_lot
                     }
                 }
                 
-        return {"decision": None, "reason": "No high-probability SMC trigger.", "bias_4h": bias_4h, "trade_params": {}}
+        # Fallback when no BUY/SELL decision is triggered (e.g., WAIT state)
+        return {
+            "decision": "WAIT", 
+            "current_price": round(close_price, 4 if is_forex else 2), 
+            "reason": "No high-probability SMC trigger.", 
+            "bias_4h": bias_4h, 
+            "trade_params": {}
+        }
