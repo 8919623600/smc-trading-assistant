@@ -1,15 +1,15 @@
-import config
+import os
 from alpaca.trading.client import TradingClient
 
-# Automatically grab whatever key names your config.py is using
-api_key = getattr(config, 'API_KEY', None) or getattr(config, 'ALPACA_API_KEY', None) or getattr(config, 'APCA_API_KEY_ID', None)
-secret_key = getattr(config, 'SECRET_KEY', None) or getattr(config, 'ALPACA_SECRET_KEY', None) or getattr(config, 'APCA_API_SECRET_KEY', None)
+# Load Alpaca keys from your environment variables
+API_KEY = os.getenv("APCA_API_KEY_ID") or os.getenv("ALPACA_API_KEY")
+SECRET_KEY = os.getenv("APCA_API_SECRET_KEY") or os.getenv("ALPACA_SECRET_KEY")
 
-if not api_key or not secret_key:
-    raise ValueError("❌ Could not find Alpaca API keys in config.py. Please check your variable names.")
+if not API_KEY or not SECRET_KEY:
+    raise ValueError("❌ Alpaca API keys are missing from your environment variables. Make sure they are exported in your terminal session.")
 
-# Initialize Alpaca Client
-client = TradingClient(api_key, secret_key, paper=True)
+# Initialize Alpaca Client (paper=True for paper trading)
+client = TradingClient(API_KEY, SECRET_KEY, paper=True)
 
 print("🛑 Cancelling all open orders...")
 client.cancel_orders()
