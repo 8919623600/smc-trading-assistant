@@ -1,74 +1,57 @@
 import os
+import json
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, TakeProfitRequest
-from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
 
-class MT5BrokerConnector:
-    def __init__(self):
-        self.api_key = os.getenv("APCA_API_KEY_ID")
-        self.secret_key = os.getenv("APCA_API_SECRET_KEY")
-        
+def clear_all():
+    print("==========================================")
+    print("🧹 CLEARING ALPACA POSITIONS & LOCAL STATE")
+    print("==========================================")
+
+    # 1. Initialize Alpaca client
+    api_key = os.getenv("APCA_API_KEY_ID")
+    secret_key = os.getenv("APCA_API_SECRET_KEY")
+
+    if not api_key or not secret_key:
+        print("❌ Error: Alpaca API credentials not found in environment variables.")
+        return
+
+    try:
+        client = TradingClient(api_key, secret_key, paper=True)
+    except Exception as e:
+        print(f"❌ Failed to initialize Alpaca Trading Client: {e}")
+        return
+
+    # 2. Cancel all open orders on Alpaca
+    print("🛑 Cancelling all open Alpaca orders...")
+    try:
+        cancel_requests = client.cancel_orders()
+        print(f"   • Successfully processed order cancellations.")
+    except Exception as e:
+        print(f"   • Note on orders cancellation: {e}")
+
+    # 3. Close all open positions on Alpaca
+    print("📉 Closing all open Alpaca positions...")
+    try:
+        client.close_all_positions(cancel_orders=True)
+        print(f"   • Successfully closed all open positions.")
+    except Exception as e:
+        print(f"   • Note on position closure: {e}")
+
+    # 4. Wipe local active trades tracking file
+    active_trades_file = "active_trades.json"
+    if os.path.exists(active_trades_file):
         try:
-            self.client = TradingClient(self.api_key, self.secret_key, paper=True)
+            with open(active_trades_file, mode='w') as f:
+                json.dump({}, f, indent=4)
+            print(f"   • Cleared local tracking file: {active_trades_file}")
         except Exception as e:
-            print(f"⚠️ Failed to initialize Alpaca client: {e}")
-            self.client = None
+            print(f"   • Error clearing local JSON file: {e}")
+    else:
+        print(f"   • Local file {active_trades_file} not found (skipped).")
 
-    def connect(self):
-        if not self.client:
-            return False
-        try:
-            account = self.client.get_account()
-            print(f"   🔹 Alpaca API Connection  : ACTIVE [ ✅ Connected ]")
-            print(f"      • Account Status       : {account.status}")
-            print(f"      • Paper Buying Power   : ${float(account.buying_power):,.2f}")
-            return True
-        except Exception as e:
-            print(f"   🔹 Alpaca API Connection  : FAILED [ ❌ Error: {e} ]")
-            return False
+    print("==========================================")
+    print("✅ Account and local state cleared successfully!")
+    print("==========================================")
 
-    def disconnect(self):
-        print("🔌 Alpaca session disconnected safely.")
-
-    def execute_order(self, symbol, order_type, lot_size, sl, tp):
-        if not self.client:
-            print("❌ Alpaca client is not initialized.")
-            return False, None
-
-        try:
-            side = OrderSide.BUY if order_type.upper() == "BUY" else OrderSide.SELL
-            formatted_symbol = symbol.replace("/", "") if "/" in symbol else symbol
-
-            # --- AUTO-ADJUST SL FOR ALPACA VALIDATION ---
-            try:
-                latest_bar = self.client.get_stock_latest_bar({"symbol": formatted_symbol})
-                current_price = float(latest_bar[formatted_symbol].close)
-            except Exception:
-                current_price = sl + 0.50
-
-            if side == OrderSide.BUY:
-                adjusted_sl = min(sl, current_price - 0.05)
-            else:
-                adjusted_sl = max(sl, current_price + 0.05)
-
-            fixed_qty = 0.1
-
-            order_data = MarketOrderRequest(
-                symbol=formatted_symbol,
-                qty=fixed_qty,
-                side=side,
-                time_in_force=TimeInForce.DAY,  # <-- FIXED: Fractional orders require DAY orders on Alpaca
-                order_class=OrderClass.BRACKET,
-                take_profit=TakeProfitRequest(limit_price=round(tp, 2)),
-                stop_loss=StopLossRequest(stop_price=round(adjusted_sl, 2))
-            )
-
-            response = self.client.submit_order(order_data=order_data)
-            ticket_id = str(response.id)
-            
-            print(f"✅ Alpaca Paper Order Placed! Ticket/ID: {ticket_id} | Qty: {fixed_qty} | SL: {round(adjusted_sl, 2)}")
-            return True, ticket_id
-
-        except Exception as e:
-            print(f"❌ Alpaca order execution error: {e}")
-            return False, None
+if __name__ == "__main__":
+    clear_all()

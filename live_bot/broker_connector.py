@@ -39,23 +39,35 @@ class MT5BrokerConnector:
             side = OrderSide.BUY if order_type.upper() == "BUY" else OrderSide.SELL
             formatted_symbol = symbol.replace("/", "") if "/" in symbol else symbol
 
-            # Always set quantity to 0.1 (Alpaca supports fractional shares for ETFs like GLD)
-            fixed_qty = 0.1
+            # --- AUTO-ADJUST SL FOR ALPACA VALIDATION ---
+            try:
+                latest_bar = self.client.get_stock_latest_bar({"symbol": formatted_symbol})
+                current_price = float(latest_bar[formatted_symbol].close)
+            except Exception:
+                current_price = sl + 0.50
+
+            if side == OrderSide.BUY:
+                adjusted_sl = min(sl, current_price - 0.05)
+            else:
+                adjusted_sl = max(sl, current_price + 0.05)
+
+            # Whole shares (1.0) are required for bracket orders on Alpaca
+            fixed_qty = 1.0
 
             order_data = MarketOrderRequest(
                 symbol=formatted_symbol,
                 qty=fixed_qty,
                 side=side,
-                time_in_force=TimeInForce.GTC,
+                time_in_force=TimeInForce.GTC,  # Whole shares support GTC bracket orders
                 order_class=OrderClass.BRACKET,
                 take_profit=TakeProfitRequest(limit_price=round(tp, 2)),
-                stop_loss=StopLossRequest(stop_price=round(sl, 2))
+                stop_loss=StopLossRequest(stop_price=round(adjusted_sl, 2))
             )
 
             response = self.client.submit_order(order_data=order_data)
             ticket_id = str(response.id)
             
-            print(f"✅ Alpaca Paper Order Placed! Ticket/ID: {ticket_id} | Qty: {fixed_qty}")
+            print(f"✅ Alpaca Bracket Order Placed! Ticket ID: {ticket_id} | Qty: {fixed_qty} | SL: {round(adjusted_sl, 2)}")
             return True, ticket_id
 
         except Exception as e:
