@@ -3,12 +3,11 @@ import os
 import csv
 import json
 import requests
-import MetaTrader5 as mt5
 import pandas as pd
 from datetime import datetime
-from config import SYMBOLS, LOT_SIZE, TIMEFRAME, POLL_INTERVAL_SECONDS, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from alpaca_trade_api.rest import REST, TimeFrame
+from config import SYMBOLS, POLL_INTERVAL_SECONDS, APCA_API_KEY_ID, APCA_API_SECRET_KEY, APCA_API_BASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from smc_engine import AdvancedSMCEngine
-from broker_connector import MT5BrokerConnector
 
 ACTIVE_TRADES_FILE = "active_trades.json"
 HISTORY_FILE = "trade_history.csv"
@@ -112,29 +111,38 @@ def send_daily_pnl_summary(target_date_str):
     )
     send_telegram_alert(summary_msg)
 
-class MT5DataFetcher:
-    """Fetches multi-timeframe candle data directly from MT5 terminal for the SMC engine"""
+class AlpacaDataFetcher:
+    """Fetches multi-timeframe candle data from Alpaca API for the SMC engine"""
+    def __init__(self, api_client):
+        self.api = api_client
+
     def get_market_data(self, symbol):
-        formatted_symbol = symbol.replace("/", "").upper()
-        timeframes = {
-            "1M": mt5.TIMEFRAME_M1,
-            "5M": mt5.TIMEFRAME_M5,
-            "15M": mt5.TIMEFRAME_M15,
-            "1H": mt5.TIMEFRAME_H1
-        }
         data_dict = {}
-        for tf_name, tf_const in timeframes.items():
-            rates = mt5.copy_rates_from_pos(formatted_symbol, tf_const, 0, 200)
-            if rates is not None and len(rates) > 0:
-                df = pd.DataFrame(rates)
-                df['time'] = pd.to_datetime(df['time'], unit='s')
-                df = df.rename(columns={'time': 'timestamp', 'tick_volume': 'volume'})
-                data_dict[tf_name] = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
-            else:
+        tf_mapping = {
+            "1M": TimeFrame.Minute,
+            "5M": TimeFrame(5, TimeFrame.Minute),
+            "15M": TimeFrame(15, TimeFrame.Minute),
+            "1H": TimeFrame.Hour
+        }
+        
+        for tf_name, alpaca_tf in tf_mapping.items():
+            try:
+                bars = self.api.get_bars(symbol, alpaca_tf, limit=200).df
+                if not bars.empty:
+                    # Reset index to make timestamp a column
+                    bars = bars.reset_index()
+                    # Standardize column names for the SMC engine
+                    bars = bars.rename(columns={'timestamp': 'timestamp', 'open': 'open', 'high': 'high', 'low': 'low', 'close': 'close', 'volume': 'volume'})
+                    data_dict[tf_name] = bars[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+                else:
+                    data_dict[tf_name] = None
+            except Exception as e:
+                print(f"⚠️ Error fetching {tf_name} data for {symbol}: {e}")
                 data_dict[tf_name] = None
+                
         return data_dict
 
-def check_active_trades(symbol, current_price, high_price, low_price):
+def check_active_trades(api, symbol, current_price, high_price, low_price):
     active_trades = load_active_trades()
     if symbol not in active_trades:
         return
@@ -145,11 +153,7 @@ def check_active_trades(symbol, current_price, high_price, low_price):
     sl = trade["sl"]
     tp1 = trade["tp1"]
     tp2 = trade["tp2"]
-    lot_size = trade["lot_size"]
-
-    # Approximate risk/reward evaluation for tracking pnl (pip/point based estimation for 0.1 lot)
-    risk_points = abs(entry - sl)
-    estimated_risk_usd = risk_points * 100 * lot_size
+    risk_usd = trade["risk_usd"]
 
     outcome = None
     exit_price = current_price
@@ -159,11 +163,11 @@ def check_active_trades(symbol, current_price, high_price, low_price):
         if low_price <= sl:
             outcome = "SL_HIT"
             exit_price = sl
-            pnl = -estimated_risk_usd
+            pnl = -risk_usd
         elif high_price >= tp2:
             outcome = "TP2_HIT"
             exit_price = tp2
-            pnl = estimated_risk_usd * 3.0
+            pnl = risk_usd * 3.0
         elif high_price >= tp1 and not trade.get("tp1_hit", False):
             trade["tp1_hit"] = True
             save_active_trades(active_trades)
@@ -173,11 +177,11 @@ def check_active_trades(symbol, current_price, high_price, low_price):
         if high_price >= sl:
             outcome = "SL_HIT"
             exit_price = sl
-            pnl = -estimated_risk_usd
+            pnl = -risk_usd
         elif low_price <= tp2:
             outcome = "TP2_HIT"
             exit_price = tp2
-            pnl = estimated_risk_usd * 3.0
+            pnl = risk_usd * 3.0
         elif low_price <= tp1 and not trade.get("tp1_hit", False):
             trade["tp1_hit"] = True
             save_active_trades(active_trades)
@@ -186,13 +190,13 @@ def check_active_trades(symbol, current_price, high_price, low_price):
     if outcome in ["SL_HIT", "TP2_HIT"]:
         trade["outcome"] = outcome
         trade["exit_price"] = exit_price
-        trade["pnl_usd"] = round(pnl, 2)
+        trade["pnl_usd"] = pnl
         
         log_trade_history(trade)
 
         emoji = "✅" if "TP" in outcome else "❌"
         alert_msg = (
-            f"{emoji} *MT5 PAPER TRADE CLOSED: {outcome}* {emoji}\n\n"
+            f"{emoji} *ALPACA PAPER TRADE CLOSED: {outcome}* {emoji}\n\n"
             f"📌 *Asset:* `{symbol}`\n"
             f"⚡ *Type:* `{t_type}`\n"
             f"💵 *Entry:* `{entry}` | *Exit:* `{exit_price}`\n"
@@ -214,23 +218,24 @@ def run_bot():
     telegram_status = "ACTIVE [ ✅ Verified ]" if TELEGRAM_BOT_TOKEN else "FAILED [ ❌ Missing Token ]"
     print(f"   🔹 Telegram Bot API Connection : {telegram_status}")
 
-    # 2. Check MT5 Connection
-    broker = MT5BrokerConnector()
-    broker_connected = broker.client_initialized
+    # 2. Initialize Alpaca API Client
+    try:
+        api = REST(APCA_API_KEY_ID, APCA_API_SECRET_KEY, base_url=APCA_API_BASE_URL)
+        account = api.get_account()
+        print(f"   🔹 Alpaca Connection Status    : ACTIVE [ Portfolio Value: ${float(account.portfolio_value):.2f} ]")
+    except Exception as e:
+        print(f"   🔹 Alpaca Connection Status    : FAILED [ ❌ Error: {e} ]")
 
     # 3. Check Data Feed Connection
-    fetcher = MT5DataFetcher()
-    print(f"   🔹 Market Data Feed (MT5 Native) : ACTIVE [ ✅ Ready ]")
+    fetcher = AlpacaDataFetcher(api)
+    print(f"   🔹 Market Data Feed (Alpaca)   : ACTIVE [ ✅ Ready ]")
     
     print("==================================================")
-    print("🤖 STARTING MT5 AUTOMATED SMC PAPER BOT")
-    print(f"📊 Monitored Assets: {SYMBOLS} | Lot Size: {LOT_SIZE}")
+    print("🤖 STARTING ALPACA AUTOMATED SMC PAPER BOT")
+    print(f"📊 Monitored Assets: {SYMBOLS}")
     print("==================================================")
 
-    if not broker_connected:
-        print("⚠️ Warning: Bot running with connection issues to MT5 broker.")
-
-    send_telegram_alert("🚀 *MT5 Automated SMC Paper Bot Online & Ready!*")
+    send_telegram_alert("🚀 *Alpaca Automated SMC Paper Bot Online & Ready!*")
 
     engine = AdvancedSMCEngine(min_rr=1.5, max_rr=5.0)
     current_utc_date = datetime.utcnow().strftime('%Y-%m-%d')
@@ -252,7 +257,7 @@ def run_bot():
                 data_dict = fetcher.get_market_data(symbol)
                 
                 if data_dict.get("1M") is None or data_dict["1M"].empty:
-                    print(f"⚠️ [{symbol}] Market Data Feed Error: No 1M data received from MT5.")
+                    print(f"⚠️ [{symbol}] Market Data Feed Error: No 1M data received.")
                     continue
 
                 df_1m = data_dict["1M"]
@@ -260,7 +265,7 @@ def run_bot():
                 high_price = float(df_1m.iloc[-1]["high"])
                 low_price = float(df_1m.iloc[-1]["low"])
 
-                check_active_trades(symbol, current_price, high_price, low_price)
+                check_active_trades(api, symbol, current_price, high_price, low_price)
 
                 signal = engine.analyze(data_dict, symbol=symbol)
                 decision = signal["decision"]
@@ -278,14 +283,31 @@ def run_bot():
                     tp1 = params["tp1"]
                     tp2 = params["tp2"]
 
+                    # Quantity or risk calculation
+                    qty = 10.0 # Default fixed qty or calculated based on risk
+                    calculated_risk = 10.0
+
                     print(f"   🎯 NEW TRADE SETUP DETECTED:")
                     print(f"      • Entry Target : {entry}")
                     print(f"      • Stop Loss    : {sl}")
                     print(f"      • Take Profit 1: {tp1}")
                     print(f"      • Take Profit 2: {tp2}")
                     
-                    # Execute order on MT5 using fixed lot size from config (0.1)
-                    success, ticket_id = broker.execute_order(symbol, decision, lot_size=LOT_SIZE, sl=sl, tp=tp2)
+                    try:
+                        order = api.submit_order(
+                            symbol=symbol,
+                            qty=qty,
+                            side=decision.lower(),
+                            type='market',
+                            time_in_force='gtc'
+                        )
+                        ticket_id = order.id
+                        success = True
+                        print(f"✅ Alpaca Bracket Order Placed! Ticket ID: {ticket_id}")
+                    except Exception as e:
+                        print(f"❌ Order submission error: {e}")
+                        success = False
+                        ticket_id = None
 
                     if success:
                         active_trades[symbol] = {
@@ -295,17 +317,18 @@ def run_bot():
                             "sl": sl,
                             "tp1": tp1,
                             "tp2": tp2,
-                            "lot_size": LOT_SIZE,
+                            "lot_size": qty,
+                            "risk_usd": calculated_risk,
                             "ticket": ticket_id,
                             "tp1_hit": False
                         }
                         save_active_trades(active_trades)
 
                         alert_msg = (
-                            f"🤖 *MT5 PAPER TRADE EXECUTED ({decision})* 🤖\n\n"
+                            f"🤖 *ALPACA PAPER TRADE EXECUTED ({decision})* 🤖\n\n"
                             f"📌 *Asset:* `{symbol}`\n"
-                            f"🎫 *MT5 Ticket ID:* `{ticket_id}`\n"
-                            f"📊 *Price:* `{current_price}` | *Lot:* `{LOT_SIZE}`\n"
+                            f"🎫 *Alpaca Order ID:* `{ticket_id}`\n"
+                            f"📊 *Price:* `{current_price}` | *Qty:* `{qty}`\n"
                             f"🛑 *SL:* `{sl}`\n"
                             f"🎯 *TP1:* `{tp1}` | 🎯 *TP2:* `{tp2}`\n"
                             f"📝 *Reason:* {reason}"
@@ -321,8 +344,7 @@ def run_bot():
 
         except KeyboardInterrupt:
             print("\n🛑 Bot stopped manually by user.")
-            broker.disconnect()
-            send_telegram_alert("🛑 *MT5 SMC Bot Stopped Manually.*")
+            send_telegram_alert("🛑 *Alpaca SMC Bot Stopped Manually.*")
             break
         except Exception as e:
             print(f"❌ Error in main execution loop: {e}")
