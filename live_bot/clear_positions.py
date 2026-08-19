@@ -40,12 +40,11 @@ class MT5BrokerConnector:
             formatted_symbol = symbol.replace("/", "") if "/" in symbol else symbol
 
             # --- AUTO-ADJUST SL FOR ALPACA VALIDATION ---
-            # Ensures stop loss has a safe buffer away from market price to avoid 422 errors
             try:
                 latest_bar = self.client.get_stock_latest_bar({"symbol": formatted_symbol})
                 current_price = float(latest_bar[formatted_symbol].close)
             except Exception:
-                current_price = sl + 0.50  # Fallback assumption if quote fetch fails
+                current_price = sl + 0.50
 
             if side == OrderSide.BUY:
                 adjusted_sl = min(sl, current_price - 0.05)
@@ -58,7 +57,7 @@ class MT5BrokerConnector:
                 symbol=formatted_symbol,
                 qty=fixed_qty,
                 side=side,
-                time_in_force=TimeInForce.GTC,
+                time_in_force=TimeInForce.DAY,  # <-- FIXED: Fractional orders require DAY orders on Alpaca
                 order_class=OrderClass.BRACKET,
                 take_profit=TakeProfitRequest(limit_price=round(tp, 2)),
                 stop_loss=StopLossRequest(stop_price=round(adjusted_sl, 2))
