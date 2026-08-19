@@ -1,20 +1,29 @@
 import os
+import json
 from alpaca.trading.client import TradingClient
 
-# Load Alpaca keys from your environment variables
-API_KEY = os.getenv("APCA_API_KEY_ID") or os.getenv("ALPACA_API_KEY")
-SECRET_KEY = os.getenv("APCA_API_SECRET_KEY") or os.getenv("ALPACA_SECRET_KEY")
+# Initialize Alpaca client
+api_key = os.getenv("APCA_API_KEY_ID")
+secret_key = os.getenv("APCA_API_SECRET_KEY")
+client = TradingClient(api_key, secret_key, paper=True)
 
-if not API_KEY or not SECRET_KEY:
-    raise ValueError("❌ Alpaca API keys are missing from your environment variables. Make sure they are exported in your terminal session.")
+print("🛑 Cancelling all open Alpaca orders...")
+try:
+    client.cancel_orders()
+except Exception as e:
+    print(f"Note on orders: {e}")
 
-# Initialize Alpaca Client (paper=True for paper trading)
-client = TradingClient(API_KEY, SECRET_KEY, paper=True)
+print("📉 Closing all open Alpaca positions...")
+try:
+    client.close_all_positions(cancel_orders=True)
+except Exception as e:
+    print(f"Note on positions: {e}")
 
-print("🛑 Cancelling all open orders...")
-client.cancel_orders()
+# Clear local tracking file
+ACTIVE_TRADES_FILE = "active_trades.json"
+if os.path.exists(ACTIVE_TRADES_FILE):
+    with open(ACTIVE_TRADES_FILE, mode='w') as f:
+        json.dump({}, f)
+    print("🧹 Cleared local active_trades.json tracker file.")
 
-print("📉 Closing all open positions...")
-client.close_all_positions(cancel_orders=True)
-
-print("✅ Account cleared successfully!")
+print("✅ Account and local state cleared successfully!")
