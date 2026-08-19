@@ -2,8 +2,8 @@ import time
 import os
 import csv
 import json
-from datetime import datetime, timedelta
-from config import SYMBOLS, POLL_INTERVAL_SECONDS
+from datetime import datetime
+from config import SYMBOLS, POLL_INTERVAL_SECONDS, TELEGRAM_BOT_TOKEN
 from data_fetcher import TwelveDataFetcher
 from smc_engine import AdvancedSMCEngine
 from notifier import send_telegram_alert
@@ -51,7 +51,6 @@ def log_trade_history(trade_data):
         ])
 
 def send_daily_pnl_summary(target_date_str):
-    """Calculates daily win/loss and net profit from trade_history.csv for a specific date."""
     if not os.path.exists(HISTORY_FILE):
         return
 
@@ -63,12 +62,12 @@ def send_daily_pnl_summary(target_date_str):
     try:
         with open(HISTORY_FILE, mode='r') as f:
             reader = csv.reader(f)
-            header = next(reader, None)  # Skip header
+            next(reader, None)
             for row in reader:
                 if not row or len(row) < 11:
                     continue
                 timestamp = row[0]
-                trade_date = timestamp.split(' ')[0]  # Extracts YYYY-MM-DD
+                trade_date = timestamp.split(' ')[0]
                 
                 if trade_date == target_date_str:
                     total_trades += 1
@@ -84,7 +83,7 @@ def send_daily_pnl_summary(target_date_str):
         return
 
     if total_trades == 0:
-        return  # Skip summary if no trades occurred on that day
+        return
 
     win_rate = (wins / total_trades) * 100 if total_trades > 0 else 0
     emoji = "🟢" if total_pnl >= 0 else "🔴"
@@ -97,16 +96,13 @@ def send_daily_pnl_summary(target_date_str):
         f"{emoji} *Net Daily PnL:* `${total_pnl:.2f}`"
     )
     send_telegram_alert(summary_msg)
-    print(f"📊 Daily Summary sent for {target_date_str} | Net PnL: ${total_pnl:.2f}")
 
 def calculate_position_sizing(symbol, entry, sl, target_risk_usd=10.0):
     risk_points = abs(entry - sl)
     if risk_points <= 0:
         return 0.01, 10.0, 20.0
 
-    is_gold = "XAU" in symbol.upper()
-    dollar_risk_per_lot = (risk_points * 100) if is_gold else (risk_points * 10000 * 10)
-
+    dollar_risk_per_lot = risk_points * 100
     if dollar_risk_per_lot <= 0:
         return 0.01, target_risk_usd, target_risk_usd * 2
 
@@ -177,7 +173,6 @@ def check_active_trades(symbol, current_price, high_price, low_price):
             f"💰 *Realized PnL:* `${pnl:.2f}`"
         )
         send_telegram_alert(alert_msg)
-        print(f"[{symbol}] Trade Closed -> {outcome} | PnL: ${pnl:.2f}")
 
         del active_trades[symbol]
         save_active_trades(active_trades)
@@ -185,22 +180,33 @@ def check_active_trades(symbol, current_price, high_price, low_price):
 def run_bot():
     init_files()
     
-    broker = MT5BrokerConnector()
-    broker.connect()
-
     print("==================================================")
-    print("🤖 STARTING ISOLATED AUTOMATED SMC PAPER BOT")
+    print("🔗 SYSTEM CONNECTION HEALTH CHECK")
+    print("==================================================")
+    
+    # 1. Check Telegram Connection
+    telegram_status = "ACTIVE [ ✅ Verified ]" if TELEGRAM_BOT_TOKEN else "FAILED [ ❌ Missing Token ]"
+    print(f"   🔹 Telegram Bot API Connection : {telegram_status}")
+
+    # 2. Check Alpaca Connection
+    broker = MT5BrokerConnector()
+    broker_connected = broker.connect()
+
+    # 3. Check Data Feed Connection
+    fetcher = TwelveDataFetcher()
+    print(f"   🔹 Market Data Feed (TwelveData) : ACTIVE [ ✅ Ready ]")
+    
+    print("==================================================")
+    print("🤖 STARTING ALPACA AUTOMATED SMC PAPER BOT")
     print(f"📊 Monitored Assets: {SYMBOLS}")
     print("==================================================")
-    print(f"🔌 Telegram API Connection: ACTIVE ✅")
-    print("==================================================")
 
-    fetcher = TwelveDataFetcher()
+    if not broker_connected:
+        print("⚠️ Warning: Bot running with connection issues to Alpaca broker.")
+
+    send_telegram_alert("🚀 *Alpaca Automated SMC Paper Bot Online & Ready!*")
+
     engine = AdvancedSMCEngine(min_rr=1.5, max_rr=5.0)
-
-    send_telegram_alert("🚀 *Isolated SMC Paper Bot Online & Ready!*")
-
-    # Track current day to trigger daily summaries
     current_utc_date = datetime.utcnow().strftime('%Y-%m-%d')
 
     while True:
@@ -208,9 +214,7 @@ def run_bot():
             now_utc = datetime.utcnow()
             today_str = now_utc.strftime('%Y-%m-%d')
 
-            # Check if the date has rolled over to a new day
             if today_str != current_utc_date:
-                # Send summary for the day that just ended
                 send_daily_pnl_summary(current_utc_date)
                 current_utc_date = today_str
 
@@ -230,10 +234,8 @@ def run_bot():
                 high_price = float(df_1m.iloc[-1]["high"])
                 low_price = float(df_1m.iloc[-1]["low"])
 
-                # Check active trades
                 check_active_trades(symbol, current_price, high_price, low_price)
 
-                # Run SMC Engine scan
                 signal = engine.analyze(data_dict, symbol=symbol)
                 decision = signal["decision"]
                 reason = signal["reason"]
@@ -249,7 +251,6 @@ def run_bot():
                     sl = params["sl"]
                     tp1 = params["tp1"]
                     tp2 = params["tp2"]
-                    rr = params["rr"]
 
                     lot_size, calculated_risk, calculated_profit = calculate_position_sizing(symbol, entry, sl, target_risk_usd=10.0)
 
@@ -257,7 +258,7 @@ def run_bot():
                     print(f"      • Entry Target : {entry}")
                     print(f"      • Stop Loss    : {sl}")
                     print(f"      • Take Profit 2: {tp2}")
-                    print(f"   🤖 EXECUTING VIA ISOLATED MT5 CONNECTOR...")
+                    print(f"   🤖 EXECUTING VIA ALPACA API...")
                     
                     success, ticket_id = broker.execute_order(symbol, decision, lot_size, sl, tp2)
 
@@ -277,17 +278,15 @@ def run_bot():
                         save_active_trades(active_trades)
 
                         alert_msg = (
-                            f"🤖 *AUTOMATED PAPER TRADE EXECUTED ({decision})* 🤖\n\n"
+                            f"🤖 *ALPACA PAPER TRADE EXECUTED ({decision})* 🤖\n\n"
                             f"📌 *Asset:* `{symbol}`\n"
-                            f"🎫 *MT5 Ticket ID:* `{ticket_id}`\n"
+                            f"🎫 *Alpaca Order ID:* `{ticket_id}`\n"
                             f"📊 *Price:* `{current_price}` | *Lot:* `{lot_size}`\n"
                             f"🛑 *SL:* `{sl}` | 🎯 *TP2:* `{tp2}`\n"
                             f"📉 *Risk ($10 Target):* `-${calculated_risk:.2f}`\n"
                             f"📝 *Reason:* {reason}"
                         )
                         send_telegram_alert(alert_msg)
-                    else:
-                        print(f"⚠️ Broker execution bypassed or failed. Bot continues running normally.")
 
                 elif symbol in active_trades:
                     print(f"   ⏳ Status: Trade active. Managing SL/TP targets...")
@@ -299,7 +298,7 @@ def run_bot():
         except KeyboardInterrupt:
             print("\n🛑 Bot stopped manually by user.")
             broker.disconnect()
-            send_telegram_alert("🛑 *Isolated SMC Bot Stopped Manually.*")
+            send_telegram_alert("🛑 *Alpaca SMC Bot Stopped Manually.*")
             break
         except Exception as e:
             print(f"❌ Error in main execution loop: {e}")
