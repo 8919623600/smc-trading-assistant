@@ -134,18 +134,23 @@ def initialize_trade_history():
 
 def check_daily_circuit_breaker() -> bool:
     """Returns True if MAX_DAILY_LOSSES has been reached today, halting new trades."""
-    if not os.path.exists(TRADE_HISTORY_FILE):
+    if not os.path.exists(TRADE_HISTORY_FILE) or os.stat(TRADE_HISTORY_FILE).st_size == 0:
         return False
-    today_str = datetime.now(IST).strftime("%Y-%m-%d")
+        
     df = pd.read_csv(TRADE_HISTORY_FILE)
-    if "exit_time" not in df.columns or "status" not in df.columns:
+    if df.empty or "exit_time" not in df.columns or "status" not in df.columns:
         return False
+        
+    today_str = datetime.now(IST).strftime("%Y-%m-%d")
     
-    losses_today = df[(df["status"] == "LOSS") & (df["exit_time"].str.startswith(today_str, na=False))]
+    # Safely fill NaNs and cast to string to prevent AttributeError
+    exit_times = df["exit_time"].fillna("").astype(str)
+    losses_today = df[(df["status"] == "LOSS") & (exit_times.str.startswith(today_str))]
+    
     if len(losses_today) >= MAX_DAILY_LOSSES:
         print(f"🔴 [CIRCUIT BREAKER] {len(losses_today)} losses recorded today. Halting new trade executions.")
         return True
-    return False
+    return False    
 
 
 def log_new_trade(trade_id, timestamp, symbol, decision, entry, sl, tp1, tp2, lots):
