@@ -283,7 +283,7 @@ def run_bot():
                     tp1 = params["tp1"]
                     tp2 = params["tp2"]
 
-                    qty = 10.0 # Adjust quantity as needed
+                    qty = 50.0  # <--- Updated quantity to 50
                     calculated_risk = abs(entry - sl) * qty
 
                     print(f"   🎯 NEW SMC LIMIT SETUP DETECTED:")
