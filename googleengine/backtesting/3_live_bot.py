@@ -446,6 +446,11 @@ def run_scanner():
                 planned_tp2 = trade_params["tp2"]
                 rr_tp2 = trade_params["rr"]
 
+                # SAFETY GUARD: Reject if entry and stop loss are identical or invalid
+                if planned_entry == planned_sl or abs(planned_entry - planned_sl) == 0:
+                    print(f"   ❌ REJECTED [{symbol}]: Engine returned invalid parameters (Entry equals Stop Loss). Skipping trade.")
+                    continue
+
                 risk_points = abs(planned_entry - planned_sl)
 
                 direction_str = "SHORT (Bearish Reversal from Premium)" if decision == "SELL" else "LONG (Bullish Reversal from Discount)"
