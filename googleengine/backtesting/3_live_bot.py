@@ -341,7 +341,10 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
     low_close = (df['low'] - df['close'].shift()).abs()
     ranges = pd.concat([high_low, high_close, low_close], axis=1)
     true_range = ranges.max(axis=1)
-    return float(true_range.rolling(period).mean().iloc[-1])
+    atr = float(true_range.rolling(period).mean().iloc[-1])
+    if pd.isna(atr) or atr <= 0:
+        return 0.0010  # Safe minimum fallback to prevent collapse or division-by-zero
+    return atr
 
 
 def fetch_realtime_data(symbol: str) -> dict:
@@ -423,36 +426,19 @@ def run_scanner():
                 reason = result.get("reason", "Setup validated")
                 trade_params = result.get("trade_params")
 
-                if not trade_params:
-                    is_bearish = "SELL" in reason.upper() or "BEARISH" in reason.upper() or "NOT YET IN" in reason.upper()
-                    
-                    if is_bearish:
-                        sim_sl = latest_price + (atr_val * 0.5)
-                        sim_tp1 = latest_price - (atr_val * 1.2)
-                        sim_tp2 = latest_price - (atr_val * 3.0)
-                    else:
-                        sim_sl = latest_price - (atr_val * 0.5)
-                        sim_tp1 = latest_price + (atr_val * 1.2)
-                        sim_tp2 = latest_price + (atr_val * 3.0)
-                        
-                    sim_rr = abs(sim_tp2 - latest_price) / abs(latest_price - sim_sl) if abs(latest_price - sim_sl) > 0 else 5.0
-                    
-                    trade_params = {
-                        "entry": round(latest_price, 5),
-                        "sl": round(sim_sl, 5),
-                        "tp1": round(sim_tp1, 5),
-                        "tp2": round(sim_tp2, 5),
-                        "rr": round(sim_rr, 2)
-                    }
-
                 print("==================================================")
                 print(f"🎯 PROCESSING TRADE ASSET: {symbol} ({asset_name})")
                 print("==================================================")
                 print(f"📊 LIVE SCANNER REPORT FOR TRADE: {symbol} ({asset_name})")
                 print(f"⏰ Scan Time (IST):  {now_str}")
                 print(f"💲 Live Price:       {latest_price}")
-                print(f"🚦 Engine Decision:  {reason}")
+                print(f"🚦 Engine Decision:  {decision} -> Reason: {reason}")
                 print("==================================================\n")
+
+                # STRICT SMC ENFORCEMENT: Skip if engine doesn't find a genuine structured setup
+                if not trade_params or decision not in ["BUY", "SELL"]:
+                    print(f"   ⏳ STATUS: No valid institutional SMC structure found for {symbol}. Monitoring...")
+                    continue
 
                 planned_entry = trade_params["entry"]
                 planned_sl = trade_params["sl"]
@@ -461,10 +447,8 @@ def run_scanner():
                 rr_tp2 = trade_params["rr"]
 
                 risk_points = abs(planned_entry - planned_sl)
-                reward_tp1 = abs(planned_tp1 - planned_entry)
-                reward_tp2 = abs(planned_tp2 - planned_entry)
 
-                direction_str = "SHORT (Bearish Reversal from Premium)" if decision != "BUY" else "LONG (Bullish Reversal from Discount)"
+                direction_str = "SHORT (Bearish Reversal from Premium)" if decision == "SELL" else "LONG (Bullish Reversal from Discount)"
 
                 print(f"2️⃣  TIGHTER 15M PREDICTIVE EXECUTION MAP [{symbol}]")
                 print(f"   • Active Trade:    {symbol} ({asset_name})")
@@ -475,43 +459,40 @@ def run_scanner():
                 print(f"   • Target 2 (1H):   {planned_tp2} -> R:R {rr_tp2}R")
                 print("--------------------------------------------------\n")
 
-                if decision in ["BUY", "SELL"]:
-                    if rr_tp2 < MIN_REQUIRED_RR:
-                        print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2}R) is below minimum required {MIN_REQUIRED_RR}R.")
-                    else:
-                        default_lots = 0.01
-                        if quote_usd:
-                            actual_dollar_risk = default_lots * risk_points * contract_size
-                        else:
-                            actual_dollar_risk = default_lots * contract_size * (risk_points / latest_price)
-
-                        print(f"   ✔ APPROVED [{symbol}]: Structural setup verified within SMC criteria.")
-                        
-                        has_active_trade = False
-                        if os.path.exists(TRADE_HISTORY_FILE):
-                            df_check = pd.read_csv(TRADE_HISTORY_FILE)
-                            if not df_check.empty and "status" in df_check.columns:
-                                has_active_trade = not df_check[(df_check["status"] == "PENDING") & (df_check["symbol"] == symbol)].empty
-
-                        if not has_active_trade:
-                            trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
-                            log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, default_lots)
-                            
-                            alert_msg = (
-                                f"🚨 *SMC TRADE TRIGGERED* [{symbol}]\n\n"
-                                f"• *Direction:* `{decision}`\n"
-                                f"• *Entry:* `{planned_entry}`\n"
-                                f"• *Structural SL:* `{planned_sl}`\n"
-                                f"• *TP1 (1.2x ATR):* `{planned_tp1}`\n"
-                                f"• *TP2 (1H Liquidity):* `{planned_tp2}` (`{rr_tp2}R`)\n"
-                                f"• *Baseline Risk (0.01 Lot):* `${actual_dollar_risk:.2f}`"
-                            )
-                            send_telegram_alert(alert_msg)
+                if rr_tp2 < MIN_REQUIRED_RR:
+                    print(f"   ❌ REJECTED [{symbol}]: R:R ({rr_tp2}R) is below minimum required {MIN_REQUIRED_RR}R.")
                 else:
-                    print(f"   ⏳ STATUS: Monitoring structure. Awaiting valid liquidity sweep for execution.")
+                    default_lots = 0.01
+                    if quote_usd:
+                        actual_dollar_risk = default_lots * risk_points * contract_size
+                    else:
+                        actual_dollar_risk = default_lots * contract_size * (risk_points / latest_price)
+
+                    print(f"   ✔ APPROVED [{symbol}]: Structural SMC setup verified.")
+                    
+                    has_active_trade = False
+                    if os.path.exists(TRADE_HISTORY_FILE):
+                        df_check = pd.read_csv(TRADE_HISTORY_FILE)
+                        if not df_check.empty and "status" in df_check.columns:
+                            has_active_trade = not df_check[(df_check["status"] == "PENDING") & (df_check["symbol"] == symbol)].empty
+
+                    if not has_active_trade:
+                        trade_id = f"{symbol.replace('/', '')}_{now_ist.strftime('%Y%m%d_%H%M%S')}"
+                        log_new_trade(trade_id, now_str, symbol, decision, planned_entry, planned_sl, planned_tp1, planned_tp2, default_lots)
+                        
+                        alert_msg = (
+                            f"🚨 *SMC TRADE TRIGGERED* [{symbol}]\n\n"
+                            f"• *Direction:* `{decision}`\n"
+                            f"• *Entry:* `{planned_entry}`\n"
+                            f"• *Structural SL:* `{planned_sl}`\n"
+                            f"• *TP1:* `{planned_tp1}`\n"
+                            f"• *TP2 (1H Liquidity):* `{planned_tp2}` (`{rr_tp2}R`)\n"
+                            f"• *Baseline Risk (0.01 Lot):* `${actual_dollar_risk:.2f}`"
+                        )
+                        send_telegram_alert(alert_msg)
 
             except Exception as e:
-                print(f"[{symbol}] Error fetching data: {e}")
+                print(f"[{symbol}] Error processing asset: {e}")
 
             if idx < len(TICKERS) - 1:
                 time.sleep(API_THROTTLE_SECONDS)
