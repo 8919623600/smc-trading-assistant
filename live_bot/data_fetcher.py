@@ -1,65 +1,35 @@
-import requests
+import os
+import MetaTrader5 as mt5
 import pandas as pd
-from config import TWELVE_DATA_API_KEYS
 
-class TwelveDataFetcher:
+class MT5DataFetcher:
     def __init__(self):
-        self.keys = TWELVE_DATA_API_KEYS
-        self.key_index = 0
+        pass
 
-    def _get_active_key(self):
-        if not self.keys:
-            return None
-        return self.keys[self.key_index % len(self.keys)]
-
-    def _rotate_key(self):
-        if len(self.keys) > 1:
-            self.key_index = (self.key_index + 1) % len(self.keys)
-            print(f"🔄 Rotating to backup Twelve Data API key (Index {self.key_index})")
-
-    def fetch_candles(self, symbol, interval="1min", outputsize=100):
-        api_key = self._get_active_key()
-        if not api_key:
-            print("❌ No Twelve Data API keys found in environment variables!")
-            return None
-
-        url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={api_key}&format=JSON"
-
-        try:
-            response = requests.get(url, timeout=10)
-            data = response.json()
-
-            if "code" in data and data["code"] != 200:
-                print(f"⚠️ Twelve Data API Error ({symbol} - {interval}): {data.get('message')}")
-                if "rate limit" in str(data.get('message')).lower():
-                    self._rotate_key()
-                return None
-
-            if "values" not in data:
-                return None
-
-            df = pd.DataFrame(data["values"])
-            df.rename(columns={"datetime": "time"}, inplace=True)
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                if col in df.columns:
-                    df[col] = df[col].astype(float)
-            
-            df['time'] = pd.to_datetime(df['time'])
-            df.sort_values('time', inplace=True)
-            df.reset_index(drop=True, inplace=True)
-            return df
-
-        except Exception as e:
-            print(f"❌ Exception fetching data for {symbol} ({interval}): {e}")
-            return None
-
-    def get_market_data(self, symbol):
-        df_1m = self.fetch_candles(symbol, interval="1min", outputsize=100)
-        df_15m = self.fetch_candles(symbol, interval="15min", outputsize=100)
-        df_4h = self.fetch_candles(symbol, interval="4h", outputsize=100)
-
-        return {
-            "1M": df_1m,
-            "15M": df_15m,
-            "4H": df_4h
+    def get_historical_candles(self, symbol, timeframe_str="M15", count=200):
+        # Clean symbol formatting (e.g., EUR/USD -> EURUSD)
+        formatted_symbol = symbol.replace("/", "").upper()
+        
+        # Map timeframe strings to MT5 constants
+        tf_mapping = {
+            "M1": mt5.TIMEFRAME_M1,
+            "M5": mt5.TIMEFRAME_M5,
+            "M15": mt5.TIMEFRAME_M15,
+            "M30": mt5.TIMEFRAME_M30,
+            "H1": mt5.TIMEFRAME_H1,
+            "H4": mt5.TIMEFRAME_H4,
+            "D1": mt5.TIMEFRAME_D1,
         }
+        
+        tf = tf_mapping.get(timeframe_str.upper(), mt5.TIMEFRAME_M15)
+        
+        rates = mt5.copy_rates_from_pos(formatted_symbol, tf, 0, count)
+        if rates is None or len(rates) == 0:
+            print(f"⚠️ Failed to fetch rates for {formatted_symbol}, error code = {mt5.last_error()}")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rates)
+        df['time'] = pd.to_datetime(df['time'], unit='s')
+        # Standardize columns for your SMC engine
+        df = df.rename(columns={'time': 'timestamp', 'tick_volume': 'volume'})
+        return df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
