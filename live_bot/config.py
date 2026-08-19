@@ -4,7 +4,7 @@ import os
 # LIVE TRADING BOT CONFIGURATION (MULTI-ASSET)
 # ==========================================
 
-SYMBOLS = ["XAU/USD", "EUR/USD"]
+SYMBOLS = ['AAPL', 'TSLA', 'MSFT']
 RISK_AMOUNT_USD = 20.0
 MIN_RR = 1.5
 MAX_RR = 5.0
