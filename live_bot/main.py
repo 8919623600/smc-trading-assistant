@@ -257,8 +257,8 @@ def run_bot():
                     print(f"   🎯 NEW TRADE SETUP DETECTED:")
                     print(f"      • Entry Target : {entry}")
                     print(f"      • Stop Loss    : {sl}")
+                    print(f"      • Take Profit 1: {tp1}")  # <-- Added here
                     print(f"      • Take Profit 2: {tp2}")
-                    print(f"   🤖 EXECUTING VIA ALPACA API...")
                     
                     success, ticket_id = broker.execute_order(symbol, decision, lot_size, sl, tp2)
 
@@ -282,7 +282,8 @@ def run_bot():
                             f"📌 *Asset:* `{symbol}`\n"
                             f"🎫 *Alpaca Order ID:* `{ticket_id}`\n"
                             f"📊 *Price:* `{current_price}` | *Lot:* `{lot_size}`\n"
-                            f"🛑 *SL:* `{sl}` | 🎯 *TP2:* `{tp2}`\n"
+                            f"🛑 *SL:* `{sl}`\n"
+                            f"🎯 *TP1:* `{tp1}` | 🎯 *TP2:* `{tp2}`\n"
                             f"📉 *Risk ($10 Target):* `-${calculated_risk:.2f}`\n"
                             f"📝 *Reason:* {reason}"
                         )
