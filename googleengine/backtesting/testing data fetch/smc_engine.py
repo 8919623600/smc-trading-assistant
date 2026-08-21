@@ -5,7 +5,6 @@ class AdvancedSMCEngine:
     def __init__(self, min_rr=2.0, max_rr=8.0):
         self.min_rr = min_rr
         self.max_rr = max_rr
-        # Track active setups to detect invalidations
         self.active_setups = {}
 
     def calculate_pnl_matrix(self, symbol, entry, sl, tp1, tp2):
@@ -69,7 +68,6 @@ class AdvancedSMCEngine:
                (setup['direction'] == "SELL" and current_price > setup['sl']) or \
                setup['bias'] != bias:
                 
-                invalidated_data = setup.copy()
                 del self.active_setups[symbol]
                 return {
                     "status": "INVALIDATED",
@@ -129,5 +127,5 @@ class AdvancedSMCEngine:
             else:
                 return {"status": "HOLD", "reason": f"Active setup tracking, awaiting valid RR (Current RR: {rr:.2f})"}
 
-        # Default HOLD reason
-        return {"status": "HOLD", "reason": f"4H Bias: {bias} | Awaiting 1H Liquidity Sweep"}
+        # Custom HOLD reason as requested
+        return {"status": "HOLD", "reason": "Awaiting 1H Liquidity Sweep"}
