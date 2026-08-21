@@ -1,5 +1,6 @@
 import time
 import os
+import csv
 import requests
 import pandas as pd
 from datetime import datetime
@@ -17,6 +18,19 @@ def send_telegram_alert(message):
         requests.post(url, json=payload, timeout=5)
     except Exception as e:
         print(f"⚠️ Telegram error: {e}")
+
+# --- CSV TRADE HISTORY LOGGER ---
+def log_trade_event(symbol, event_type, entry, sl, tp1, tp2, tp3, details):
+    file_exists = os.path.isfile('trade_history.csv')
+    try:
+        with open('trade_history.csv', mode='a', newline='') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['Timestamp', 'Symbol', 'Event', 'Entry', 'SL', 'TP1', 'TP2', 'TP3', 'Details'])
+            timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
+            writer.writerow([timestamp, symbol, event_type, entry, sl, tp1, tp2, tp3, details])
+    except Exception as e:
+        print(f"⚠️ Error writing to trade_history.csv: {e}")
 
 class SmartRotatorFetcher:
     """Rotates between TWELVE_DATA_API_KEY_1 and TWELVE_DATA_API_KEY_2 to double rate limits"""
@@ -59,7 +73,7 @@ class SmartRotatorFetcher:
 
 def run_bot():
     print("==================================================")
-    print("🚀 SMC SIGNAL BOT ACTIVE (MULTI-STATE & ROTATION)")
+    print("🚀 SMC SIGNAL BOT ACTIVE (WITH AUDIT & CSV LOGGER)")
     print(f"📊 Assets Monitored: {SYMBOLS}")
     print("==================================================")
     
@@ -67,6 +81,9 @@ def run_bot():
 
     fetcher = SmartRotatorFetcher(TWELVE_DATA_KEYS)
     engine = AdvancedSMCEngine(min_rr=2.0, max_rr=8.0)
+    
+    # Tracks active live trades: {symbol: trade_dict}
+    open_trades = {}
 
     while True:
         try:
@@ -103,8 +120,26 @@ def run_bot():
                     send_telegram_alert(msg)
                     print(f"❌ Setup Invalidated Alert Sent for {signal['symbol']}")
 
-                elif status == "TRIGGERED":
+                elif status == "TRIGGERED" and symbol not in open_trades:
                     p = signal["trade_params"]
+                    direction = signal["decision"]
+                    
+                    open_trades[symbol] = {
+                        "direction": direction,
+                        "entry": p["entry"],
+                        "sl": p["sl"],
+                        "tp1": p["tp1"],
+                        "tp2": p["tp2"],
+                        "tp3": p["tp3"],
+                        "hit_tp1": False,
+                        "hit_tp2": False
+                    }
+
+                    log_trade_event(
+                        symbol, "ENTRY", p["entry"], p["sl"], 
+                        p["tp1"], p["tp2"], p["tp3"], f"Direction: {direction} | RR: {p['rr']}"
+                    )
+
                     matrix_text = ""
                     for item in p["pnl_matrix"]:
                         matrix_text += (
@@ -115,21 +150,77 @@ def run_bot():
                     msg = (
                         f"🚨 *SMC FINAL EXECUTION ALERT* 🚨\n\n"
                         f"📌 *Asset:* `{symbol}`\n"
-                        f"⚡ *Direction:* `{signal['decision']}`\n\n"
+                        f"⚡ *Direction:* `{direction}`\n\n"
                         f"🎯 *Entry:* `{p['entry']}`\n"
                         f"🛑 *Stop Loss:* `{p['sl']}` ({p['pips_risk']} Pips)\n"
-                        f"🎯 *Take Profit 1:* `{p['tp1']}` (3R)\n"
-                        f"🎯 *Take Profit 2:* `{p['tp2']}` (6R)\n"
+                        f"🎯 *Take Profit 1:* `{p['tp1']}`\n"
+                        f"🎯 *Take Profit 2:* `{p['tp2']}`\n"
+                        f"🎯 *Take Profit 3:* `{p['tp3']}`\n"
                         f"⚖️ *Risk:Reward:* `{p['rr']}:1`\n\n"
                         f"📊 *LOT SIZE & PnL BREAKDOWN*\n"
                         f"{matrix_text}\n"
                         f"📝 *Confluence:* {signal['reason']}"
                     )
                     send_telegram_alert(msg)
-                    print(f"🚨 Final Execution Alert Sent for {symbol}")
+                    print(f"🚨 Final Execution Alert Sent & Logged for {symbol}")
 
                 else:
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {signal.get('reason')}")
+
+                # --- ACTIVE TRADE AUDITING FOR TP / SL EXITS ---
+                if symbol in open_trades:
+                    trade = open_trades[symbol]
+                    current_price = float(data_dict["1M"].iloc[-1]['close'])
+                    
+                    entry = trade["entry"]
+                    sl = trade["sl"]
+                    tp1 = trade["tp1"]
+                    tp2 = trade["tp2"]
+                    tp3 = trade["tp3"]
+
+                    if trade["direction"] == "BUY":
+                        if current_price <= sl:
+                            log_trade_event(symbol, "SL_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
+                            send_telegram_alert(f"❌ *STOP LOSS HIT* for `{symbol}` at `{current_price}`. Trade closed.")
+                            print(f"❌ STOP LOSS HIT for {symbol} at {current_price}.")
+                            del open_trades[symbol]
+                        elif not trade["hit_tp1"] and current_price >= tp1:
+                            trade["hit_tp1"] = True
+                            log_trade_event(symbol, "TP1_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
+                            send_telegram_alert(f"🎯 *TP1 REACHED* for `{symbol}` at `{current_price}`!")
+                            print(f"🎯 TP1 REACHED for {symbol} at {current_price}!")
+                        elif not trade["hit_tp2"] and current_price >= tp2:
+                            trade["hit_tp2"] = True
+                            log_trade_event(symbol, "TP2_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
+                            send_telegram_alert(f"🎯 *TP2 REACHED* for `{symbol}` at `{current_price}`!")
+                            print(f"🎯 TP2 REACHED for {symbol} at {current_price}!")
+                        elif current_price >= tp3:
+                            log_trade_event(symbol, "TP3_HIT_CLOSED", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
+                            send_telegram_alert(f"🏆 *TP3 FULL TARGET REACHED* for `{symbol}` at `{current_price}`! Trade fully closed.")
+                            print(f"🏆 TP3 FULL TARGET HIT for {symbol} at {current_price}!")
+                            del open_trades[symbol]
+
+                    elif trade["direction"] == "SELL":
+                        if current_price >= sl:
+                            log_trade_event(symbol, "SL_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
+                            send_telegram_alert(f"❌ *STOP LOSS HIT* for `{symbol}` at `{current_price}`. Trade closed.")
+                            print(f"❌ STOP LOSS HIT for {symbol} at {current_price}.")
+                            del open_trades[symbol]
+                        elif not trade["hit_tp1"] and current_price <= tp1:
+                            trade["hit_tp1"] = True
+                            log_trade_event(symbol, "TP1_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
+                            send_telegram_alert(f"🎯 *TP1 REACHED* for `{symbol}` at `{current_price}`!")
+                            print(f"🎯 TP1 REACHED for {symbol} at {current_price}!")
+                        elif not trade["hit_tp2"] and current_price <= tp2:
+                            trade["hit_tp2"] = True
+                            log_trade_event(symbol, "TP2_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
+                            send_telegram_alert(f"🎯 *TP2 REACHED* for `{symbol}` at `{current_price}`!")
+                            print(f"🎯 TP2 REACHED for {symbol} at {current_price}!")
+                        elif current_price <= tp3:
+                            log_trade_event(symbol, "TP3_HIT_CLOSED", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
+                            send_telegram_alert(f"🏆 *TP3 FULL TARGET REACHED* for `{symbol}` at `{current_price}`! Trade fully closed.")
+                            print(f"🏆 TP3 FULL TARGET HIT for {symbol} at {current_price}!")
+                            del open_trades[symbol]
 
             print("-" * 50)
         except KeyboardInterrupt:
