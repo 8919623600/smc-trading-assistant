@@ -1,4 +1,5 @@
 import os
+import time
 import pandas as pd
 from twelvedata import TDClient
 
@@ -27,7 +28,10 @@ def analyze_structure():
         success = True
         for tf_name, interval in intervals.items():
             try:
-                # Corrected: using .as_pandas() method call
+                # 15 second pause between calls to strictly respect Twelve Data's 8 req/min free limit
+                print(f"   ⏳ Fetching {tf_name} data (pausing for rate limit)...")
+                time.sleep(15)
+                
                 ts = td.time_series(symbol=symbol, interval=interval, outputsize=100)
                 df = ts.as_pandas()
                 
@@ -43,7 +47,7 @@ def analyze_structure():
                 success = False
 
         if not success or len(tf_data) < 5:
-            print(f"❌ Could not fetch complete multi-timeframe data for {symbol}.")
+            print(f"❌ Could not fetch complete multi-timeframe data for {symbol} due to rate limits.")
             continue
 
         # 1. 4H Market Structure (Bias Check)
