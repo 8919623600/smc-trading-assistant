@@ -98,13 +98,39 @@ def run_bot():
                 signal = engine.analyze(data_dict, symbol)
                 status = signal.get("status")
 
-                if status == "SETUP_FORMING":
+                if status == "LIQUIDITY_SWEPT":
+                    msg = (
+                        f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
+                        f"📌 *Asset:* `{signal['symbol']}`\n"
+                        f"⚡ *Direction Bias:* `{signal['direction']}`\n\n"
+                        f"🔍 *Status:* External macro liquidity pool was just raided/swept. "
+                        f"Now waiting for 15M structure confirmation (CHoCH / BOS).\n\n"
+                        f"📝 *Details:* {signal['reason']}"
+                    )
+                    send_telegram_alert(msg)
+                    print(f"🚨 Liquidity Sweep Alert Sent for {signal['symbol']}")
+
+                elif status == "CHOCH_CONFIRMED":
+                    p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
+                    msg = (
+                        f"⏳ *STEP 2: 15M CHoCH & FVG CONFIRMED* ⏳\n\n"
+                        f"📌 *Asset:* `{signal['symbol']}`\n"
+                        f"⚡ *Direction:* `{signal['direction']}`\n\n"
+                        f"🔍 *Status:* Institutional structure shift confirmed. "
+                        f"**Bot is now actively watching the 1M chart for an entry retracement into POI:** `{p_fmt}`\n\n"
+                        f"📝 *Confluence:* {signal['reason']}"
+                    )
+                    send_telegram_alert(msg)
+                    print(f"⏳ 15M CHoCH Alert Sent for {signal['symbol']} at POI {p_fmt}")
+
+                elif status == "SETUP_FORMING":
+                    p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
                     msg = (
                         f"⏳ *SMC SETUP FORMING (Advance Notice)* ⏳\n\n"
                         f"📌 *Asset:* `{signal['symbol']}`\n"
                         f"⚡ *Anticipated Direction:* `{signal['direction']}`\n\n"
-                        f"🔍 *Status:* Macro criteria & 1H liquidity sweep met. "
-                        f"Now monitoring 1M candles for final entry trigger.\n\n"
+                        f"🔍 *Status:* Macro criteria met. "
+                        f"**Monitoring 1M chart for entry at POI:** `{p_fmt}`\n\n"
                         f"📝 *Confluence:* {signal['reason']}"
                     )
                     send_telegram_alert(msg)
