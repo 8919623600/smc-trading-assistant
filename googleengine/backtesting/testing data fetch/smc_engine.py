@@ -127,5 +127,12 @@ class AdvancedSMCEngine:
             else:
                 return {"status": "HOLD", "reason": f"Active setup tracking, awaiting valid RR (Current RR: {rr:.2f})"}
 
-        # Custom HOLD reason as requested
-        return {"status": "HOLD", "reason": "Awaiting 1H Liquidity Sweep"}
+        # Dynamic target level display based on 4H bias
+        target_level = recent_1h_high if bias == "BEARISH" else recent_1h_low
+        target_label = "1H High (EQH)" if bias == "BEARISH" else "1H Low (EQL)"
+        fmt_target = f"{target_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{target_level:.2f}"
+
+        return {
+            "status": "HOLD", 
+            "reason": f"Awaiting 1H Liquidity Sweep | Bias: {bias} | Target Level [{target_label}]: {fmt_target}"
+        }
