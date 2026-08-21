@@ -1,8 +1,8 @@
 import time
 import os
 import requests
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
 from twelvedata import TDClient
 from config import SYMBOLS, POLL_INTERVAL_SECONDS, TWELVE_DATA_KEYS, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from smc_engine import AdvancedSMCEngine
@@ -28,7 +28,6 @@ class SmartRotatorFetcher:
         if not self.keys:
             raise ValueError("No Twelve Data API keys provided!")
         active_key = self.keys[self.key_index]
-        # Rotate to next key for subsequent call
         self.key_index = (self.key_index + 1) % len(self.keys)
         return TDClient(apikey=active_key)
 
@@ -38,7 +37,6 @@ class SmartRotatorFetcher:
         
         for tf_name, interval in intervals.items():
             try:
-                # Rotate key and sleep 7 seconds to protect free tier credits per key
                 client = self.get_next_client()
                 time.sleep(7)
                 
@@ -49,7 +47,6 @@ class SmartRotatorFetcher:
                     df = df.reset_index()
                     if 'datetime' in df.columns:
                         df = df.rename(columns={'datetime': 'timestamp'})
-                    # Ensure chronological sorting
                     df['timestamp'] = pd.to_datetime(df['timestamp'])
                     df = df.sort_values('timestamp').reset_index(drop=True)
                     data_dict[tf_name] = df
@@ -132,7 +129,7 @@ def run_bot():
                     print(f"🚨 Final Execution Alert Sent for {symbol}")
 
                 else:
-                    print(f"🔍 Asset: {symbol} | Status: HOLD")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {signal.get('reason')}")
 
             print("-" * 50)
         except KeyboardInterrupt:
