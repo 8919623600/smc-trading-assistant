@@ -48,6 +48,9 @@ class SmartRotatorFetcher:
                     df = df.reset_index()
                     if 'datetime' in df.columns:
                         df = df.rename(columns={'datetime': 'timestamp'})
+                    # Ensure chronological sorting
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    df = df.sort_values('timestamp').reset_index(drop=True)
                     data_dict[tf_name] = df
                 else:
                     data_dict[tf_name] = None
@@ -58,7 +61,7 @@ class SmartRotatorFetcher:
 
 def run_bot():
     print("==================================================")
-    print("🚀 SMC SIGNAL BOT ACTIVE (DUAL API KEY ROTATION)")
+    print("🚀 SMC SIGNAL BOT ACTIVE (MULTI-STATE & ROTATION)")
     print(f"📊 Assets Monitored: {SYMBOLS}")
     print("==================================================")
     
@@ -73,28 +76,62 @@ def run_bot():
             for symbol in SYMBOLS:
                 data_dict = fetcher.get_market_data(symbol)
                 
-                if data_dict.get("1M") is None:
+                if data_dict.get("1M") is None or data_dict.get("4H") is None:
                     print(f"⚠️ Skipping {symbol} due to incomplete data feed.")
                     continue
 
                 signal = engine.analyze(data_dict, symbol)
-                decision = signal["decision"]
-                print(f"🔍 Asset: {symbol} | Action: {decision} | Reason: {signal['reason']}")
+                status = signal.get("status")
 
-                if decision in ["BUY", "SELL"]:
-                    p = signal["trade_params"]
+                if status == "SETUP_FORMING":
                     msg = (
-                        f"🚨 *SMC MANUAL SETUP ALERT* 🚨\n\n"
-                        f"📌 *Asset:* `{symbol}`\n"
-                        f"⚡ *Direction:* `{decision}`\n\n"
-                        f"🎯 *Entry:* `{p['entry']}`\n"
-                        f"🛑 *Stop Loss:* `{p['sl']}`\n"
-                        f"🎯 *Take Profit 1:* `{p['tp1']}` (3R)\n"
-                        f"🎯 *Take Profit 2:* `{p['tp2']}` (6R)\n"
-                        f"⚖️ *Risk:Reward:* `{p['rr']}:1`\n\n"
+                        f"⏳ *SMC SETUP FORMING (Advance Notice)* ⏳\n\n"
+                        f"📌 *Asset:* `{signal['symbol']}`\n"
+                        f"⚡ *Anticipated Direction:* `{signal['direction']}`\n\n"
+                        f"🔍 *Status:* Macro criteria & 1H liquidity sweep met. "
+                        f"Now monitoring 1M candles for final entry trigger.\n\n"
                         f"📝 *Confluence:* {signal['reason']}"
                     )
                     send_telegram_alert(msg)
+                    print(f"⏳ Setup Forming Alert Sent for {signal['symbol']}")
+
+                elif status == "INVALIDATED":
+                    msg = (
+                        f"❌ *SMC SETUP INVALIDATED* ❌\n\n"
+                        f"📌 *Asset:* `{signal['symbol']}`\n"
+                        f"⚠️ *Reason:* {signal['reason']}\n\n"
+                        f"🛑 *Action:* Discarding previous setup watch."
+                    )
+                    send_telegram_alert(msg)
+                    print(f"❌ Setup Invalidated Alert Sent for {signal['symbol']}")
+
+                elif status == "TRIGGERED":
+                    p = signal["trade_params"]
+                    matrix_text = ""
+                    for item in p["pnl_matrix"]:
+                        matrix_text += (
+                            f"• **{item['lot']} Lot**: "
+                            f"Risk: -${item['loss']} | TP1: +${item['tp1']} | TP2: +${item['tp2']}\n"
+                        )
+
+                    msg = (
+                        f"🚨 *SMC FINAL EXECUTION ALERT* 🚨\n\n"
+                        f"📌 *Asset:* `{symbol}`\n"
+                        f"⚡ *Direction:* `{signal['decision']}`\n\n"
+                        f"🎯 *Entry:* `{p['entry']}`\n"
+                        f"🛑 *Stop Loss:* `{p['sl']}` ({p['pips_risk']} Pips)\n"
+                        f"🎯 *Take Profit 1:* `{p['tp1']}` (3R)\n"
+                        f"🎯 *Take Profit 2:* `{p['tp2']}` (6R)\n"
+                        f"⚖️ *Risk:Reward:* `{p['rr']}:1`\n\n"
+                        f"📊 *LOT SIZE & PnL BREAKDOWN*\n"
+                        f"{matrix_text}\n"
+                        f"📝 *Confluence:* {signal['reason']}"
+                    )
+                    send_telegram_alert(msg)
+                    print(f"🚨 Final Execution Alert Sent for {symbol}")
+
+                else:
+                    print(f"🔍 Asset: {symbol} | Status: HOLD")
 
             print("-" * 50)
         except KeyboardInterrupt:
