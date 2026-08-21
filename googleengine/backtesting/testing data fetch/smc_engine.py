@@ -17,7 +17,6 @@ class AdvancedSMCEngine:
         return float(tr.rolling(period).mean().iloc[-1])
 
     def check_fvg(self, df_15m, bias):
-        """Validates if a 3-candle Fair Value Gap exists matching structural bias"""
         if len(df_15m) < 3:
             return False
         c1_high = float(df_15m.iloc[-3]['high'])
@@ -26,10 +25,57 @@ class AdvancedSMCEngine:
         c3_high = float(df_15m.iloc[-1]['high'])
 
         if bias == "BULLISH" and c3_low > c1_high:
-            return True # Bullish FVG imbalance
+            return True
         if bias == "BEARISH" and c3_high < c1_low:
-            return True # Bearish FVG imbalance
+            return True
         return False
+
+    def check_bos_choch(self, df_15m, direction):
+        """Validates structural Break of Structure (BOS) or Change of Character (CHoCH)"""
+        if len(df_15m) < 10:
+            return True # Fallback if data length is short
+        
+        recent_high = float(df_15m['high'].tail(10).max())
+        recent_low = float(df_15m['low'].tail(10).min())
+        current_close = float(df_15m.iloc[-1]['close'])
+
+        if direction == "BUY" and current_close > recent_high * 0.999:
+            return True # Bullish structure broken upwards
+        if direction == "SELL" and current_close < recent_low * 1.001:
+            return True # Bearish structure broken downwards
+        return False
+
+    def get_liquidity_targets(self, df_1h, direction, entry):
+        """Calculates TP1, TP2, and TP3 from opposing structural liquidity zones"""
+        highs = df_1h['high'].tail(30).values
+        lows = df_1h['low'].tail(30).values
+
+        if direction == "BUY":
+            # Find opposing highs above entry for upside liquidity targets
+            above_entry = [h for h in highs if h > entry]
+            if not above_entry:
+                tp1 = entry + 0.0020
+                tp2 = entry + 0.0040
+                tp3 = entry + 0.0060
+            else:
+                sorted_highs = sorted(list(set(above_entry)))
+                tp1 = sorted_highs[0] if len(sorted_highs) > 0 else entry + 0.0020
+                tp2 = sorted_highs[len(sorted_highs)//2] if len(sorted_highs) > 1 else tp1 + 0.0020
+                tp3 = sorted_highs[-1] if len(sorted_highs) > 2 else tp2 + 0.0020
+        else:
+            # Find opposing lows below entry for downside liquidity targets
+            below_entry = [l for l in lows if l < entry]
+            if not below_entry:
+                tp1 = entry - 0.0020
+                tp2 = entry - 0.0040
+                tp3 = entry - 0.0060
+            else:
+                sorted_lows = sorted(list(set(below_entry)), reverse=True)
+                tp1 = sorted_lows[0] if len(sorted_lows) > 0 else entry - 0.0020
+                tp2 = sorted_lows[len(sorted_lows)//2] if len(sorted_lows) > 1 else tp1 - 0.0020
+                tp3 = sorted_lows[-1] if len(sorted_lows) > 2 else tp2 - 0.0020
+
+        return round(tp1, 5), round(tp2, 5), round(tp3, 5)
 
     def calculate_pnl_matrix(self, symbol, entry, sl, tp1, tp2):
         risk_pips = abs(entry - sl)
@@ -70,11 +116,10 @@ class AdvancedSMCEngine:
         is_higher_low = swings_low.iloc[-2] > swings_low.iloc[-5]
         bias = "BULLISH" if (is_higher_high and is_higher_low) else "BEARISH"
 
-        # --- 2. 1H LIQUIDITY SWEEP CHECK (Excluding Active Candle) ---
+        # --- 2. 1H LIQUIDITY SWEEP CHECK ---
         historical_1h = df_1h.iloc[:-1]
         recent_1h_high = float(historical_1h['high'].tail(15).max())
         recent_1h_low = float(historical_1h['low'].tail(15).min())
-        
         current_1h_high = float(df_1h.iloc[-1]['high'])
         current_1h_low = float(df_1h.iloc[-1]['low'])
 
@@ -103,21 +148,21 @@ class AdvancedSMCEngine:
                     "reason": f"Price breached SL or macro structure flipped from {setup['bias']}."
                 }
 
-        # --- 3. SETUP FORMING & FVG / ORDER BLOCK VALIDATION ---
+        # --- 3. SETUP FORMING & FVG + BOS VALIDATION ---
         if liquidity_swept and symbol not in self.active_setups:
             direction = "BUY" if bias == "BULLISH" else "SELL"
             
-            # Require 15M FVG Confluence
             has_imbalance = self.check_fvg(df_15m, bias)
-            if not has_imbalance:
+            structure_confirmed = self.check_bos_choch(df_15m, direction)
+
+            if not (has_imbalance and structure_confirmed):
                 return {
                     "status": "HOLD",
-                    "reason": f"1H {sweep_type} detected, but waiting for valid 15M FVG/Imbalance confirmation."
+                    "reason": f"1H {sweep_type} detected, awaiting 15M FVG & BOS/CHoCH alignment."
                 }
 
             poi_level = float(df_15m['low'].tail(3).min()) if bias == "BULLISH" else float(df_15m['high'].tail(3).max())
             
-            # Apply ATR Buffer to Stop Loss
             atr_1m = self.calculate_atr(df_1m)
             sl_buffer = atr_1m * 0.5
             recent_1m_swing = float(df_1m['low'].tail(5).min()) if bias == "BULLISH" else float(df_1m['high'].tail(5).max())
@@ -135,10 +180,10 @@ class AdvancedSMCEngine:
                 "status": "SETUP_FORMING",
                 "symbol": symbol,
                 "direction": direction,
-                "reason": f"4H Bias: {bias} | 1H {sweep_type} + 15M FVG Confirmed | Awaiting price to reach Order Block: {p_fmt}"
+                "reason": f"4H Bias: {bias} | 1H {sweep_type} + 15M FVG/BOS Confirmed | Awaiting price to reach Order Block: {p_fmt}"
             }
 
-        # --- 4. ACTIVE SETUP TRACKING & TRIGGER ---
+        # --- 4. ACTIVE SETUP TRACKING & LIQUIDITY-BASED TP TRIGGER ---
         if symbol in self.active_setups:
             setup = self.active_setups[symbol]
             direction = setup['direction']
@@ -147,9 +192,14 @@ class AdvancedSMCEngine:
             
             entry = current_price
             sl = setup['sl']
-            tp1 = entry + (abs(entry - sl) * 3.0) if direction == "BUY" else entry - (abs(sl - entry) * 3.0)
-            tp2 = entry + (abs(entry - sl) * 6.0) if direction == "BUY" else entry - (abs(sl - entry) * 6.0)
-            rr = abs(tp1 - entry) / abs(entry - sl)
+            
+            # Dynamic Liquidity-Based Take Profits (Opposing Zones)
+            tp1, tp2, tp3 = self.get_liquidity_targets(df_1h, direction, entry)
+            
+            # Risk-to-Reward calculation using TP1
+            risk_dist = abs(entry - sl)
+            reward_dist = abs(tp1 - entry)
+            rr = reward_dist / risk_dist if risk_dist > 0 else 0
 
             if self.min_rr <= rr <= self.max_rr:
                 pnl_matrix, pips_risk = self.calculate_pnl_matrix(symbol, entry, sl, tp1, tp2)
@@ -158,12 +208,13 @@ class AdvancedSMCEngine:
                 return {
                     "status": "TRIGGERED",
                     "decision": direction,
-                    "reason": f"1M execution confirmed inside Order Block (POI: {p_fmt}) with ATR-buffered SL.",
+                    "reason": f"1M execution confirmed inside Order Block (POI: {p_fmt}) with Liquidity Targets.",
                     "trade_params": {
                         "entry": round(entry, 5),
                         "sl": round(sl, 5),
-                        "tp1": round(tp1, 5),
-                        "tp2": round(tp2, 5),
+                        "tp1": tp1,
+                        "tp2": tp2,
+                        "tp3": tp3,
                         "rr": round(rr, 2),
                         "pips_risk": pips_risk,
                         "pnl_matrix": pnl_matrix
@@ -173,7 +224,7 @@ class AdvancedSMCEngine:
                 curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
                 return {
                     "status": "HOLD", 
-                    "reason": f"Sweep & FVG Validated | Awaiting price to reach Order Block ({p_fmt}) | Current Price: {curr_fmt}"
+                    "reason": f"Structure Validated | Awaiting price to reach Order Block ({p_fmt}) | Current RR: {rr:.2f}"
                 }
 
         # Default HOLD reason
