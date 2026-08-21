@@ -31,49 +31,57 @@ class AdvancedSMCEngine:
         return False
 
     def check_bos_choch(self, df_15m, direction):
-        """Validates structural Break of Structure (BOS) or Change of Character (CHoCH)"""
-        if len(df_15m) < 10:
-            return True # Fallback if data length is short
+        if len(df_15m) < 15:
+            return True 
         
-        recent_high = float(df_15m['high'].tail(10).max())
-        recent_low = float(df_15m['low'].tail(10).min())
+        recent_high = float(df_15m['high'].tail(15).max())
+        recent_low = float(df_15m['low'].tail(15).min())
         current_close = float(df_15m.iloc[-1]['close'])
 
         if direction == "BUY" and current_close > recent_high * 0.999:
-            return True # Bullish structure broken upwards
+            return True 
         if direction == "SELL" and current_close < recent_low * 1.001:
-            return True # Bearish structure broken downwards
+            return True 
         return False
 
-    def get_liquidity_targets(self, df_1h, direction, entry):
-        """Calculates TP1, TP2, and TP3 from opposing structural liquidity zones"""
-        highs = df_1h['high'].tail(30).values
-        lows = df_1h['low'].tail(30).values
+    def get_macro_external_liquidity(self, df_1h, bias):
+        """Identifies deep external macro swing liquidity pools (e.g., 4325 type major lows/highs)"""
+        if len(df_1h) < 50:
+            return float(df_1h['low'].min()) if bias == "BULLISH" else float(df_1h['high'].max())
+        
+        # Look across a wider historical window for external range liquidity
+        if bias == "BULLISH":
+            # Find major macro low (External Sell-Side Liquidity)
+            external_low = float(df_1h['low'].tail(50).min())
+            return external_low
+        else:
+            # Find major macro high (External Buy-Side Liquidity)
+            external_high = float(df_1h['high'].tail(50).max())
+            return external_high
+
+    def get_opposing_liquidity_targets(self, df_1h, direction, entry):
+        """Targets opposing macro liquidity pools (e.g., Weak Highs / External Highs)"""
+        highs = df_1h['high'].tail(50).values
+        lows = df_1h['low'].tail(50).values
 
         if direction == "BUY":
-            # Find opposing highs above entry for upside liquidity targets
             above_entry = [h for h in highs if h > entry]
             if not above_entry:
-                tp1 = entry + 0.0020
-                tp2 = entry + 0.0040
-                tp3 = entry + 0.0060
+                tp1, tp2, tp3 = entry + 0.0050, entry + 0.0100, entry + 0.0150
             else:
                 sorted_highs = sorted(list(set(above_entry)))
-                tp1 = sorted_highs[0] if len(sorted_highs) > 0 else entry + 0.0020
-                tp2 = sorted_highs[len(sorted_highs)//2] if len(sorted_highs) > 1 else tp1 + 0.0020
-                tp3 = sorted_highs[-1] if len(sorted_highs) > 2 else tp2 + 0.0020
+                tp1 = sorted_highs[0]
+                tp2 = sorted_highs[len(sorted_highs)//2] if len(sorted_highs) > 1 else tp1 + 0.0050
+                tp3 = sorted_highs[-1] # Target the major Weak High / External liquidity pool
         else:
-            # Find opposing lows below entry for downside liquidity targets
             below_entry = [l for l in lows if l < entry]
             if not below_entry:
-                tp1 = entry - 0.0020
-                tp2 = entry - 0.0040
-                tp3 = entry - 0.0060
+                tp1, tp2, tp3 = entry - 0.0050, entry - 0.0100, entry - 0.0150
             else:
                 sorted_lows = sorted(list(set(below_entry)), reverse=True)
-                tp1 = sorted_lows[0] if len(sorted_lows) > 0 else entry - 0.0020
-                tp2 = sorted_lows[len(sorted_lows)//2] if len(sorted_lows) > 1 else tp1 - 0.0020
-                tp3 = sorted_lows[-1] if len(sorted_lows) > 2 else tp2 - 0.0020
+                tp1 = sorted_lows[0]
+                tp2 = sorted_lows[len(sorted_lows)//2] if len(sorted_lows) > 1 else tp1 - 0.0050
+                tp3 = sorted_lows[-1] # Target major external low liquidity
 
         return round(tp1, 5), round(tp2, 5), round(tp3, 5)
 
@@ -116,21 +124,18 @@ class AdvancedSMCEngine:
         is_higher_low = swings_low.iloc[-2] > swings_low.iloc[-5]
         bias = "BULLISH" if (is_higher_high and is_higher_low) else "BEARISH"
 
-        # --- 2. 1H LIQUIDITY SWEEP CHECK ---
+        # --- 2. MACRO EXTERNAL LIQUIDITY SWEEP CHECK ---
         historical_1h = df_1h.iloc[:-1]
-        recent_1h_high = float(historical_1h['high'].tail(15).max())
-        recent_1h_low = float(historical_1h['low'].tail(15).min())
-        current_1h_high = float(df_1h.iloc[-1]['high'])
+        macro_liq_level = self.get_macro_external_liquidity(historical_1h, bias)
+        current_1h_price = float(df_1h.iloc[-1]['close'])
         current_1h_low = float(df_1h.iloc[-1]['low'])
+        current_1h_high = float(df_1h.iloc[-1]['high'])
 
         liquidity_swept = False
-        sweep_type = None
-        if bias == "BEARISH" and current_1h_high > recent_1h_high:
+        if bias == "BULLISH" and current_1h_low <= macro_liq_level:
             liquidity_swept = True
-            sweep_type = "BUY_SIDE_SWEEP (EQH)"
-        elif bias == "BULLISH" and current_1h_low < recent_1h_low:
+        elif bias == "BEARISH" and current_1h_high >= macro_liq_level:
             liquidity_swept = True
-            sweep_type = "SELL_SIDE_SWEEP (EQL)"
 
         current_price = float(df_1m.iloc[-1]['close'])
 
@@ -158,7 +163,7 @@ class AdvancedSMCEngine:
             if not (has_imbalance and structure_confirmed):
                 return {
                     "status": "HOLD",
-                    "reason": f"1H {sweep_type} detected, awaiting 15M FVG & BOS/CHoCH alignment."
+                    "reason": f"Macro External Liquidity Swept at {macro_liq_level:.2f}, awaiting 15M FVG & BOS confirmation."
                 }
 
             poi_level = float(df_15m['low'].tail(3).min()) if bias == "BULLISH" else float(df_15m['high'].tail(3).max())
@@ -180,10 +185,10 @@ class AdvancedSMCEngine:
                 "status": "SETUP_FORMING",
                 "symbol": symbol,
                 "direction": direction,
-                "reason": f"4H Bias: {bias} | 1H {sweep_type} + 15M FVG/BOS Confirmed | Awaiting price to reach Order Block: {p_fmt}"
+                "reason": f"Bias: {bias} | Macro Liquidity Swept [{macro_liq_level:.2f}] + 15M BOS Confirmed | Awaiting Order Block: {p_fmt}"
             }
 
-        # --- 4. ACTIVE SETUP TRACKING & LIQUIDITY-BASED TP TRIGGER ---
+        # --- 4. ACTIVE SETUP TRACKING & OPPOSING LIQUIDITY TP TARGETS ---
         if symbol in self.active_setups:
             setup = self.active_setups[symbol]
             direction = setup['direction']
@@ -193,10 +198,9 @@ class AdvancedSMCEngine:
             entry = current_price
             sl = setup['sl']
             
-            # Dynamic Liquidity-Based Take Profits (Opposing Zones)
-            tp1, tp2, tp3 = self.get_liquidity_targets(df_1h, direction, entry)
+            # Target Opposing Macro External Liquidity Pools (e.g., Weak Highs)
+            tp1, tp2, tp3 = self.get_opposing_liquidity_targets(df_1h, direction, entry)
             
-            # Risk-to-Reward calculation using TP1
             risk_dist = abs(entry - sl)
             reward_dist = abs(tp1 - entry)
             rr = reward_dist / risk_dist if risk_dist > 0 else 0
@@ -208,7 +212,7 @@ class AdvancedSMCEngine:
                 return {
                     "status": "TRIGGERED",
                     "decision": direction,
-                    "reason": f"1M execution confirmed inside Order Block (POI: {p_fmt}) with Liquidity Targets.",
+                    "reason": f"Execution confirmed inside Order Block (POI: {p_fmt}) targeting opposing liquidity.",
                     "trade_params": {
                         "entry": round(entry, 5),
                         "sl": round(sl, 5),
@@ -224,14 +228,12 @@ class AdvancedSMCEngine:
                 curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
                 return {
                     "status": "HOLD", 
-                    "reason": f"Structure Validated | Awaiting price to reach Order Block ({p_fmt}) | Current RR: {rr:.2f}"
+                    "reason": f"External Liquidity Swept | Awaiting price to reach Order Block ({p_fmt}) | Current RR: {rr:.2f}"
                 }
 
         # Default HOLD reason
-        target_str = f"{recent_1h_low:.5f}" if bias == "BULLISH" else f"{recent_1h_high:.5f}"
-        target_name = "1H Low (EQL)" if bias == "BULLISH" else "1H High (EQH)"
         curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
         return {
             "status": "HOLD", 
-            "reason": f"Awaiting 1H Liquidity Sweep | Bias: {bias} | Target [{target_name}]: {target_str} | Current Price: {curr_fmt}"
+            "reason": f"Awaiting Macro External Liquidity Sweep [{macro_liq_level:.2f}] | Bias: {bias} | Current Price: {curr_fmt}"
         }
