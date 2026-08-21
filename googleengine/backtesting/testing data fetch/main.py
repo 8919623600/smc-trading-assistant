@@ -2,6 +2,7 @@ import time
 import os
 import requests
 from datetime import datetime
+import pandas as pd
 from twelvedata import TDClient
 from config import SYMBOLS, POLL_INTERVAL_SECONDS, TWELVE_DATA_KEYS, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from smc_engine import AdvancedSMCEngine
