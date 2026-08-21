@@ -61,4 +61,4 @@ case "$1" in
         echo "❌ Invalid option. Run './run_bot.sh' without arguments to see the menu."
         exit 1
         ;;
-es
+esac
