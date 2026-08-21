@@ -45,17 +45,14 @@ class AdvancedSMCEngine:
         return False
 
     def get_macro_external_liquidity(self, df_1h, bias):
-        """Identifies deep external macro swing liquidity pools (e.g., 4325 type major lows/highs)"""
+        """Identifies deep external macro swing liquidity pools (e.g., major macro lows/highs)"""
         if len(df_1h) < 50:
             return float(df_1h['low'].min()) if bias == "BULLISH" else float(df_1h['high'].max())
         
-        # Look across a wider historical window for external range liquidity
         if bias == "BULLISH":
-            # Find major macro low (External Sell-Side Liquidity)
             external_low = float(df_1h['low'].tail(50).min())
             return external_low
         else:
-            # Find major macro high (External Buy-Side Liquidity)
             external_high = float(df_1h['high'].tail(50).max())
             return external_high
 
@@ -72,7 +69,7 @@ class AdvancedSMCEngine:
                 sorted_highs = sorted(list(set(above_entry)))
                 tp1 = sorted_highs[0]
                 tp2 = sorted_highs[len(sorted_highs)//2] if len(sorted_highs) > 1 else tp1 + 0.0050
-                tp3 = sorted_highs[-1] # Target the major Weak High / External liquidity pool
+                tp3 = sorted_highs[-1]
         else:
             below_entry = [l for l in lows if l < entry]
             if not below_entry:
@@ -81,7 +78,7 @@ class AdvancedSMCEngine:
                 sorted_lows = sorted(list(set(below_entry)), reverse=True)
                 tp1 = sorted_lows[0]
                 tp2 = sorted_lows[len(sorted_lows)//2] if len(sorted_lows) > 1 else tp1 - 0.0050
-                tp3 = sorted_lows[-1] # Target major external low liquidity
+                tp3 = sorted_lows[-1]
 
         return round(tp1, 5), round(tp2, 5), round(tp3, 5)
 
@@ -153,6 +150,9 @@ class AdvancedSMCEngine:
                     "reason": f"Price breached SL or macro structure flipped from {setup['bias']}."
                 }
 
+        # Format liquidity string dynamically based on symbol type
+        liq_fmt = f"{macro_liq_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{macro_liq_level:.2f}"
+
         # --- 3. SETUP FORMING & FVG + BOS VALIDATION ---
         if liquidity_swept and symbol not in self.active_setups:
             direction = "BUY" if bias == "BULLISH" else "SELL"
@@ -163,7 +163,7 @@ class AdvancedSMCEngine:
             if not (has_imbalance and structure_confirmed):
                 return {
                     "status": "HOLD",
-                    "reason": f"Macro External Liquidity Swept at {macro_liq_level:.2f}, awaiting 15M FVG & BOS confirmation."
+                    "reason": f"Macro External Liquidity Swept at {liq_fmt}, awaiting 15M FVG & BOS confirmation."
                 }
 
             poi_level = float(df_15m['low'].tail(3).min()) if bias == "BULLISH" else float(df_15m['high'].tail(3).max())
@@ -185,7 +185,7 @@ class AdvancedSMCEngine:
                 "status": "SETUP_FORMING",
                 "symbol": symbol,
                 "direction": direction,
-                "reason": f"Bias: {bias} | Macro Liquidity Swept [{macro_liq_level:.2f}] + 15M BOS Confirmed | Awaiting Order Block: {p_fmt}"
+                "reason": f"Bias: {bias} | Macro Liquidity Swept [{liq_fmt}] + 15M BOS Confirmed | Awaiting Order Block: {p_fmt}"
             }
 
         # --- 4. ACTIVE SETUP TRACKING & OPPOSING LIQUIDITY TP TARGETS ---
@@ -198,7 +198,6 @@ class AdvancedSMCEngine:
             entry = current_price
             sl = setup['sl']
             
-            # Target Opposing Macro External Liquidity Pools (e.g., Weak Highs)
             tp1, tp2, tp3 = self.get_opposing_liquidity_targets(df_1h, direction, entry)
             
             risk_dist = abs(entry - sl)
@@ -231,9 +230,9 @@ class AdvancedSMCEngine:
                     "reason": f"External Liquidity Swept | Awaiting price to reach Order Block ({p_fmt}) | Current RR: {rr:.2f}"
                 }
 
-        # Default HOLD reason
+        # Default HOLD reason with correct formatting
         curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
         return {
             "status": "HOLD", 
-            "reason": f"Awaiting Macro External Liquidity Sweep [{macro_liq_level:.2f}] | Bias: {bias} | Current Price: {curr_fmt}"
+            "reason": f"Awaiting Macro External Liquidity Sweep [{liq_fmt}] | Bias: {bias} | Current Price: {curr_fmt}"
         }
