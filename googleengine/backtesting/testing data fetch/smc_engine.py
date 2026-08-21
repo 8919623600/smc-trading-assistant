@@ -78,27 +78,33 @@ class AdvancedSMCEngine:
         # --- 3. SETUP FORMING (Advance Notice) ---
         if liquidity_swept and symbol not in self.active_setups:
             direction = "BUY" if bias == "BULLISH" else "SELL"
+            # Calculate exact 15M Order Block (POI) level
+            poi_level = float(df_15m['low'].tail(3).min()) if bias == "BULLISH" else float(df_15m['high'].tail(3).max())
             recent_1m_swing = float(df_1m['low'].tail(5).min()) if bias == "BULLISH" else float(df_1m['high'].tail(5).max())
             sl = recent_1m_swing - 0.0005 if bias == "BULLISH" else recent_1m_swing + 0.0005
             
             self.active_setups[symbol] = {
                 "bias": bias,
                 "direction": direction,
-                "poi_price": current_price,
+                "poi_price": poi_level,
                 "sl": sl
             }
 
+            p_fmt = f"{poi_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{poi_level:.2f}"
             return {
                 "status": "SETUP_FORMING",
                 "symbol": symbol,
                 "direction": direction,
-                "reason": f"4H Bias: {bias} | 1H {sweep_type} | Monitoring 1M triggers."
+                "reason": f"4H Bias: {bias} | 1H {sweep_type} Happened | Awaiting price to reach Order Block (POI) Level: {p_fmt}"
             }
 
-        # --- 4. FINAL TRIGGER ---
+        # --- 4. ACTIVE SETUP TRACKING & FINAL TRIGGER ---
         if symbol in self.active_setups:
             setup = self.active_setups[symbol]
             direction = setup['direction']
+            poi_level = setup['poi_price']
+            
+            p_fmt = f"{poi_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{poi_level:.2f}"
             
             entry = current_price
             sl = setup['sl']
@@ -113,7 +119,7 @@ class AdvancedSMCEngine:
                 return {
                     "status": "TRIGGERED",
                     "decision": direction,
-                    "reason": f"1M CHoCH confirmed inside POI.",
+                    "reason": f"1M CHoCH confirmed inside Order Block (POI Level: {p_fmt}).",
                     "trade_params": {
                         "entry": round(entry, 5),
                         "sl": round(sl, 5),
@@ -125,14 +131,17 @@ class AdvancedSMCEngine:
                     }
                 }
             else:
-                return {"status": "HOLD", "reason": f"Active setup tracking, awaiting valid RR (Current RR: {rr:.2f})"}
+                curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
+                return {
+                    "status": "HOLD", 
+                    "reason": f"Liquidity Swept | Awaiting price to reach Order Block (POI Level: {p_fmt}) | Current Price: {curr_fmt}"
+                }
 
-        # Dynamic target level display based on 4H bias
-        target_level = recent_1h_high if bias == "BEARISH" else recent_1h_low
-        target_label = "1H High (EQH)" if bias == "BEARISH" else "1H Low (EQL)"
-        fmt_target = f"{target_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{target_level:.2f}"
-
+        # Default HOLD reason (Before sweep)
+        target_str = f"{recent_1h_low:.5f}" if bias == "BULLISH" else f"{recent_1h_high:.5f}"
+        target_name = "1H Low (EQL)" if bias == "BULLISH" else "1H High (EQH)"
+        curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
         return {
             "status": "HOLD", 
-            "reason": f"Awaiting 1H Liquidity Sweep | Bias: {bias} | Target Level [{target_label}]: {fmt_target}"
+            "reason": f"Awaiting 1H Liquidity Sweep | Bias: {bias} | Target Level [{target_name}]: {target_str} | Current Price: {curr_fmt}"
         }
