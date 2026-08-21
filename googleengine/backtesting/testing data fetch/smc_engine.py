@@ -38,7 +38,7 @@ class AdvancedSMCEngine:
         df_1m = tf_data.get("1M")
 
         if df_4h is None or df_1h is None or df_15m is None or df_1m is None:
-            return {"status": "HOLD"}
+            return {"status": "HOLD", "reason": "Missing multi-timeframe data feed"}
 
         # --- 1. 4H BIAS CHECK ---
         c_4h_closed = float(df_4h.iloc[-2]['close'])
@@ -62,10 +62,9 @@ class AdvancedSMCEngine:
 
         current_price = float(df_1m.iloc[-1]['close'])
 
-        # Check if an existing setup was tracking and got invalidated
+        # Check existing active setup invalidation
         if symbol in self.active_setups:
             setup = self.active_setups[symbol]
-            # Invalidation condition: price breaches the structural stop loss zone before triggering, or bias flips
             if (setup['direction'] == "BUY" and current_price < setup['sl']) or \
                (setup['direction'] == "SELL" and current_price > setup['sl']) or \
                setup['bias'] != bias:
@@ -75,16 +74,15 @@ class AdvancedSMCEngine:
                 return {
                     "status": "INVALIDATED",
                     "symbol": symbol,
-                    "reason": f"Price breached structural boundary or macro bias shifted from {setup['bias']}."
+                    "reason": f"Price breached SL or macro bias flipped from {setup['bias']}."
                 }
 
-        # --- 3. MACRO CONFLUENCE MET (SETUP FORMING ADVANCE ALERT) ---
+        # --- 3. SETUP FORMING (Advance Notice) ---
         if liquidity_swept and symbol not in self.active_setups:
             direction = "BUY" if bias == "BULLISH" else "SELL"
             recent_1m_swing = float(df_1m['low'].tail(5).min()) if bias == "BULLISH" else float(df_1m['high'].tail(5).max())
             sl = recent_1m_swing - 0.0005 if bias == "BULLISH" else recent_1m_swing + 0.0005
             
-            # Store in active tracking
             self.active_setups[symbol] = {
                 "bias": bias,
                 "direction": direction,
@@ -96,15 +94,14 @@ class AdvancedSMCEngine:
                 "status": "SETUP_FORMING",
                 "symbol": symbol,
                 "direction": direction,
-                "reason": f"4H Bias: {bias} | 1H {sweep_type} | Awaiting 1M confirmation close."
+                "reason": f"4H Bias: {bias} | 1H {sweep_type} | Monitoring 1M triggers."
             }
 
-        # --- 4. FULL 1M TRIGGER CONFIRMATION ---
+        # --- 4. FINAL TRIGGER ---
         if symbol in self.active_setups:
             setup = self.active_setups[symbol]
             direction = setup['direction']
             
-            # Simulate final 1M displacement trigger validation
             entry = current_price
             sl = setup['sl']
             tp1 = entry + (abs(entry - sl) * 3.0) if direction == "BUY" else entry - (abs(sl - entry) * 3.0)
@@ -113,13 +110,12 @@ class AdvancedSMCEngine:
 
             if self.min_rr <= rr <= self.max_rr:
                 pnl_matrix, pips_risk = self.calculate_pnl_matrix(symbol, entry, sl, tp1, tp2)
-                # Clear active tracking since signal is now fired
                 del self.active_setups[symbol]
 
                 return {
                     "status": "TRIGGERED",
                     "decision": direction,
-                    "reason": f"1M CHoCH & Displacement confirmed inside POI.",
+                    "reason": f"1M CHoCH confirmed inside POI.",
                     "trade_params": {
                         "entry": round(entry, 5),
                         "sl": round(sl, 5),
@@ -130,5 +126,8 @@ class AdvancedSMCEngine:
                         "pnl_matrix": pnl_matrix
                     }
                 }
+            else:
+                return {"status": "HOLD", "reason": f"Active setup tracking, awaiting valid RR (Current RR: {rr:.2f})"}
 
-        return {"status": "HOLD"}
+        # Default HOLD reason
+        return {"status": "HOLD", "reason": f"4H Bias: {bias} | Awaiting 1H Liquidity Sweep"}
