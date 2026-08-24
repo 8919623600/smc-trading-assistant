@@ -99,46 +99,50 @@ def run_bot():
                 status = signal.get("status")
                 reason = signal.get("reason", "")
                 
-                # Get current 1M close price for display formatting
                 current_price = float(data_dict["1M"].iloc[-1]['close'])
                 price_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
 
                 if symbol not in asset_states:
                     asset_states[symbol] = "IDLE"
 
-                # 1. LIQUIDITY SWEEP CHECK
+                # 1. LIQUIDITY SWEEP CHECK (STEP 1)
                 if status == "LIQUIDITY_SWEPT" or "Sweep" in reason:
+                    sweep_lvl = signal.get("level", signal.get("sweep_price", signal.get("poi_price", 0)))
+                    s_fmt = f"{sweep_lvl:.5f}" if "EUR" in symbol or "USD" in symbol else f"{sweep_lvl:.2f}"
+                    
                     if asset_states[symbol] != "SWEEP_ALERTED":
                         asset_states[symbol] = "SWEEP_ALERTED"
                         msg = (
                             f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
                             f"📌 *Asset:* `{symbol}`\n"
                             f"⚡ *Direction Bias:* `{signal.get('direction', 'SELL')}`\n\n"
-                            f"🔍 *Status:* External macro liquidity pool was just raided/swept. "
-                            f"Now waiting for 15M structure confirmation (CHoCH / BOS).\n\n"
+                            f"📍 *Swept Price Level:* `{s_fmt}`\n"
+                            f"🔍 *Looking for CHoCH at:* Awaiting structural break past macro threshold bounds.\n\n"
                             f"📝 *Details:* {reason}"
                         )
                         send_telegram_alert(msg)
                         print(f"🚨 Liquidity Sweep Alert Sent for {symbol}")
                     
-                    # Maintains your clean preferred terminal print structure
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
-                # 2. CHoCH CONFIRMED CHECK
+                # 2. CHoCH CONFIRMED CHECK (STEP 2)
                 elif status == "CHOCH_CONFIRMED":
+                    choch_lvl = signal.get("choch_price", signal.get("level", 0))
+                    c_fmt = f"{choch_lvl:.5f}" if "EUR" in symbol or "USD" in symbol else f"{choch_lvl:.2f}"
                     p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
+                    
                     if asset_states[symbol] != "CHOCH_ALERTED":
                         asset_states[symbol] = "CHOCH_ALERTED"
                         msg = (
                             f"⏳ *STEP 2: 15M CHoCH & FVG CONFIRMED* ⏳\n\n"
                             f"📌 *Asset:* `{symbol}`\n"
                             f"⚡ *Direction:* `{signal.get('direction', '')}`\n\n"
-                            f"🔍 *Status:* Institutional structure shift confirmed. "
-                            f"**Bot is now actively watching the 1M chart for an entry retracement into POI:** `{p_fmt}`\n\n"
+                            f"📍 *CHoCH Happened At:* `{c_fmt}`\n"
+                            f"🎯 *Active Watch (POI):* `{p_fmt}`\n\n"
                             f"📝 *Confluence:* {reason}"
                         )
                         send_telegram_alert(msg)
-                        print(f"⏳ 15M CHoCH Alert Sent for {symbol} at POI {p_fmt}")
+                        print(f"⏳ 15M CHoCH Alert Sent for {symbol} at Level {c_fmt}")
                     
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
@@ -172,7 +176,7 @@ def run_bot():
                     
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
-                # 5. TRIGGERED / EXECUTION CHECK
+                # 5. TRIGGERED / EXECUTION CHECK (STEP 3)
                 elif (status == "TRIGGERED" or "TRIGGER" in str(status) or "ENTRY" in str(status)) and symbol not in open_trades:
                     asset_states[symbol] = "IN_TRADE"
                     p = signal.get("trade_params", {})
@@ -194,24 +198,42 @@ def run_bot():
                         p.get("tp1", 0), p.get("tp2", 0), p.get("tp3", 0), f"Direction: {direction} | RR: {p.get('rr', 0)}"
                     )
 
+                    # Generating matrix for requested lot sizes: 0.01, 0.02, 0.03, 0.1, 0.2, 0.5, 1.0
+                    # Standardizing based on engine's base pips risk or dynamic sizing if available
+                    base_risk_unit = p.get("pips_risk", 10) # fallback factor
                     matrix_text = ""
-                    for item in p.get("pnl_matrix", []):
-                        matrix_text += (
-                            f"• **{item.get('lot', 0)} Lot**: "
-                            f"Risk: -${item.get('loss', 0)} | TP1: +${item.get('tp1', 0)} | TP2: +${item.get('tp2', 0)}\n"
-                        )
+                    target_lots = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5, 1.0]
+                    
+                    # If engine provides matrix, use it, otherwise build precise custom matrix
+                    engine_matrix = p.get("pnl_matrix", [])
+                    if engine_matrix:
+                        for item in engine_matrix:
+                            matrix_text += (
+                                f"• `{item.get('lot', 0)} Lot`: "
+                                f"Risk: -${item.get('loss', 0):.2f} | TP1: +${item.get('tp1', 0):.2f} | TP2: +${item.get('tp2', 0):.2f}\n"
+                            )
+                    else:
+                        # Fallback computation mapping requested lots
+                        for lot in target_lots:
+                            loss_est = lot * base_risk_unit * 10
+                            tp1_est = loss_est * 1.5
+                            tp2_est = loss_est * 3.0
+                            matrix_text += (
+                                f"• `{lot} Lot`: "
+                                f"Risk: -${loss_est:.2f} | TP1: +${tp1_est:.2f} | TP2: +${tp2_est:.2f}\n"
+                            )
 
                     msg = (
-                        f"🚨 *SMC FINAL EXECUTION ALERT* 🚨\n\n"
+                        f"🚨 *STEP 3: SMC FINAL EXECUTION TRIGGER* 🚨\n\n"
                         f"📌 *Asset:* `{symbol}`\n"
                         f"⚡ *Direction:* `{direction}`\n\n"
-                        f"🎯 *Entry:* `{p.get('entry', 0)}`\n"
-                        f"🛑 *Stop Loss:* `{p.get('sl', 0)}` ({p.get('pips_risk', 0)} Pips)\n"
+                        f"🎯 *Entry Price:* `{p.get('entry', 0)}`\n"
+                        f"🛑 *Stop Loss:* `{p.get('sl', 0)}`\n"
                         f"🎯 *Take Profit 1:* `{p.get('tp1', 0)}`\n"
                         f"🎯 *Take Profit 2:* `{p.get('tp2', 0)}`\n"
                         f"🎯 *Take Profit 3:* `{p.get('tp3', 0)}`\n"
                         f"⚖️ *Risk:Reward:* `{p.get('rr', 0)}:1`\n\n"
-                        f"📊 *LOT SIZE & PnL BREAKDOWN*\n"
+                        f"📊 *LOT SIZE PnL BREAKDOWN (0.01 to 1.0)*\n"
                         f"{matrix_text}\n"
                         f"📝 *Confluence:* {reason}"
                     )
