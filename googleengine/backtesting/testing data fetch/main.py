@@ -107,6 +107,7 @@ def run_bot():
 
                 # 1. LIQUIDITY SWEEP CHECK (STEP 1)
                 if status == "LIQUIDITY_SWEPT" or "Sweep" in reason:
+                    low_val, high_val = "N/A", "N/A"
                     if "Lows:" in reason and "Highs:" in reason:
                         try:
                             parts = reason.split("[")
@@ -119,20 +120,26 @@ def run_bot():
                     else:
                         sweep_display = reason
 
+                    direction_bias = signal.get('direction', 'SELL')
+                    if direction_bias == "SELL":
+                        liquidity_type = f"Sell-Side Liquidity Swept (Below Low: {low_val}) -> Expecting Bearish CHoCH reversal"
+                    else:
+                        liquidity_type = f"Buy-Side Liquidity Swept (Above High: {high_val}) -> Expecting Bullish CHoCH reversal"
+
                     if asset_states[symbol] != "SWEEP_ALERTED":
                         asset_states[symbol] = "SWEEP_ALERTED"
                         msg = (
                             f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
                             f"📌 *Asset:* `{symbol}`\n"
-                            f"⚡ *Direction Bias:* `{signal.get('direction', 'SELL')}`\n\n"
+                            f"⚡ *Direction Bias:* `{direction_bias}`\n\n"
                             f"📍 *Swept Levels:* `{sweep_display}`\n"
-                            f"🔍 *Looking for CHoCH at:* Awaiting 15M structure break past these boundaries.\n\n"
-                            f"📝 *Details:* {reason}"
+                            f"💧 *Liquidity Type:* `{liquidity_type}`\n"
+                            f"🔍 *Looking for CHoCH at:* Awaiting 15M structure break past boundary levels."
                         )
                         send_telegram_alert(msg)
                         print(f"🚨 Liquidity Sweep Alert Sent for {symbol}")
                     
-                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
                 # 2. CHoCH CONFIRMED CHECK (STEP 2)
                 elif status == "CHOCH_CONFIRMED":
