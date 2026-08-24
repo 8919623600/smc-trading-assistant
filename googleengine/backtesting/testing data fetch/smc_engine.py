@@ -6,6 +6,8 @@ class AdvancedSMCEngine:
         self.min_rr = min_rr
         self.max_rr = max_rr
         self.active_setups = {}
+        # Track state machine cooldowns per symbol to prevent looping feedback errors
+        self.symbol_states = {}
 
     def calculate_atr(self, df, period=14):
         if len(df) < period:
@@ -110,6 +112,9 @@ class AdvancedSMCEngine:
         if df_4h is None or df_1h is None or df_15m is None or df_1m is None:
             return {"status": "HOLD", "reason": "Missing multi-timeframe data feed"}
 
+        if symbol not in self.symbol_states:
+            self.symbol_states[symbol] = "SCANNING"
+
         # --- 1. 4H MACRO STRUCTURE BIAS ---
         swings_high = df_4h['high'].tail(10)
         swings_low = df_4h['low'].tail(10)
@@ -133,24 +138,38 @@ class AdvancedSMCEngine:
             swept_level = ext_low
         elif current_1h_high >= ext_high:
             sweep_direction = "SELL"
+            swept_level = ext_high
 
-        # Check existing active setup invalidation
+        # Check existing active setup invalidation or SL breach
         if symbol in self.active_setups:
             setup = self.active_setups[symbol]
             if (setup['direction'] == "BUY" and current_price < setup['sl']) or \
                (setup['direction'] == "SELL" and current_price > setup['sl']):
                 
                 del self.active_setups[symbol]
+                self.symbol_states[symbol] = "COOLDOWN"
                 return {
                     "status": "INVALIDATED",
                     "symbol": symbol,
-                    "reason": f"Price breached SL for active {setup['direction']} setup."
+                    "reason": f"Price breached structural SL for active {setup['direction']} setup. Entering cooldown."
+                }
+
+        # Handle Cooldown State Guardrail
+        if self.symbol_states[symbol] == "COOLDOWN":
+            # Require price to normalize or a completely new liquidity sweep to reset
+            if not sweep_direction:
+                self.symbol_states[symbol] = "SCANNING"
+            else:
+                return {
+                    "status": "HOLD",
+                    "symbol": symbol,
+                    "reason": "In state cooldown after previous setup invalidation/SL hit. Waiting for fresh cycle."
                 }
 
         liq_fmt = f"{swept_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{swept_level:.2f}"
 
         # --- 3. SETUP FORMING & FVG + BOS VALIDATION ---
-        if sweep_direction and symbol not in self.active_setups:
+        if sweep_direction and symbol not in self.active_setups and self.symbol_states[symbol] == "SCANNING":
             has_imbalance = self.check_fvg(df_15m, sweep_direction)
             structure_confirmed = self.check_bos_choch(df_15m, sweep_direction)
 
@@ -163,14 +182,19 @@ class AdvancedSMCEngine:
                     "reason": f"Lows: {active_liq_fmt} | Highs: {ext_high if sweep_direction=='BUY' else active_level}"
                 }
 
-            # Capture accurate CHoCH level and POI level from 15M candle structure
-            choch_level = float(df_15m.iloc[-1]['close'])
+            # Capture non-zero accurate CHoCH level and POI level from 15M candle structure
+            choch_level = float(df_15m.iloc[-1]['close']) if float(df_15m.iloc[-1]['close']) > 0 else float(df_15m.iloc[-2]['close'])
+            
+            # Identify Order Block (POI) extreme level
             poi_level = float(df_15m['low'].tail(3).min()) if sweep_direction == "BUY" else float(df_15m['high'].tail(3).max())
             
-            atr_1m = self.calculate_atr(df_1m)
-            sl_buffer = atr_1m * 0.5
-            recent_1m_swing = float(df_1m['low'].tail(5).min()) if sweep_direction == "BUY" else float(df_1m['high'].tail(5).max())
-            sl = (recent_1m_swing - sl_buffer) if sweep_direction == "BUY" else (recent_1m_swing + sl_buffer)
+            # --- FIX: Structural POI-anchored Stop Loss with Safe Buffer ---
+            # Instead of a sub-pip micro offset, anchor SL safely below/above the POI low/high + structural safety buffer (e.g. 3-5 pips or ATR-backed)
+            buffer_pips = 0.00030 if ("EUR" in symbol or "USD" in symbol) else 3.0
+            if sweep_direction == "BUY":
+                sl = poi_level - buffer_pips
+            else:
+                sl = poi_level + buffer_pips
             
             self.active_setups[symbol] = {
                 "bias": bias,
@@ -179,6 +203,7 @@ class AdvancedSMCEngine:
                 "poi_price": poi_level,
                 "sl": sl
             }
+            self.symbol_states[symbol] = "WAITING_ENTRY"
 
             return {
                 "status": "CHOCH_CONFIRMED",
@@ -204,11 +229,13 @@ class AdvancedSMCEngine:
             
             risk_dist = abs(entry - sl)
             reward_dist = abs(tp1 - entry)
-            rr = reward_dist / risk_dist if risk_dist > 0 else 0
+            # Prevent division errors or distorted wild fluctuations with a minimum risk floor check
+            rr = reward_dist / risk_dist if risk_dist > 0.00001 else 0
 
             if self.min_rr <= rr <= self.max_rr:
                 pnl_matrix, pips_risk = self.calculate_pnl_matrix(symbol, entry, sl, tp1, tp2)
                 del self.active_setups[symbol]
+                self.symbol_states[symbol] = "IN_TRADE"
 
                 return {
                     "status": "TRIGGERED",
