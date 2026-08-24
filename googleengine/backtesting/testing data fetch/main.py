@@ -107,23 +107,32 @@ def run_bot():
 
                 # 1. LIQUIDITY SWEEP CHECK (STEP 1)
                 if status == "LIQUIDITY_SWEPT" or "Sweep" in reason:
-                    sweep_lvl = signal.get("level", signal.get("sweep_price", signal.get("poi_price", 0)))
-                    s_fmt = f"{sweep_lvl:.5f}" if "EUR" in symbol or "USD" in symbol else f"{sweep_lvl:.2f}"
-                    
+                    if "Lows:" in reason and "Highs:" in reason:
+                        try:
+                            parts = reason.split("[")
+                            levels_part = parts[1].replace("]", "").split("|")
+                            low_val = levels_part[0].replace("Lows:", "").strip()
+                            high_val = levels_part[1].replace("Highs:", "").strip()
+                            sweep_display = f"Lows: {low_val} | Highs: {high_val}"
+                        except:
+                            sweep_display = "External Range Boundary"
+                    else:
+                        sweep_display = reason
+
                     if asset_states[symbol] != "SWEEP_ALERTED":
                         asset_states[symbol] = "SWEEP_ALERTED"
                         msg = (
                             f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
                             f"📌 *Asset:* `{symbol}`\n"
                             f"⚡ *Direction Bias:* `{signal.get('direction', 'SELL')}`\n\n"
-                            f"📍 *Swept Price Level:* `{s_fmt}`\n"
-                            f"🔍 *Looking for CHoCH at:* Awaiting structural break past macro threshold bounds.\n\n"
+                            f"📍 *Swept Levels:* `{sweep_display}`\n"
+                            f"🔍 *Looking for CHoCH at:* Awaiting 15M structure break past these boundaries.\n\n"
                             f"📝 *Details:* {reason}"
                         )
                         send_telegram_alert(msg)
                         print(f"🚨 Liquidity Sweep Alert Sent for {symbol}")
                     
-                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
                 # 2. CHoCH CONFIRMED CHECK (STEP 2)
                 elif status == "CHOCH_CONFIRMED":
@@ -144,7 +153,7 @@ def run_bot():
                         send_telegram_alert(msg)
                         print(f"⏳ 15M CHoCH Alert Sent for {symbol} at Level {c_fmt}")
                     
-                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
                 # 3. SETUP FORMING CHECK
                 elif status == "SETUP_FORMING":
@@ -159,7 +168,7 @@ def run_bot():
                     )
                     send_telegram_alert(msg)
                     print(f"⏳ Setup Forming Alert Sent for {symbol}")
-                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
                 # 4. INVALIDATED CHECK
                 elif status == "INVALIDATED":
@@ -174,7 +183,7 @@ def run_bot():
                         send_telegram_alert(msg)
                         print(f"❌ Setup Invalidated Alert Sent for {symbol} - State Reset.")
                     
-                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
                 # 5. TRIGGERED / EXECUTION CHECK (STEP 3)
                 elif (status == "TRIGGERED" or "TRIGGER" in str(status) or "ENTRY" in str(status)) and symbol not in open_trades:
@@ -198,13 +207,10 @@ def run_bot():
                         p.get("tp1", 0), p.get("tp2", 0), p.get("tp3", 0), f"Direction: {direction} | RR: {p.get('rr', 0)}"
                     )
 
-                    # Generating matrix for requested lot sizes: 0.01, 0.02, 0.03, 0.1, 0.2, 0.5, 1.0
-                    # Standardizing based on engine's base pips risk or dynamic sizing if available
-                    base_risk_unit = p.get("pips_risk", 10) # fallback factor
+                    base_risk_unit = p.get("pips_risk", 10)
                     matrix_text = ""
                     target_lots = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5, 1.0]
                     
-                    # If engine provides matrix, use it, otherwise build precise custom matrix
                     engine_matrix = p.get("pnl_matrix", [])
                     if engine_matrix:
                         for item in engine_matrix:
@@ -213,7 +219,6 @@ def run_bot():
                                 f"Risk: -${item.get('loss', 0):.2f} | TP1: +${item.get('tp1', 0):.2f} | TP2: +${item.get('tp2', 0):.2f}\n"
                             )
                     else:
-                        # Fallback computation mapping requested lots
                         for lot in target_lots:
                             loss_est = lot * base_risk_unit * 10
                             tp1_est = loss_est * 1.5
@@ -243,7 +248,7 @@ def run_bot():
                 else:
                     if asset_states[symbol] not in ["SWEEP_ALERTED", "CHOCH_ALERTED", "IN_TRADE"]:
                         asset_states[symbol] = "IDLE"
-                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
                 # --- ACTIVE TRADE AUDITING FOR TP / SL EXITS ---
                 if symbol in open_trades:
