@@ -33,9 +33,8 @@ def log_trade_event(symbol, event_type, entry, sl, tp1, tp2, tp3, details):
         print(f"⚠️ Error writing to trade_history.csv: {e}")
 
 class SmartRotatorFetcher:
-    """Rotates across Twelve Data API keys and prints which key is active for transparency"""
+    """Rotates across Twelve Data API keys and automatically skips exhausted/failed keys"""
     def __init__(self, keys):
-        # Filter out None or empty keys
         self.keys = [k for k in keys if k]
         self.key_index = 0
         print(f"🔑 Loaded {len(self.keys)} API Key(s) into rotator.")
@@ -53,20 +52,24 @@ class SmartRotatorFetcher:
         return TDClient(apikey=active_key)
 
     def fetch_single_series(self, symbol, interval):
-        try:
-            client = self.get_next_client()
-            time.sleep(4)  # Pacing
-            ts = client.time_series(symbol=symbol, interval=interval, outputsize=100)
-            df = ts.as_pandas()
-            if df is not None and not df.empty:
-                df = df.reset_index()
-                if 'datetime' in df.columns:
-                    df = df.rename(columns={'datetime': 'timestamp'})
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df = df.sort_values('timestamp').reset_index(drop=True)
-                return df
-        except Exception as e:
-            print(f"⚠️ Error fetching {interval} for {symbol}: {e}")
+        # Try through available keys until one succeeds or all fail
+        for _ in range(len(self.keys)):
+            try:
+                client = self.get_next_client()
+                time.sleep(2)  # Pacing
+                ts = client.time_series(symbol=symbol, interval=interval, outputsize=100)
+                df = ts.as_pandas()
+                if df is not None and not df.empty:
+                    df = df.reset_index()
+                    if 'datetime' in df.columns:
+                        df = df.rename(columns={'datetime': 'timestamp'})
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    df = df.sort_values('timestamp').reset_index(drop=True)
+                    return df
+            except Exception as e:
+                print(f"⚠️ Key hit limit or error fetching {interval} for {symbol}: {e}. Switching to next key...")
+                continue
+        print(f"❌ All available API keys failed or exhausted limits for {symbol} ({interval})")
         return None
 
 def is_within_trading_window(symbol):
@@ -86,12 +89,12 @@ def is_within_trading_window(symbol):
 
 def run_bot():
     print("==================================================")
-    print("🚀 SMC SIGNAL BOT ACTIVE (DEBUGGING KEYS & TIME WINDOWS)")
+    print("🚀 SMC SIGNAL BOT ACTIVE (SMART KEY FAILOVER & TIME WINDOWS)")
     print(f"📊 Assets Monitored: {SYMBOLS}")
-    print(f"🔑 Configured Keys Array: {TWELVE_DATA_KEYS}")
+    print(f"🔑 Configured Keys Array Length: {len(TWELVE_DATA_KEYS)}")
     print("==================================================")
     
-    send_telegram_alert("🟢 *SMC Signal Bot Started with Key Debugging Active*")
+    send_telegram_alert("🟢 *SMC Signal Bot Started with Smart Key Failover Active*")
 
     fetcher = SmartRotatorFetcher(TWELVE_DATA_KEYS)
     engine = AdvancedSMCEngine(min_rr=2.0, max_rr=8.0)
