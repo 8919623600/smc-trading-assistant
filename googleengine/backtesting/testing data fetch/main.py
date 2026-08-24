@@ -146,7 +146,7 @@ def run_bot():
                     send_telegram_alert(msg)
                     print(f"❌ Setup Invalidated Alert Sent for {signal['symbol']}")
 
-                elif status == "TRIGGERED" and symbol not in open_trades:
+                elif (status == "TRIGGERED" or "TRIGGER" in str(status) or "ENTRY" in str(status)) and symbol not in open_trades:
                     p = signal["trade_params"]
                     direction = signal["decision"]
                     
