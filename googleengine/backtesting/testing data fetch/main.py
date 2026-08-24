@@ -106,7 +106,7 @@ def run_bot():
                     asset_states[symbol] = "IDLE"
 
                 # 1. LIQUIDITY SWEEP CHECK (STEP 1)
-                if status == "LIQUIDITY_SWEPT" or "Sweep" in reason:
+                if status == "LIQUIDITY_SWEPT":
                     low_val, high_val = "N/A", "N/A"
                     if "Lows:" in reason and "Highs:" in reason:
                         try:
