@@ -24,7 +24,7 @@ case "$1" in
             echo "⚠️ Bot is already running!"
         else
             echo "🚀 Starting SMC Bot in the background..."
-            nohup python3 -u "$BOT_SCRIPT" > "$LOG_FILE" 2>&1 &
+            nohup bash -c "source ~/.bashrc && python3 -u $BOT_SCRIPT" > "$LOG_FILE" 2>&1 &
             echo "✅ Bot started successfully. Logging to $LOG_FILE"
         fi
         ;;
@@ -41,7 +41,7 @@ case "$1" in
         echo "🔄 Restarting SMC Bot..."
         pkill -f "$BOT_SCRIPT" 2>/dev/null
         sleep 2
-        nohup python3 -u "$BOT_SCRIPT" > "$LOG_FILE" 2>&1 &
+        nohup bash -c "source ~/.bashrc && python3 -u $BOT_SCRIPT" > "$LOG_FILE" 2>&1 &
         echo "✅ Bot restarted successfully."
         ;;
     status)
