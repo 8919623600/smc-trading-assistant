@@ -98,7 +98,7 @@ def run_bot():
                 signal = engine.analyze(data_dict, symbol)
                 status = signal.get("status")
 
-                if status == "LIQUIDITY_SWEPT":
+                if status == "LIQUIDITY_SWEPT" or "Sweep" in signal.get("reason", ""):
                     msg = (
                         f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
                         f"📌 *Asset:* `{signal['symbol']}`\n"
