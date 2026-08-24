@@ -39,27 +39,26 @@ class SmartRotatorFetcher:
         self.key_index = 0
         print(f"🔑 Loaded {len(self.keys)} API Key(s) into rotator.")
 
-    def get_next_client(self):
+    def fetch_single_series(self, symbol, interval):
         if not self.keys:
             raise ValueError("No Twelve Data API keys provided! Check your config or environment variables.")
-        
-        active_key = self.keys[self.key_index]
-        masked_key = f"{active_key[:4]}...{active_key[-4:]}" if len(active_key) > 8 else "****"
-        print(f"🔄 Rotating to API Key Index [{self.key_index + 1}/{len(self.keys)}] (Key: {masked_key})")
-        
-        # Advance index for the next request
-        self.key_index = (self.key_index + 1) % len(self.keys)
-        return TDClient(apikey=active_key)
 
-    def fetch_single_series(self, symbol, interval):
-        # Try through available keys until one succeeds or all fail
-        for _ in range(len(self.keys)):
+        attempts = len(self.keys)
+        for _ in range(attempts):
+            active_key = self.keys[self.key_index]
+            masked_key = f"{active_key[:4]}...{active_key[-4:]}" if len(active_key) > 8 else "****"
+            print(f"🔄 Trying API Key Index [{self.key_index + 1}/{len(self.keys)}] (Key: {masked_key})")
+            
             try:
-                client = self.get_next_client()
                 time.sleep(2)  # Pacing
+                client = TDClient(apikey=active_key)
                 ts = client.time_series(symbol=symbol, interval=interval, outputsize=100)
                 df = ts.as_pandas()
+                
                 if df is not None and not df.empty:
+                    # Success! Advance index for the *next* separate call
+                    self.key_index = (self.key_index + 1) % len(self.keys)
+                    
                     df = df.reset_index()
                     if 'datetime' in df.columns:
                         df = df.rename(columns={'datetime': 'timestamp'})
@@ -68,7 +67,10 @@ class SmartRotatorFetcher:
                     return df
             except Exception as e:
                 print(f"⚠️ Key hit limit or error fetching {interval} for {symbol}: {e}. Switching to next key...")
+                # Advance to next key immediately upon failure
+                self.key_index = (self.key_index + 1) % len(self.keys)
                 continue
+                
         print(f"❌ All available API keys failed or exhausted limits for {symbol} ({interval})")
         return None
 
