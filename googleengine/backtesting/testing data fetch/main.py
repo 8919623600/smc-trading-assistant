@@ -82,9 +82,8 @@ def run_bot():
     fetcher = SmartRotatorFetcher(TWELVE_DATA_KEYS)
     engine = AdvancedSMCEngine(min_rr=2.0, max_rr=8.0)
     
-    # Tracks active live trades and asset workflow states to prevent spam
     open_trades = {}
-    asset_states = {}  # Tracks current workflow state per symbol
+    asset_states = {}
 
     while True:
         try:
@@ -99,15 +98,16 @@ def run_bot():
                 signal = engine.analyze(data_dict, symbol)
                 status = signal.get("status")
                 reason = signal.get("reason", "")
+                
+                # Get current 1M close price for display formatting
+                current_price = float(data_dict["1M"].iloc[-1]['close'])
+                price_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
 
                 if symbol not in asset_states:
                     asset_states[symbol] = "IDLE"
 
-                # 1. LIQUIDITY SWEEP CHECK (Fires once per sweep event)
+                # 1. LIQUIDITY SWEEP CHECK
                 if status == "LIQUIDITY_SWEPT" or "Sweep" in reason:
-                    level_val = signal.get("level", signal.get("sweep_price", signal.get("poi_price", 0)))
-                    l_fmt = f"{level_val:.5f}" if "EUR" in symbol or "USD" in symbol else f"{level_val:.2f}"
-                    
                     if asset_states[symbol] != "SWEEP_ALERTED":
                         asset_states[symbol] = "SWEEP_ALERTED"
                         msg = (
@@ -120,8 +120,9 @@ def run_bot():
                         )
                         send_telegram_alert(msg)
                         print(f"🚨 Liquidity Sweep Alert Sent for {symbol}")
-                    else:
-                        print(f"🔍 Asset: {symbol} | Status: WAITING FOR CHoCH | Ref Level: {l_fmt} | Reason: {reason}")
+                    
+                    # Maintains your clean preferred terminal print structure
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
                 # 2. CHoCH CONFIRMED CHECK
                 elif status == "CHOCH_CONFIRMED":
@@ -138,8 +139,8 @@ def run_bot():
                         )
                         send_telegram_alert(msg)
                         print(f"⏳ 15M CHoCH Alert Sent for {symbol} at POI {p_fmt}")
-                    else:
-                        print(f"🔍 Asset: {symbol} | Status: WAITING FOR 1M POI ENTRY | POI: {p_fmt} | Reason: {reason}")
+                    
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
                 # 3. SETUP FORMING CHECK
                 elif status == "SETUP_FORMING":
@@ -154,8 +155,9 @@ def run_bot():
                     )
                     send_telegram_alert(msg)
                     print(f"⏳ Setup Forming Alert Sent for {symbol}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
-                # 4. INVALIDATED CHECK (Resets state tracker)
+                # 4. INVALIDATED CHECK
                 elif status == "INVALIDATED":
                     if asset_states[symbol] != "INVALIDATED":
                         asset_states[symbol] = "IDLE"
@@ -167,8 +169,8 @@ def run_bot():
                         )
                         send_telegram_alert(msg)
                         print(f"❌ Setup Invalidated Alert Sent for {symbol} - State Reset.")
-                    else:
-                        print(f"🔍 Asset: {symbol} | Status: INVALIDATED | Reason: {reason}")
+                    
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
                 # 5. TRIGGERED / EXECUTION CHECK
                 elif (status == "TRIGGERED" or "TRIGGER" in str(status) or "ENTRY" in str(status)) and symbol not in open_trades:
@@ -219,13 +221,11 @@ def run_bot():
                 else:
                     if asset_states[symbol] not in ["SWEEP_ALERTED", "CHOCH_ALERTED", "IN_TRADE"]:
                         asset_states[symbol] = "IDLE"
-                    print(f"🔍 Asset: {symbol} | State: {asset_states[symbol]} | Reason: {reason}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
                 # --- ACTIVE TRADE AUDITING FOR TP / SL EXITS ---
                 if symbol in open_trades:
                     trade = open_trades[symbol]
-                    current_price = float(data_dict["1M"].iloc[-1]['close'])
-                    
                     entry = trade["entry"]
                     sl = trade["sl"]
                     tp1 = trade["tp1"]
