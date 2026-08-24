@@ -132,7 +132,7 @@ def run_bot():
                         send_telegram_alert(msg)
                         print(f"🚨 Liquidity Sweep Alert Sent for {symbol}")
                     
-                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
+                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason} | Price: {price_fmt}")
 
                 # 2. CHoCH CONFIRMED CHECK (STEP 2)
                 elif status == "CHOCH_CONFIRMED":
