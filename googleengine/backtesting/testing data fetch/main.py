@@ -33,22 +33,29 @@ def log_trade_event(symbol, event_type, entry, sl, tp1, tp2, tp3, details):
         print(f"⚠️ Error writing to trade_history.csv: {e}")
 
 class SmartRotatorFetcher:
-    """Rotates across 3 Twelve Data API keys to triple rate limits and load-balance requests"""
+    """Rotates across Twelve Data API keys and prints which key is active for transparency"""
     def __init__(self, keys):
+        # Filter out None or empty keys
         self.keys = [k for k in keys if k]
         self.key_index = 0
+        print(f"🔑 Loaded {len(self.keys)} API Key(s) into rotator.")
 
     def get_next_client(self):
         if not self.keys:
-            raise ValueError("No Twelve Data API keys provided!")
+            raise ValueError("No Twelve Data API keys provided! Check your config or environment variables.")
+        
         active_key = self.keys[self.key_index]
+        masked_key = f"{active_key[:4]}...{active_key[-4:]}" if len(active_key) > 8 else "****"
+        print(f"🔄 Rotating to API Key Index [{self.key_index + 1}/{len(self.keys)}] (Key: {masked_key})")
+        
+        # Advance index for the next request
         self.key_index = (self.key_index + 1) % len(self.keys)
         return TDClient(apikey=active_key)
 
     def fetch_single_series(self, symbol, interval):
         try:
             client = self.get_next_client()
-            time.sleep(4)  # Pacing adapted for 3 keys
+            time.sleep(4)  # Pacing
             ts = client.time_series(symbol=symbol, interval=interval, outputsize=100)
             df = ts.as_pandas()
             if df is not None and not df.empty:
@@ -79,11 +86,12 @@ def is_within_trading_window(symbol):
 
 def run_bot():
     print("==================================================")
-    print("🚀 SMC SIGNAL BOT ACTIVE (3 KEYS, CACHED HTF & TIME WINDOWS)")
+    print("🚀 SMC SIGNAL BOT ACTIVE (DEBUGGING KEYS & TIME WINDOWS)")
     print(f"📊 Assets Monitored: {SYMBOLS}")
+    print(f"🔑 Configured Keys Array: {TWELVE_DATA_KEYS}")
     print("==================================================")
     
-    send_telegram_alert("🟢 *SMC Signal Bot Started with 3 Keys, Cached HTF & Time Windows*")
+    send_telegram_alert("🟢 *SMC Signal Bot Started with Key Debugging Active*")
 
     fetcher = SmartRotatorFetcher(TWELVE_DATA_KEYS)
     engine = AdvancedSMCEngine(min_rr=2.0, max_rr=8.0)
