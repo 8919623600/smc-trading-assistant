@@ -33,9 +33,11 @@ def log_trade_event(symbol, event_type, entry, sl, tp1, tp2, tp3, details):
         print(f"⚠️ Error writing to trade_history.csv: {e}")
 
 class SmartRotatorFetcher:
-    """Rotates across Twelve Data API keys and silently skips exhausted/failed keys"""
+    """Rotates across Twelve Data API keys, automatically disabling keys that hit daily credit limits (429)."""
     def __init__(self, keys):
         self.keys = [k for k in keys if k]
+        # Track status of each key: True = active, False = exhausted/disabled
+        self.key_status = {i: True for i in range(len(self.keys))}
         self.key_index = 0
         print(f"🔑 Loaded {len(self.keys)} API Key(s) into rotator.")
 
@@ -45,16 +47,20 @@ class SmartRotatorFetcher:
 
         attempts = len(self.keys)
         for _ in range(attempts):
+            # If current key is marked dead/exhausted, skip to next
+            if not self.key_status[self.key_index]:
+                self.key_index = (self.key_index + 1) % len(self.keys)
+                continue
+
             active_key = self.keys[self.key_index]
             
             try:
-                time.sleep(2)  # Pacing
+                time.sleep(1)  # Pacing
                 client = TDClient(apikey=active_key)
                 ts = client.time_series(symbol=symbol, interval=interval, outputsize=100)
                 df = ts.as_pandas()
                 
                 if df is not None and not df.empty:
-                    self.key_index = (self.key_index + 1) % len(self.keys)
                     df = df.reset_index()
                     if 'datetime' in df.columns:
                         df = df.rename(columns={'datetime': 'timestamp'})
@@ -62,11 +68,18 @@ class SmartRotatorFetcher:
                     df = df.sort_values('timestamp').reset_index(drop=True)
                     return df
             except Exception as e:
-                print(f"⚠️ API Key failed for {symbol} ({interval}), rotating key. Error: {e}")
+                error_msg = str(e)
+                if "429" in error_msg or "out of API credits" in error_msg:
+                    print(f"🛑 Key {self.key_index + 1} exhausted daily credits! Permanently disabling for this session.")
+                    self.key_status[self.key_index] = False  # Disable so it won't be retried
+                else:
+                    print(f"⚠️ API Key {self.key_index + 1} failed for {symbol} ({interval}). Error: {e}")
+                
+                # Move to next key index
                 self.key_index = (self.key_index + 1) % len(self.keys)
                 continue
                 
-        print(f"❌ All available API keys failed or exhausted limits for {symbol} ({interval})")
+        print(f"❌ All available non-exhausted API keys failed for {symbol} ({interval})")
         return None
 
 def is_within_trading_window(symbol):
