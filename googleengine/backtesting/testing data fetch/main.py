@@ -82,8 +82,9 @@ def run_bot():
     fetcher = SmartRotatorFetcher(TWELVE_DATA_KEYS)
     engine = AdvancedSMCEngine(min_rr=2.0, max_rr=8.0)
     
-    # Tracks active live trades: {symbol: trade_dict}
+    # Tracks active live trades and asset workflow states to prevent spam
     open_trades = {}
+    asset_states = {}  # Tracks current workflow state per symbol
 
     while True:
         try:
@@ -97,32 +98,50 @@ def run_bot():
 
                 signal = engine.analyze(data_dict, symbol)
                 status = signal.get("status")
+                reason = signal.get("reason", "")
 
-                if status == "LIQUIDITY_SWEPT" or "Sweep" in signal.get("reason", ""):
-                    msg = (
-                        f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
-                        f"📌 *Asset:* `{symbol}`\n"
-                        f"⚡ *Direction Bias:* `{signal.get('direction', 'SELL')}`\n\n"
-                        f"🔍 *Status:* External macro liquidity pool was just raided/swept. "
-                        f"Now waiting for 15M structure confirmation (CHoCH / BOS).\n\n"
-                        f"📝 *Details:* {signal.get('reason', '')}"
-                    )
-                    send_telegram_alert(msg)
-                    print(f"🚨 Liquidity Sweep Alert Sent for {symbol}")
+                if symbol not in asset_states:
+                    asset_states[symbol] = "IDLE"
 
+                # 1. LIQUIDITY SWEEP CHECK (Fires once per sweep event)
+                if status == "LIQUIDITY_SWEPT" or "Sweep" in reason:
+                    level_val = signal.get("level", signal.get("sweep_price", signal.get("poi_price", 0)))
+                    l_fmt = f"{level_val:.5f}" if "EUR" in symbol or "USD" in symbol else f"{level_val:.2f}"
+                    
+                    if asset_states[symbol] != "SWEEP_ALERTED":
+                        asset_states[symbol] = "SWEEP_ALERTED"
+                        msg = (
+                            f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
+                            f"📌 *Asset:* `{symbol}`\n"
+                            f"⚡ *Direction Bias:* `{signal.get('direction', 'SELL')}`\n\n"
+                            f"🔍 *Status:* External macro liquidity pool was just raided/swept. "
+                            f"Now waiting for 15M structure confirmation (CHoCH / BOS).\n\n"
+                            f"📝 *Details:* {reason}"
+                        )
+                        send_telegram_alert(msg)
+                        print(f"🚨 Liquidity Sweep Alert Sent for {symbol}")
+                    else:
+                        print(f"🔍 Asset: {symbol} | Status: WAITING FOR CHoCH | Ref Level: {l_fmt} | Reason: {reason}")
+
+                # 2. CHoCH CONFIRMED CHECK
                 elif status == "CHOCH_CONFIRMED":
                     p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
-                    msg = (
-                        f"⏳ *STEP 2: 15M CHoCH & FVG CONFIRMED* ⏳\n\n"
-                        f"📌 *Asset:* `{symbol}`\n"
-                        f"⚡ *Direction:* `{signal.get('direction', '')}`\n\n"
-                        f"🔍 *Status:* Institutional structure shift confirmed. "
-                        f"**Bot is now actively watching the 1M chart for an entry retracement into POI:** `{p_fmt}`\n\n"
-                        f"📝 *Confluence:* {signal.get('reason', '')}"
-                    )
-                    send_telegram_alert(msg)
-                    print(f"⏳ 15M CHoCH Alert Sent for {symbol} at POI {p_fmt}")
+                    if asset_states[symbol] != "CHOCH_ALERTED":
+                        asset_states[symbol] = "CHOCH_ALERTED"
+                        msg = (
+                            f"⏳ *STEP 2: 15M CHoCH & FVG CONFIRMED* ⏳\n\n"
+                            f"📌 *Asset:* `{symbol}`\n"
+                            f"⚡ *Direction:* `{signal.get('direction', '')}`\n\n"
+                            f"🔍 *Status:* Institutional structure shift confirmed. "
+                            f"**Bot is now actively watching the 1M chart for an entry retracement into POI:** `{p_fmt}`\n\n"
+                            f"📝 *Confluence:* {reason}"
+                        )
+                        send_telegram_alert(msg)
+                        print(f"⏳ 15M CHoCH Alert Sent for {symbol} at POI {p_fmt}")
+                    else:
+                        print(f"🔍 Asset: {symbol} | Status: WAITING FOR 1M POI ENTRY | POI: {p_fmt} | Reason: {reason}")
 
+                # 3. SETUP FORMING CHECK
                 elif status == "SETUP_FORMING":
                     p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
                     msg = (
@@ -131,22 +150,29 @@ def run_bot():
                         f"⚡ *Anticipated Direction:* `{signal.get('direction', '')}`\n\n"
                         f"🔍 *Status:* Macro criteria met. "
                         f"**Monitoring 1M chart for entry at POI:** `{p_fmt}`\n\n"
-                        f"📝 *Confluence:* {signal.get('reason', '')}"
+                        f"📝 *Confluence:* {reason}"
                     )
                     send_telegram_alert(msg)
                     print(f"⏳ Setup Forming Alert Sent for {symbol}")
 
+                # 4. INVALIDATED CHECK (Resets state tracker)
                 elif status == "INVALIDATED":
-                    msg = (
-                        f"❌ *SMC SETUP INVALIDATED* ❌\n\n"
-                        f"📌 *Asset:* `{symbol}`\n"
-                        f"⚠️ *Reason:* {signal.get('reason', '')}\n\n"
-                        f"🛑 *Action:* Discarding previous setup watch."
-                    )
-                    send_telegram_alert(msg)
-                    print(f"❌ Setup Invalidated Alert Sent for {symbol}")
+                    if asset_states[symbol] != "INVALIDATED":
+                        asset_states[symbol] = "IDLE"
+                        msg = (
+                            f"❌ *SMC SETUP INVALIDATED* ❌\n\n"
+                            f"📌 *Asset:* `{symbol}`\n"
+                            f"⚠️ *Reason:* {reason}\n\n"
+                            f"🛑 *Action:* Discarding previous setup watch. Resetting to scan new liquidity sweeps."
+                        )
+                        send_telegram_alert(msg)
+                        print(f"❌ Setup Invalidated Alert Sent for {symbol} - State Reset.")
+                    else:
+                        print(f"🔍 Asset: {symbol} | Status: INVALIDATED | Reason: {reason}")
 
+                # 5. TRIGGERED / EXECUTION CHECK
                 elif (status == "TRIGGERED" or "TRIGGER" in str(status) or "ENTRY" in str(status)) and symbol not in open_trades:
+                    asset_states[symbol] = "IN_TRADE"
                     p = signal.get("trade_params", {})
                     direction = signal.get("decision", signal.get("direction", "BUY"))
                     
@@ -185,13 +211,15 @@ def run_bot():
                         f"⚖️ *Risk:Reward:* `{p.get('rr', 0)}:1`\n\n"
                         f"📊 *LOT SIZE & PnL BREAKDOWN*\n"
                         f"{matrix_text}\n"
-                        f"📝 *Confluence:* {signal.get('reason', '')}"
+                        f"📝 *Confluence:* {reason}"
                     )
                     send_telegram_alert(msg)
                     print(f"🚨 Final Execution Alert Sent & Logged for {symbol}")
 
                 else:
-                    print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {signal.get('reason')}")
+                    if asset_states[symbol] not in ["SWEEP_ALERTED", "CHOCH_ALERTED", "IN_TRADE"]:
+                        asset_states[symbol] = "IDLE"
+                    print(f"🔍 Asset: {symbol} | State: {asset_states[symbol]} | Reason: {reason}")
 
                 # --- ACTIVE TRADE AUDITING FOR TP / SL EXITS ---
                 if symbol in open_trades:
@@ -210,6 +238,7 @@ def run_bot():
                             send_telegram_alert(f"❌ *STOP LOSS HIT* for `{symbol}` at `{current_price}`. Trade closed.")
                             print(f"❌ STOP LOSS HIT for {symbol} at {current_price}.")
                             del open_trades[symbol]
+                            asset_states[symbol] = "IDLE"
                         elif not trade["hit_tp1"] and current_price >= tp1:
                             trade["hit_tp1"] = True
                             log_trade_event(symbol, "TP1_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
@@ -225,6 +254,7 @@ def run_bot():
                             send_telegram_alert(f"🏆 *TP3 FULL TARGET REACHED* for `{symbol}` at `{current_price}`! Trade fully closed.")
                             print(f"🏆 TP3 FULL TARGET HIT for {symbol} at {current_price}!")
                             del open_trades[symbol]
+                            asset_states[symbol] = "IDLE"
 
                     elif trade["direction"] == "SELL":
                         if current_price >= sl:
@@ -232,6 +262,7 @@ def run_bot():
                             send_telegram_alert(f"❌ *STOP LOSS HIT* for `{symbol}` at `{current_price}`. Trade closed.")
                             print(f"❌ STOP LOSS HIT for {symbol} at {current_price}.")
                             del open_trades[symbol]
+                            asset_states[symbol] = "IDLE"
                         elif not trade["hit_tp1"] and current_price <= tp1:
                             trade["hit_tp1"] = True
                             log_trade_event(symbol, "TP1_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
@@ -247,6 +278,7 @@ def run_bot():
                             send_telegram_alert(f"🏆 *TP3 FULL TARGET REACHED* for `{symbol}` at `{current_price}`! Trade fully closed.")
                             print(f"🏆 TP3 FULL TARGET HIT for {symbol} at {current_price}!")
                             del open_trades[symbol]
+                            asset_states[symbol] = "IDLE"
 
             print("-" * 50)
         except KeyboardInterrupt:
