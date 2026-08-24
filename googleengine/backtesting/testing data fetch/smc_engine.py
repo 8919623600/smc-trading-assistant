@@ -45,7 +45,6 @@ class AdvancedSMCEngine:
         return False
 
     def get_macro_external_liquidity_pools(self, df_1h):
-        """Identifies both external macro sell-side (lows) and buy-side (highs) pools"""
         if len(df_1h) < 50:
             external_low = float(df_1h['low'].min())
             external_high = float(df_1h['high'].max())
@@ -55,7 +54,6 @@ class AdvancedSMCEngine:
         return external_low, external_high
 
     def get_opposing_liquidity_targets(self, df_1h, direction, entry):
-        """Targets opposing macro liquidity pools"""
         highs = df_1h['high'].tail(50).values
         lows = df_1h['low'].tail(50).values
 
@@ -131,10 +129,10 @@ class AdvancedSMCEngine:
         swept_level = 0.0
 
         if current_1h_low <= ext_low:
-            sweep_direction = "BUY"  # Sell-side liquidity swept -> Look for Longs
+            sweep_direction = "BUY"
             swept_level = ext_low
         elif current_1h_high >= ext_high:
-            sweep_direction = "SELL" # Buy-side liquidity swept -> Look for Shorts
+            sweep_direction = "SELL"
 
         # Check existing active setup invalidation
         if symbol in self.active_setups:
@@ -160,10 +158,13 @@ class AdvancedSMCEngine:
                 active_level = ext_low if sweep_direction == "BUY" else ext_high
                 active_liq_fmt = f"{active_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{active_level:.2f}"
                 return {
-                    "status": "HOLD",
-                    "reason": f"Bi-Directional Sweep [{sweep_direction}] at {active_liq_fmt}, awaiting 15M FVG & BOS confirmation."
+                    "status": "LIQUIDITY_SWEPT",
+                    "direction": sweep_direction,
+                    "reason": f"Lows: {active_liq_fmt} | Highs: {ext_high if sweep_direction=='BUY' else active_level}"
                 }
 
+            # Capture accurate CHoCH level and POI level from 15M candle structure
+            choch_level = float(df_15m.iloc[-1]['close'])
             poi_level = float(df_15m['low'].tail(3).min()) if sweep_direction == "BUY" else float(df_15m['high'].tail(3).max())
             
             atr_1m = self.calculate_atr(df_1m)
@@ -174,16 +175,18 @@ class AdvancedSMCEngine:
             self.active_setups[symbol] = {
                 "bias": bias,
                 "direction": sweep_direction,
+                "choch_price": choch_level,
                 "poi_price": poi_level,
                 "sl": sl
             }
 
-            p_fmt = f"{poi_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{poi_level:.2f}"
             return {
-                "status": "SETUP_FORMING",
+                "status": "CHOCH_CONFIRMED",
                 "symbol": symbol,
                 "direction": sweep_direction,
-                "reason": f"External Liquidity Swept [{liq_fmt}] | 15M BOS Confirmed [{sweep_direction}] | Awaiting POI: {p_fmt}"
+                "choch_price": choch_level,
+                "poi_price": poi_level,
+                "reason": f"External Liquidity Swept {liq_fmt} | 15M BOS Confirmed {sweep_direction} | Awaiting POI: {poi_level}"
             }
 
         # --- 4. ACTIVE SETUP TRACKING & OPPOSING LIQUIDITY TP TARGETS ---
@@ -191,6 +194,7 @@ class AdvancedSMCEngine:
             setup = self.active_setups[symbol]
             direction = setup['direction']
             poi_level = setup['poi_price']
+            choch_level = setup['choch_price']
             p_fmt = f"{poi_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{poi_level:.2f}"
             
             entry = current_price
@@ -223,11 +227,14 @@ class AdvancedSMCEngine:
                 }
             else:
                 return {
-                    "status": "HOLD", 
+                    "status": "CHOCH_CONFIRMED",
+                    "symbol": symbol,
+                    "direction": direction,
+                    "choch_price": choch_level,
+                    "poi_price": poi_level,
                     "reason": f"Liquidity Swept | Awaiting price retracement to Order Block ({p_fmt}) | Current RR: {rr:.2f}"
                 }
 
-        # Default HOLD reason scanning both Highs & Lows
         low_fmt = f"{ext_low:.5f}" if "EUR" in symbol or "USD" in symbol else f"{ext_low:.2f}"
         high_fmt = f"{ext_high:.5f}" if "EUR" in symbol or "USD" in symbol else f"{ext_high:.2f}"
         curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
