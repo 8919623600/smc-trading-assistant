@@ -3,7 +3,7 @@ import os
 import csv
 import requests
 import pandas as pd
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timedelta
 from twelvedata import TDClient
 from config import SYMBOLS, POLL_INTERVAL_SECONDS, TWELVE_DATA_KEYS, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from smc_engine import AdvancedSMCEngine
@@ -33,7 +33,7 @@ def log_trade_event(symbol, event_type, entry, sl, tp1, tp2, tp3, details):
         print(f"⚠️ Error writing to trade_history.csv: {e}")
 
 class SmartRotatorFetcher:
-    """Rotates across Twelve Data API keys and automatically skips exhausted/failed keys"""
+    """Rotates across Twelve Data API keys and silently skips exhausted/failed keys"""
     def __init__(self, keys):
         self.keys = [k for k in keys if k]
         self.key_index = 0
@@ -46,8 +46,6 @@ class SmartRotatorFetcher:
         attempts = len(self.keys)
         for _ in range(attempts):
             active_key = self.keys[self.key_index]
-            masked_key = f"{active_key[:4]}...{active_key[-4:]}" if len(active_key) > 8 else "****"
-            print(f"🔄 Trying API Key Index [{self.key_index + 1}/{len(self.keys)}] (Key: {masked_key})")
             
             try:
                 time.sleep(2)  # Pacing
@@ -65,9 +63,8 @@ class SmartRotatorFetcher:
                     df['timestamp'] = pd.to_datetime(df['timestamp'])
                     df = df.sort_values('timestamp').reset_index(drop=True)
                     return df
-            except Exception as e:
-                print(f"⚠️ Key hit limit or error fetching {interval} for {symbol}: {e}. Switching to next key...")
-                # Advance to next key immediately upon failure
+            except Exception:
+                # Silently advance to the next key without printing 429 errors
                 self.key_index = (self.key_index + 1) % len(self.keys)
                 continue
                 
@@ -75,28 +72,27 @@ class SmartRotatorFetcher:
         return None
 
 def is_within_trading_window(symbol):
-    now_utc = datetime.utcnow().time()
+    # Convert current UTC time to IST (UTC + 5:30)
+    now_utc = datetime.utcnow()
+    now_ist = (now_utc + timedelta(hours=5, minutes=30)).time()
     
-    # EUR/USD Windows: 1:30 PM - 4:30 PM UTC AND 7:00 PM - 1:30 AM UTC
     if "EUR" in symbol:
-        session1 = dtime(13, 30) <= now_utc <= dtime(16, 30)
-        session2 = dtime(19, 0) <= now_utc or now_utc <= dtime(1, 30)
-        return session1 or session2
+        return True
     
-    # XAU/USD Windows: 7:00 PM - 1:30 AM UTC
+    # XAU/USD Window: 7:00 PM IST to 12:30 AM IST
     elif "XAU" in symbol:
-        return dtime(19, 0) <= now_utc or now_utc <= dtime(1, 30)
+        return dtime(19, 0) <= now_ist or now_ist <= dtime(0, 30)
         
     return True
 
 def run_bot():
     print("==================================================")
-    print("🚀 SMC SIGNAL BOT ACTIVE (SMART KEY FAILOVER & TIME WINDOWS)")
+    print("🚀 SMC SIGNAL BOT ACTIVE (SILENT FAILOVER & IST WINDOWS)")
     print(f"📊 Assets Monitored: {SYMBOLS}")
     print(f"🔑 Configured Keys Array Length: {len(TWELVE_DATA_KEYS)}")
     print("==================================================")
     
-    send_telegram_alert("🟢 *SMC Signal Bot Started with Smart Key Failover Active*")
+    send_telegram_alert("🟢 *SMC Signal Bot Started with Silent Key Failover Active*")
 
     fetcher = SmartRotatorFetcher(TWELVE_DATA_KEYS)
     engine = AdvancedSMCEngine(min_rr=2.0, max_rr=8.0)
@@ -115,7 +111,7 @@ def run_bot():
             for symbol in SYMBOLS:
                 # Check trading session timing window
                 if not is_within_trading_window(symbol):
-                    print(f"💤 Asset: {symbol} | Outside active trading window. Skipping scan.")
+                    print(f"💤 Asset: {symbol} | Outside active trading window (7 PM - 12:30 AM IST). Skipping scan.")
                     continue
 
                 # --- SMART CACHING FOR 4H & 1H (Fetch once every hour) ---
