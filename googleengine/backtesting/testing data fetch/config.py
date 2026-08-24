@@ -6,7 +6,8 @@ POLL_INTERVAL_SECONDS = 60
 # Dual API keys for rate limit load balancing
 TWELVE_DATA_KEYS = [
     os.getenv("TWELVE_DATA_API_KEY_1"),
-    os.getenv("TWELVE_DATA_API_KEY_2")
+    os.getenv("TWELVE_DATA_API_KEY_2"),
+    os.getenv("TWELVE_DATA_API_KEY_3")
 ]
 
 # Telegram Credentials
