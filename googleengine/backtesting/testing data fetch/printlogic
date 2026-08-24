@@ -1,0 +1,61 @@
+1. Bot Startup Alert
+What you get: 🟢 SMC Signal Bot Started & Scanning EUR/USD & XAU/USD
+
+When you get it: Immediately when you launch or restart the bot script (python main.py).
+
+2. Step 1: Liquidity Sweep Alert (status == "LIQUIDITY_SWEPT")
+What you get:
+
+Plaintext
+🚨 STEP 1: LIQUIDITY SWEEP DETECTED 
+📌 Asset: [EUR/USD or XAU/USD]
+⚡ Direction Bias: [BUY/SELL]
+📍 Swept Levels: Lows: ... | Highs: ...
+💧 Liquidity Type: [Buy-Side / Sell-Side Liquidity Swept]
+🔍 Looking for CHoCH at: Awaiting 15M structure break past boundary levels.
+When you get it: When the engine confirms that the price has actually swept/pierced an external macro high or low liquidity level, initiating the directional bias. (Note: With the fix mentioned earlier, this will only trigger on a true confirmed sweep rather than every scan cycle).
+
+3. Step 2: 15M CHoCH & FVG Confirmed Alert (status == "CHOCH_CONFIRMED")
+What you get:
+
+Plaintext
+⏳ STEP 2: 15M CHoCH & FVG CONFIRMED 
+📌 Asset: [...]
+⚡ Direction: [...]
+📍 CHoCH Happened At: [Price]
+🎯 Active Watch (POI): [Price]
+📝 Confluence: [Details]
+When you get it: After the liquidity sweep has occurred, when the 15-minute timeframe breaks market structure (Change of Character / CHoCH) and leaves behind a Fair Value Gap (FVG) or Point of Interest (POI).
+
+4. Setup Forming Advance Notice (status == "SETUP_FORMING")
+What you get:
+
+Plaintext
+⏳ SMC SETUP FORMING (Advance Notice) 
+📌 Asset: [...]
+⚡ Anticipated Direction: [...]
+🔍 Status: Macro criteria met. Monitoring 1M chart for entry at POI: [Price]
+📝 Confluence: [...]
+When you get it: When macro criteria (Sweep + CHoCH) are met and the bot starts actively tracking the 1-minute chart for a precise entry at the Point of Interest (POI).
+
+5. Step 3: Final Execution Trigger & Lot PnL Breakdown (status == "TRIGGERED")
+What you get:
+
+Plaintext
+🚨 STEP 3: SMC FINAL EXECUTION TRIGGER 
+📌 Asset: [...]
+⚡ Direction: [...]
+🎯 Entry Price, Stop Loss, TP1, TP2, TP3, Risk:Reward ratio
+📊 LOT SIZE PnL BREAKDOWN (0.01 to 1.0) with risk/reward dollar amounts
+When you get it: Right when a 1-minute entry trigger is confirmed at the POI. This message includes your complete risk parameters and a PnL lot-sizing breakdown matrix.
+
+6. Trade Management & Exit Alerts (SL / TP Hits)
+What you get:
+
+❌ STOP LOSS HIT for [Asset] at [Price]. Trade closed.
+
+🎯 TP1 / TP2 REACHED for [Asset] at [Price]!
+
+🏆 TP3 FULL TARGET REACHED for [Asset]! Trade fully closed.
+
+When you get it: Dynamically during every scan cycle while an active trade is open, whenever the current 1-minute price crosses your pre-defined Stop Loss or Take Profit levels.
