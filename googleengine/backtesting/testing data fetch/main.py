@@ -148,8 +148,8 @@ def run_bot():
                 if symbol not in asset_states:
                     asset_states[symbol] = "IDLE"
 
-                # 1. LIQUIDITY SWEEP CHECK (STEP 1)
-                if status == "LIQUIDITY_SWEPT":
+                # 1. LIQUIDITY SWEEP CHECK (STEP 1) - Triggered by status or keyword "Sweep"
+                if status == "LIQUIDITY_SWEPT" or "Sweep" in reason:
                     low_val, high_val = "N/A", "N/A"
                     if "Lows:" in reason and "Highs:" in reason:
                         try:
@@ -163,13 +163,15 @@ def run_bot():
                     else:
                         sweep_display = reason
 
-                    direction_bias = signal.get('direction', 'SELL')
-                    if direction_bias == "SELL":
+                    direction_bias = signal.get('direction', 'BUY')
+                    if direction_bias == "SELL" or "SELL" in reason:
+                        direction_bias = "SELL"
                         liquidity_type = f"Sell-Side Liquidity Swept (Below Low: {low_val}) -> Expecting Bearish CHoCH reversal"
                     else:
+                        direction_bias = "BUY"
                         liquidity_type = f"Buy-Side Liquidity Swept (Above High: {high_val}) -> Expecting Bullish CHoCH reversal"
 
-                    if asset_states[symbol] != "SWEEP_ALERTED":
+                    if asset_states.get(symbol) != "SWEEP_ALERTED":
                         asset_states[symbol] = "SWEEP_ALERTED"
                         msg = (
                             f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
@@ -184,13 +186,13 @@ def run_bot():
                     
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
-                # 2. CHoCH CONFIRMED CHECK (STEP 2)
-                elif status == "CHOCH_CONFIRMED":
+                # 2. CHoCH / BOS CONFIRMED CHECK (STEP 2) - Triggered by status or keywords "CHOCH"/"BOS"
+                elif status == "CHOCH_CONFIRMED" or "CHOCH" in reason or "BOS" in reason:
                     choch_lvl = signal.get("choch_price", signal.get("level", 0))
                     c_fmt = f"{choch_lvl:.5f}" if "EUR" in symbol or "USD" in symbol else f"{choch_lvl:.2f}"
                     p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
                     
-                    if asset_states[symbol] != "CHOCH_ALERTED":
+                    if asset_states.get(symbol) != "CHOCH_ALERTED":
                         asset_states[symbol] = "CHOCH_ALERTED"
                         msg = (
                             f"⏳ *STEP 2: 15M CHoCH & FVG CONFIRMED* ⏳\n\n"
@@ -206,18 +208,20 @@ def run_bot():
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
                 # 3. SETUP FORMING CHECK
-                elif status == "SETUP_FORMING":
+                elif status == "SETUP_FORMING" or "Setup" in reason:
                     p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
-                    msg = (
-                        f"⏳ *SMC SETUP FORMING (Advance Notice)* ⏳\n\n"
-                        f"📌 *Asset:* `{symbol}`\n"
-                        f"⚡ *Anticipated Direction:* `{signal.get('direction', '')}`\n\n"
-                        f"🔍 *Status:* Macro criteria met. "
-                        f"**Monitoring 1M chart for entry at POI:** `{p_fmt}`\n\n"
-                        f"📝 *Confluence:* {reason}"
-                    )
-                    send_telegram_alert(msg)
-                    print(f"⏳ Setup Forming Alert Sent for {symbol}")
+                    if asset_states.get(symbol) != "SETUP_FORMED":
+                        asset_states[symbol] = "SETUP_FORMED"
+                        msg = (
+                            f"⏳ *SMC SETUP FORMING (Advance Notice)* ⏳\n\n"
+                            f"📌 *Asset:* `{symbol}`\n"
+                            f"⚡ *Anticipated Direction:* `{signal.get('direction', '')}`\n\n"
+                            f"🔍 *Status:* Macro criteria met. "
+                            f"**Monitoring 1M chart for entry at POI:** `{p_fmt}`\n\n"
+                            f"📝 *Confluence:* {reason}"
+                        )
+                        send_telegram_alert(msg)
+                        print(f"⏳ Setup Forming Alert Sent for {symbol}")
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
                 # 4. INVALIDATED CHECK
@@ -296,7 +300,7 @@ def run_bot():
                     print(f"🚨 Final Execution Alert Sent & Logged for {symbol}")
 
                 else:
-                    if asset_states[symbol] not in ["SWEEP_ALERTED", "CHOCH_ALERTED", "IN_TRADE"]:
+                    if asset_states[symbol] not in ["SWEEP_ALERTED", "CHOCH_ALERTED", "SETUP_FORMED", "IN_TRADE"]:
                         asset_states[symbol] = "IDLE"
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}")
 
