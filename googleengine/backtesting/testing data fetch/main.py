@@ -101,91 +101,91 @@ def run_bot():
                 if status == "LIQUIDITY_SWEPT" or "Sweep" in signal.get("reason", ""):
                     msg = (
                         f"🚨 *STEP 1: LIQUIDITY SWEEP DETECTED* 🚨\n\n"
-                        f"📌 *Asset:* `{signal['symbol']}`\n"
-                        f"⚡ *Direction Bias:* `{signal['direction']}`\n\n"
+                        f"📌 *Asset:* `{symbol}`\n"
+                        f"⚡ *Direction Bias:* `{signal.get('direction', 'SELL')}`\n\n"
                         f"🔍 *Status:* External macro liquidity pool was just raided/swept. "
                         f"Now waiting for 15M structure confirmation (CHoCH / BOS).\n\n"
-                        f"📝 *Details:* {signal['reason']}"
+                        f"📝 *Details:* {signal.get('reason', '')}"
                     )
                     send_telegram_alert(msg)
-                    print(f"🚨 Liquidity Sweep Alert Sent for {signal['symbol']}")
+                    print(f"🚨 Liquidity Sweep Alert Sent for {symbol}")
 
                 elif status == "CHOCH_CONFIRMED":
                     p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
                     msg = (
                         f"⏳ *STEP 2: 15M CHoCH & FVG CONFIRMED* ⏳\n\n"
-                        f"📌 *Asset:* `{signal['symbol']}`\n"
-                        f"⚡ *Direction:* `{signal['direction']}`\n\n"
+                        f"📌 *Asset:* `{symbol}`\n"
+                        f"⚡ *Direction:* `{signal.get('direction', '')}`\n\n"
                         f"🔍 *Status:* Institutional structure shift confirmed. "
                         f"**Bot is now actively watching the 1M chart for an entry retracement into POI:** `{p_fmt}`\n\n"
-                        f"📝 *Confluence:* {signal['reason']}"
+                        f"📝 *Confluence:* {signal.get('reason', '')}"
                     )
                     send_telegram_alert(msg)
-                    print(f"⏳ 15M CHoCH Alert Sent for {signal['symbol']} at POI {p_fmt}")
+                    print(f"⏳ 15M CHoCH Alert Sent for {symbol} at POI {p_fmt}")
 
                 elif status == "SETUP_FORMING":
                     p_fmt = f"{signal.get('poi_price', 0):.5f}" if "EUR" in symbol or "USD" in symbol else f"{signal.get('poi_price', 0):.2f}"
                     msg = (
                         f"⏳ *SMC SETUP FORMING (Advance Notice)* ⏳\n\n"
-                        f"📌 *Asset:* `{signal['symbol']}`\n"
-                        f"⚡ *Anticipated Direction:* `{signal['direction']}`\n\n"
+                        f"📌 *Asset:* `{symbol}`\n"
+                        f"⚡ *Anticipated Direction:* `{signal.get('direction', '')}`\n\n"
                         f"🔍 *Status:* Macro criteria met. "
                         f"**Monitoring 1M chart for entry at POI:** `{p_fmt}`\n\n"
-                        f"📝 *Confluence:* {signal['reason']}"
+                        f"📝 *Confluence:* {signal.get('reason', '')}"
                     )
                     send_telegram_alert(msg)
-                    print(f"⏳ Setup Forming Alert Sent for {signal['symbol']}")
+                    print(f"⏳ Setup Forming Alert Sent for {symbol}")
 
                 elif status == "INVALIDATED":
                     msg = (
                         f"❌ *SMC SETUP INVALIDATED* ❌\n\n"
-                        f"📌 *Asset:* `{signal['symbol']}`\n"
-                        f"⚠️ *Reason:* {signal['reason']}\n\n"
+                        f"📌 *Asset:* `{symbol}`\n"
+                        f"⚠️ *Reason:* {signal.get('reason', '')}\n\n"
                         f"🛑 *Action:* Discarding previous setup watch."
                     )
                     send_telegram_alert(msg)
-                    print(f"❌ Setup Invalidated Alert Sent for {signal['symbol']}")
+                    print(f"❌ Setup Invalidated Alert Sent for {symbol}")
 
                 elif (status == "TRIGGERED" or "TRIGGER" in str(status) or "ENTRY" in str(status)) and symbol not in open_trades:
-                    p = signal["trade_params"]
-                    direction = signal["decision"]
+                    p = signal.get("trade_params", {})
+                    direction = signal.get("decision", signal.get("direction", "BUY"))
                     
                     open_trades[symbol] = {
                         "direction": direction,
-                        "entry": p["entry"],
-                        "sl": p["sl"],
-                        "tp1": p["tp1"],
-                        "tp2": p["tp2"],
-                        "tp3": p["tp3"],
+                        "entry": p.get("entry", 0),
+                        "sl": p.get("sl", 0),
+                        "tp1": p.get("tp1", 0),
+                        "tp2": p.get("tp2", 0),
+                        "tp3": p.get("tp3", 0),
                         "hit_tp1": False,
                         "hit_tp2": False
                     }
 
                     log_trade_event(
-                        symbol, "ENTRY", p["entry"], p["sl"], 
-                        p["tp1"], p["tp2"], p["tp3"], f"Direction: {direction} | RR: {p['rr']}"
+                        symbol, "ENTRY", p.get("entry", 0), p.get("sl", 0), 
+                        p.get("tp1", 0), p.get("tp2", 0), p.get("tp3", 0), f"Direction: {direction} | RR: {p.get('rr', 0)}"
                     )
 
                     matrix_text = ""
-                    for item in p["pnl_matrix"]:
+                    for item in p.get("pnl_matrix", []):
                         matrix_text += (
-                            f"• **{item['lot']} Lot**: "
-                            f"Risk: -${item['loss']} | TP1: +${item['tp1']} | TP2: +${item['tp2']}\n"
+                            f"• **{item.get('lot', 0)} Lot**: "
+                            f"Risk: -${item.get('loss', 0)} | TP1: +${item.get('tp1', 0)} | TP2: +${item.get('tp2', 0)}\n"
                         )
 
                     msg = (
                         f"🚨 *SMC FINAL EXECUTION ALERT* 🚨\n\n"
                         f"📌 *Asset:* `{symbol}`\n"
                         f"⚡ *Direction:* `{direction}`\n\n"
-                        f"🎯 *Entry:* `{p['entry']}`\n"
-                        f"🛑 *Stop Loss:* `{p['sl']}` ({p['pips_risk']} Pips)\n"
-                        f"🎯 *Take Profit 1:* `{p['tp1']}`\n"
-                        f"🎯 *Take Profit 2:* `{p['tp2']}`\n"
-                        f"🎯 *Take Profit 3:* `{p['tp3']}`\n"
-                        f"⚖️ *Risk:Reward:* `{p['rr']}:1`\n\n"
+                        f"🎯 *Entry:* `{p.get('entry', 0)}`\n"
+                        f"🛑 *Stop Loss:* `{p.get('sl', 0)}` ({p.get('pips_risk', 0)} Pips)\n"
+                        f"🎯 *Take Profit 1:* `{p.get('tp1', 0)}`\n"
+                        f"🎯 *Take Profit 2:* `{p.get('tp2', 0)}`\n"
+                        f"🎯 *Take Profit 3:* `{p.get('tp3', 0)}`\n"
+                        f"⚖️ *Risk:Reward:* `{p.get('rr', 0)}:1`\n\n"
                         f"📊 *LOT SIZE & PnL BREAKDOWN*\n"
                         f"{matrix_text}\n"
-                        f"📝 *Confluence:* {signal['reason']}"
+                        f"📝 *Confluence:* {signal.get('reason', '')}"
                     )
                     send_telegram_alert(msg)
                     print(f"🚨 Final Execution Alert Sent & Logged for {symbol}")
