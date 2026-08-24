@@ -157,9 +157,11 @@ class AdvancedSMCEngine:
             structure_confirmed = self.check_bos_choch(df_15m, sweep_direction)
 
             if not (has_imbalance and structure_confirmed):
+                active_level = ext_low if sweep_direction == "BUY" else ext_high
+                active_liq_fmt = f"{active_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{active_level:.2f}"
                 return {
                     "status": "HOLD",
-                    "reason": f"Bi-Directional Sweep [{sweep_direction}] at {liq_fmt}, awaiting 15M FVG & BOS confirmation."
+                    "reason": f"Bi-Directional Sweep [{sweep_direction}] at {active_liq_fmt}, awaiting 15M FVG & BOS confirmation."
                 }
 
             poi_level = float(df_15m['low'].tail(3).min()) if sweep_direction == "BUY" else float(df_15m['high'].tail(3).max())
@@ -220,7 +222,6 @@ class AdvancedSMCEngine:
                     }
                 }
             else:
-                curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
                 return {
                     "status": "HOLD", 
                     "reason": f"Liquidity Swept | Awaiting price retracement to Order Block ({p_fmt}) | Current RR: {rr:.2f}"
