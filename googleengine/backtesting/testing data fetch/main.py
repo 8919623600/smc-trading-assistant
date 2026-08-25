@@ -36,7 +36,6 @@ class SmartRotatorFetcher:
     """Rotates across Twelve Data API keys, automatically disabling keys that hit daily credit limits (429)."""
     def __init__(self, keys):
         self.keys = [k for k in keys if k]
-        # Track status of each key: True = active, False = exhausted/disabled
         self.key_status = {i: True for i in range(len(self.keys))}
         self.key_index = 0
         print(f"🔑 Loaded {len(self.keys)} API Key(s) into rotator.")
@@ -47,7 +46,6 @@ class SmartRotatorFetcher:
 
         attempts = len(self.keys)
         for _ in range(attempts):
-            # If current key is marked dead/exhausted, skip to next
             if not self.key_status[self.key_index]:
                 self.key_index = (self.key_index + 1) % len(self.keys)
                 continue
@@ -71,11 +69,10 @@ class SmartRotatorFetcher:
                 error_msg = str(e)
                 if "429" in error_msg or "out of API credits" in error_msg:
                     print(f"🛑 Key {self.key_index + 1} exhausted daily credits! Permanently disabling for this session.")
-                    self.key_status[self.key_index] = False  # Disable so it won't be retried
+                    self.key_status[self.key_index] = False
                 else:
                     print(f"⚠️ API Key {self.key_index + 1} failed for {symbol} ({interval}). Error: {e}")
                 
-                # Move to next key index
                 self.key_index = (self.key_index + 1) % len(self.keys)
                 continue
                 
@@ -106,7 +103,6 @@ def run_bot():
     
     open_trades = {}
     asset_states = {}
-    
     htf_cache = {symbol: {"4H": None, "1H": None, "last_fetched": None} for symbol in SYMBOLS}
 
     while True:
@@ -145,13 +141,12 @@ def run_bot():
                 signal = engine.analyze(data_dict, symbol)
                 status = signal.get("status")
                 reason = signal.get("reason", "")
-                
                 current_price = float(data_dict["1M"].iloc[-1]['close'])
 
                 if symbol not in asset_states:
                     asset_states[symbol] = "IDLE"
 
-                # 1. LIQUIDITY SWEEP CHECK (STEP 1)
+                # 1. LIQUIDITY SWEEP CHECK
                 if status == "LIQUIDITY_SWEPT" or "Sweep" in reason:
                     low_val, high_val = "N/A", "N/A"
                     if "Lows:" in reason and "Highs:" in reason:
@@ -189,13 +184,13 @@ def run_bot():
                     
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}", flush=True)
 
-                # 2. CHoCH / BOS CONFIRMED CHECK (STEP 2)
+                # 2. CHoCH / BOS CONFIRMED CHECK
                 elif status == "CHOCH_CONFIRMED" or "CHOCH" in reason or "BOS" in reason:
                     choch_lvl = signal.get("choch_price", 0)
                     poi_lvl = signal.get("poi_price", 0)
                     
-                    c_fmt = f"{choch_lvl:.5f}" if "EUR" in symbol or "USD" in symbol else f"{choch_lvl:.2f}"
-                    p_fmt = f"{poi_lvl:.5f}" if "EUR" in symbol or "USD" in symbol else f"{poi_lvl:.2f}"
+                    c_fmt = f"{choch_lvl:.5f}" if "EUR" in symbol else f"{choch_lvl:.2f}"
+                    p_fmt = f"{poi_lvl:.5f}" if "EUR" in symbol else f"{poi_lvl:.2f}"
                     
                     if asset_states.get(symbol) != "CHOCH_ALERTED":
                         asset_states[symbol] = "CHOCH_ALERTED"
@@ -227,7 +222,7 @@ def run_bot():
                     
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}", flush=True)
 
-                # 4. TRIGGERED / EXECUTION CHECK (STEP 3)
+                # 4. TRIGGERED / EXECUTION CHECK
                 elif (status == "TRIGGERED" or "TRIGGER" in str(status) or "ENTRY" in str(status)) and symbol not in open_trades:
                     asset_states[symbol] = "IN_TRADE"
                     p = signal.get("trade_params", {})
@@ -251,24 +246,13 @@ def run_bot():
 
                     base_risk_unit = p.get("pips_risk", 10)
                     matrix_text = ""
-                    target_lots = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5, 1.0]
-                    
                     engine_matrix = p.get("pnl_matrix", [])
-                    if engine_matrix:
-                        for item in engine_matrix:
-                            matrix_text += (
-                                f"• `{item.get('lot', 0)} Lot`: "
-                                f"Risk: -${item.get('loss', 0):.2f} | TP1: +${item.get('tp1', 0):.2f} | TP2: +${item.get('tp2', 0):.2f}\n"
-                            )
-                    else:
-                        for lot in target_lots:
-                            loss_est = lot * base_risk_unit * 10
-                            tp1_est = loss_est * 1.5
-                            tp2_est = loss_est * 3.0
-                            matrix_text += (
-                                f"• `{lot} Lot`: "
-                                f"Risk: -${loss_est:.2f} | TP1: +${tp1_est:.2f} | TP2: +${tp2_est:.2f}\n"
-                            )
+                    
+                    for item in engine_matrix:
+                        matrix_text += (
+                            f"• `{item.get('lot', 0)} Lot`: "
+                            f"Risk: -${item.get('loss', 0):.2f} | TP1: +${item.get('tp1', 0):.2f} | TP2: +${item.get('tp2', 0):.2f}\n"
+                        )
 
                     msg = (
                         f"🚨 *STEP 3: SMC FINAL EXECUTION TRIGGER* 🚨\n\n"
@@ -280,7 +264,7 @@ def run_bot():
                         f"🎯 *Take Profit 2:* `{p.get('tp2', 0)}`\n"
                         f"🎯 *Take Profit 3:* `{p.get('tp3', 0)}`\n"
                         f"⚖️ *Risk:Reward:* `{p.get('rr', 0)}:1`\n\n"
-                        f"📊 *LOT SIZE PnL BREAKDOWN (0.01 to 1.0)*\n"
+                        f"📊 *LOT SIZE PnL BREAKDOWN*\n"
                         f"{matrix_text}\n"
                         f"📝 *Confluence:* {reason}"
                     )
@@ -292,20 +276,15 @@ def run_bot():
                         asset_states[symbol] = "IDLE"
                     print(f"🔍 Asset: {symbol} | Status: HOLD | Reason: {reason}", flush=True)
 
-                # --- ACTIVE TRADE AUDITING FOR TP / SL EXITS ---
+                # --- ACTIVE TRADE AUDITING ---
                 if symbol in open_trades:
                     trade = open_trades[symbol]
-                    entry = trade["entry"]
-                    sl = trade["sl"]
-                    tp1 = trade["tp1"]
-                    tp2 = trade["tp2"]
-                    tp3 = trade["tp3"]
+                    entry, sl, tp1, tp2, tp3 = trade["entry"], trade["sl"], trade["tp1"], trade["tp2"], trade["tp3"]
 
                     if trade["direction"] == "BUY":
                         if current_price <= sl:
                             log_trade_event(symbol, "SL_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
                             send_telegram_alert(f"❌ *STOP LOSS HIT* for `{symbol}` at `{current_price}`. Trade closed.")
-                            print(f"❌ STOP LOSS HIT for {symbol} at {current_price}.", flush=True)
                             del open_trades[symbol]
                             asset_states[symbol] = "IDLE"
                         elif not trade["hit_tp1"] and current_price >= tp1:
@@ -326,7 +305,6 @@ def run_bot():
                         if current_price >= sl:
                             log_trade_event(symbol, "SL_HIT", entry, sl, tp1, tp2, tp3, f"Exit Price: {current_price}")
                             send_telegram_alert(f"❌ *STOP LOSS HIT* for `{symbol}` at `{current_price}`. Trade closed.")
-                            print(f"❌ STOP LOSS HIT for {symbol} at {current_price}.", flush=True)
                             del open_trades[symbol]
                             asset_states[symbol] = "IDLE"
                         elif not trade["hit_tp1"] and current_price <= tp1:

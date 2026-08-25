@@ -6,17 +6,7 @@ class AdvancedSMCEngine:
         self.min_rr = min_rr
         self.max_rr = max_rr
         self.active_setups = {}
-        # Track state machine cooldowns per symbol to prevent looping feedback errors
         self.symbol_states = {}
-
-    def calculate_atr(self, df, period=14):
-        if len(df) < period:
-            return 0.0005
-        high_low = df['high'] - df['low']
-        high_close = (df['high'] - df['close'].shift()).abs()
-        low_close = (df['low'] - df['close'].shift()).abs()
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        return float(tr.rolling(period).mean().iloc[-1])
 
     def check_fvg(self, df_15m, direction):
         if len(df_15m) < 3:
@@ -55,53 +45,62 @@ class AdvancedSMCEngine:
             external_high = float(df_1h['high'].tail(50).max())
         return external_low, external_high
 
-    def get_opposing_liquidity_targets(self, df_1h, direction, entry):
+    def get_opposing_liquidity_targets(self, df_1h, direction, entry, symbol):
         highs = df_1h['high'].tail(50).values
         lows = df_1h['low'].tail(50).values
+
+        # Set appropriate fallback point increments based on asset type
+        fallback_step = 5.0 if "XAU" in symbol else 0.0050
 
         if direction == "BUY":
             above_entry = [h for h in highs if h > entry]
             if not above_entry:
-                tp1, tp2, tp3 = entry + 0.0050, entry + 0.0100, entry + 0.0150
+                tp1, tp2, tp3 = entry + fallback_step, entry + (fallback_step * 2), entry + (fallback_step * 3)
             else:
                 sorted_highs = sorted(list(set(above_entry)))
                 tp1 = sorted_highs[0]
-                tp2 = sorted_highs[len(sorted_highs)//2] if len(sorted_highs) > 1 else tp1 + 0.0050
+                tp2 = sorted_highs[len(sorted_highs)//2] if len(sorted_highs) > 1 else tp1 + fallback_step
                 tp3 = sorted_highs[-1]
         else:
             below_entry = [l for l in lows if l < entry]
             if not below_entry:
-                tp1, tp2, tp3 = entry - 0.0050, entry - 0.0100, entry - 0.0150
+                tp1, tp2, tp3 = entry - fallback_step, entry - (fallback_step * 2), entry - (fallback_step * 3)
             else:
                 sorted_lows = sorted(list(set(below_entry)), reverse=True)
                 tp1 = sorted_lows[0]
-                tp2 = sorted_lows[len(sorted_lows)//2] if len(sorted_lows) > 1 else tp1 - 0.0050
+                tp2 = sorted_lows[len(sorted_lows)//2] if len(sorted_lows) > 1 else tp1 - fallback_step
                 tp3 = sorted_lows[-1]
 
-        return round(tp1, 5), round(tp2, 5), round(tp3, 5)
+        digits = 2 if "XAU" in symbol else 5
+        return round(tp1, digits), round(tp2, digits), round(tp3, digits)
 
     def calculate_pnl_matrix(self, symbol, entry, sl, tp1, tp2):
-        risk_pips = abs(entry - sl)
-        if "EUR" in symbol or "USD" in symbol:
-            risk_pips_display = risk_pips * 10000 if risk_pips < 1.0 else risk_pips
+        risk_distance = abs(entry - sl)
+        
+        if "XAU" in symbol:
+            # Gold uses dollar/point scaling ($1.00 per point move)
+            risk_pips_display = risk_distance
+            tp1_pips_display = abs(tp1 - entry)
+            tp2_pips_display = abs(tp2 - entry)
+            dollar_multiplier = 100.0  # Standard 1 lot = 100 oz for gold
+        else:
+            # Forex uses standard pip scaling
+            risk_pips_display = risk_distance * 10000 if risk_distance < 1.0 else risk_distance
             tp1_pips_display = abs(tp1 - entry) * 10000 if abs(tp1 - entry) < 1.0 else abs(tp1 - entry)
             tp2_pips_display = abs(tp2 - entry) * 10000 if abs(tp2 - entry) < 1.0 else abs(tp2 - entry)
-        else:
-            risk_pips_display = risk_pips * 10
-            tp1_pips_display = abs(tp1 - entry) * 10
-            tp2_pips_display = abs(tp2 - entry) * 10
+            dollar_multiplier = 10.0
 
         lot_sizes = [0.01, 0.02, 0.03, 0.1, 0.2, 0.5, 1.0]
         matrix = []
         for lot in lot_sizes:
-            dollar_per_pip = lot * 10.0
+            dollar_per_unit = lot * dollar_multiplier
             matrix.append({
                 "lot": lot,
-                "loss": round(risk_pips_display * dollar_per_pip, 2),
-                "tp1": round(tp1_pips_display * dollar_per_pip, 2),
-                "tp2": round(tp2_pips_display * dollar_per_pip, 2)
+                "loss": round(risk_pips_display * dollar_per_unit, 2),
+                "tp1": round(tp1_pips_display * dollar_per_unit, 2),
+                "tp2": round(tp2_pips_display * dollar_per_unit, 2)
             })
-        return matrix, round(risk_pips_display, 1)
+        return matrix, round(risk_pips_display, 2)
 
     def analyze(self, tf_data, symbol):
         df_4h = tf_data.get("4H")
@@ -122,7 +121,7 @@ class AdvancedSMCEngine:
         is_higher_low = swings_low.iloc[-2] > swings_low.iloc[-5]
         bias = "BULLISH" if (is_higher_high and is_higher_low) else "BEARISH"
 
-        # --- 2. BI-DIRECTIONAL EXTERNAL LIQUIDITY SWEEP CHECK ---
+        # --- 2. EXTERNAL LIQUIDITY SWEEP CHECK ---
         historical_1h = df_1h.iloc[:-1]
         ext_low, ext_high = self.get_macro_external_liquidity_pools(historical_1h)
         
@@ -140,12 +139,10 @@ class AdvancedSMCEngine:
             sweep_direction = "SELL"
             swept_level = ext_high
 
-        # Check existing active setup invalidation or SL breach
         if symbol in self.active_setups:
             setup = self.active_setups[symbol]
             if (setup['direction'] == "BUY" and current_price < setup['sl']) or \
                (setup['direction'] == "SELL" and current_price > setup['sl']):
-                
                 del self.active_setups[symbol]
                 self.symbol_states[symbol] = "COOLDOWN"
                 return {
@@ -154,9 +151,7 @@ class AdvancedSMCEngine:
                     "reason": f"Price breached structural SL for active {setup['direction']} setup. Entering cooldown."
                 }
 
-        # Handle Cooldown State Guardrail
         if self.symbol_states[symbol] == "COOLDOWN":
-            # Require price to normalize or a completely new liquidity sweep to reset
             if not sweep_direction:
                 self.symbol_states[symbol] = "SCANNING"
             else:
@@ -166,7 +161,7 @@ class AdvancedSMCEngine:
                     "reason": "In state cooldown after previous setup invalidation/SL hit. Waiting for fresh cycle."
                 }
 
-        liq_fmt = f"{swept_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{swept_level:.2f}"
+        liq_fmt = f"{swept_level:.2f}" if "XAU" in symbol else f"{swept_level:.5f}"
 
         # --- 3. SETUP FORMING & FVG + BOS VALIDATION ---
         if sweep_direction and symbol not in self.active_setups and self.symbol_states[symbol] == "SCANNING":
@@ -175,26 +170,23 @@ class AdvancedSMCEngine:
 
             if not (has_imbalance and structure_confirmed):
                 active_level = ext_low if sweep_direction == "BUY" else ext_high
-                active_liq_fmt = f"{active_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{active_level:.2f}"
+                active_liq_fmt = f"{active_level:.2f}" if "XAU" in symbol else f"{active_level:.5f}"
+                high_fmt_val = f"{ext_high:.2f}" if "XAU" in symbol else f"{ext_high:.5f}"
                 return {
                     "status": "LIQUIDITY_SWEPT",
                     "direction": sweep_direction,
-                    "reason": f"Lows: {active_liq_fmt} | Highs: {ext_high if sweep_direction=='BUY' else active_level}"
+                    "reason": f"Lows: {active_liq_fmt} | Highs: {high_fmt_val if sweep_direction=='BUY' else active_liq_fmt}"
                 }
 
-            # Capture non-zero accurate CHoCH level and POI level from 15M candle structure
             choch_level = float(df_15m.iloc[-1]['close']) if float(df_15m.iloc[-1]['close']) > 0 else float(df_15m.iloc[-2]['close'])
-            
-            # Identify Order Block (POI) extreme level
             poi_level = float(df_15m['low'].tail(3).min()) if sweep_direction == "BUY" else float(df_15m['high'].tail(3).max())
             
-            # --- FIX: Structural POI-anchored Stop Loss with Safe Buffer ---
-            # Instead of a sub-pip micro offset, anchor SL safely below/above the POI low/high + structural safety buffer (e.g. 3-5 pips or ATR-backed)
-            buffer_pips = 0.00030 if ("EUR" in symbol or "USD" in symbol) else 3.0
+            # --- CORRECTED BUFFER FOR GOLD VS FOREX ---
+            buffer_val = 1.5 if "XAU" in symbol else 0.00030
             if sweep_direction == "BUY":
-                sl = poi_level - buffer_pips
+                sl = poi_level - buffer_val
             else:
-                sl = poi_level + buffer_pips
+                sl = poi_level + buffer_val
             
             self.active_setups[symbol] = {
                 "bias": bias,
@@ -205,31 +197,32 @@ class AdvancedSMCEngine:
             }
             self.symbol_states[symbol] = "WAITING_ENTRY"
 
+            digits = 2 if "XAU" in symbol else 5
             return {
                 "status": "CHOCH_CONFIRMED",
                 "symbol": symbol,
                 "direction": sweep_direction,
                 "choch_price": choch_level,
                 "poi_price": poi_level,
-                "reason": f"External Liquidity Swept {liq_fmt} | 15M BOS Confirmed {sweep_direction} | Awaiting POI: {poi_level}"
+                "reason": f"External Liquidity Swept {liq_fmt} | 15M BOS Confirmed {sweep_direction} | Awaiting POI: {poi_level:.{digits}f}"
             }
 
-        # --- 4. ACTIVE SETUP TRACKING & OPPOSING LIQUIDITY TP TARGETS ---
+        # --- 4. ACTIVE SETUP TRACKING ---
         if symbol in self.active_setups:
             setup = self.active_setups[symbol]
             direction = setup['direction']
             poi_level = setup['poi_price']
             choch_level = setup['choch_price']
-            p_fmt = f"{poi_level:.5f}" if "EUR" in symbol or "USD" in symbol else f"{poi_level:.2f}"
+            digits = 2 if "XAU" in symbol else 5
+            p_fmt = f"{poi_level:.{digits}f}"
             
             entry = current_price
             sl = setup['sl']
             
-            tp1, tp2, tp3 = self.get_opposing_liquidity_targets(df_1h, direction, entry)
+            tp1, tp2, tp3 = self.get_opposing_liquidity_targets(df_1h, direction, entry, symbol)
             
             risk_dist = abs(entry - sl)
             reward_dist = abs(tp1 - entry)
-            # Prevent division errors or distorted wild fluctuations with a minimum risk floor check
             rr = reward_dist / risk_dist if risk_dist > 0.00001 else 0
 
             if self.min_rr <= rr <= self.max_rr:
@@ -242,8 +235,8 @@ class AdvancedSMCEngine:
                     "decision": direction,
                     "reason": f"Execution confirmed inside Order Block (POI: {p_fmt}) targeting opposing liquidity.",
                     "trade_params": {
-                        "entry": round(entry, 5),
-                        "sl": round(sl, 5),
+                        "entry": round(entry, digits),
+                        "sl": round(sl, digits),
                         "tp1": tp1,
                         "tp2": tp2,
                         "tp3": tp3,
@@ -262,9 +255,9 @@ class AdvancedSMCEngine:
                     "reason": f"Liquidity Swept | Awaiting price retracement to Order Block ({p_fmt}) | Current RR: {rr:.2f}"
                 }
 
-        low_fmt = f"{ext_low:.5f}" if "EUR" in symbol or "USD" in symbol else f"{ext_low:.2f}"
-        high_fmt = f"{ext_high:.5f}" if "EUR" in symbol or "USD" in symbol else f"{ext_high:.2f}"
-        curr_fmt = f"{current_price:.5f}" if "EUR" in symbol or "USD" in symbol else f"{current_price:.2f}"
+        low_fmt = f"{ext_low:.2f}" if "XAU" in symbol else f"{ext_low:.5f}"
+        high_fmt = f"{ext_high:.2f}" if "XAU" in symbol else f"{ext_high:.5f}"
+        curr_fmt = f"{current_price:.2f}" if "XAU" in symbol else f"{current_price:.5f}"
         return {
             "status": "HOLD", 
             "reason": f"Scanning Bi-Directional External Sweeps [Lows: {low_fmt} | Highs: {high_fmt}] | Price: {curr_fmt}"
