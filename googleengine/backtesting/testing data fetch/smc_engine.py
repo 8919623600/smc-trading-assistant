@@ -36,13 +36,14 @@ class AdvancedSMCEngine:
             return True 
         return False
 
-    def get_macro_external_liquidity_pools(self, df_1h):
-        if len(df_1h) < 50:
+    def get_macro_external_liquidity_pools(self, df_1h, symbol):
+        window = 24 if "XAU" in symbol else 50
+        if len(df_1h) < window:
             external_low = float(df_1h['low'].min())
             external_high = float(df_1h['high'].max())
         else:
-            external_low = float(df_1h['low'].tail(50).min())
-            external_high = float(df_1h['high'].tail(50).max())
+            external_low = float(df_1h['low'].tail(window).min())
+            external_high = float(df_1h['high'].tail(window).max())
         return external_low, external_high
 
     def get_opposing_liquidity_targets(self, df_1h, direction, entry, symbol):
@@ -123,7 +124,7 @@ class AdvancedSMCEngine:
 
         # --- 2. EXTERNAL LIQUIDITY SWEEP CHECK ---
         historical_1h = df_1h.iloc[:-1]
-        ext_low, ext_high = self.get_macro_external_liquidity_pools(historical_1h)
+        ext_low, ext_high = self.get_macro_external_liquidity_pools(historical_1h, symbol)
         
         current_1h_low = float(df_1h.iloc[-1]['low'])
         current_1h_high = float(df_1h.iloc[-1]['high'])
